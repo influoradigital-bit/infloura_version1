@@ -11,6 +11,7 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * T-MEERA-CREATOR-PHASE-A (SPEC.md 2.2-2.7, A3/A6) — wire DTOs for {@code
@@ -173,10 +174,22 @@ public final class CreatorAgentDtos {
 
     public record ConversationListResponse(@JsonProperty("conversations") List<ConversationSummary> conversations) {}
 
+    /**
+     * One exported message. {@code photo_check} is set only on a photo-check ASSISTANT row: its
+     * stored card ({@code {kind, v, result, shot_label}}, the same map {@code GET .../messages}
+     * returns as {@code card}), so the DPDP export holds the full check the service keeps, not only
+     * the summary text. Absent ({@code NON_NULL}) on every other row.
+     */
     public record ConversationExportMessage(
             @JsonProperty("role") String role,
             @JsonProperty("content") String content,
-            @JsonProperty("timestamp") Instant timestamp) {}
+            @JsonProperty("timestamp") Instant timestamp,
+            @JsonProperty("photo_check") @JsonInclude(JsonInclude.Include.NON_NULL) Map<String, Object> photoCheck) {
+
+        public ConversationExportMessage(String role, String content, Instant timestamp) {
+            this(role, content, timestamp, null);
+        }
+    }
 
     public record ConversationExportResponse(
             @JsonProperty("conversation_id") String conversationId,

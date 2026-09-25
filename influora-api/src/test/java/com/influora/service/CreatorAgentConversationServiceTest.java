@@ -1,16 +1,24 @@
 package com.influora.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.influora.domain.entity.AiConversation;
+import com.influora.domain.entity.AiMessage;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.MeeraCreatorConversation;
+import com.influora.domain.enums.MessageRole;
 import com.influora.repository.AiConversationRepository;
 import com.influora.repository.AiMessageRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.MeeraCreatorConversationRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.influora.web.dto.creator.CreatorAgentDtos.ConversationExportMessage;
+import com.influora.web.dto.creator.CreatorAgentDtos.ConversationExportResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationSummary;
 import java.time.Instant;
 import java.util.List;
@@ -112,5 +120,55 @@ class CreatorAgentConversationServiceTest {
 
         assertEquals(1, existing.getMessageCount());
         assertEquals(CONVERSATION_ID, existing.getConversationId());
+    }
+
+    @Test
+    @DisplayName(
+            "exportConversation: a photo-check row carries its stored card (photo_check) with every ok and"
+                    + " cant_tell item the service holds; ordinary rows carry none")
+    void exportIncludesThePhotoCheckCard() {
+        MeeraCreatorConversation tracking = mock(MeeraCreatorConversation.class);
+        when(tracking.getConversationId()).thenReturn(CONVERSATION_ID);
+        when(conversationRepository.findByConversationIdAndCreatorId(CONVERSATION_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(tracking));
+        AiConversation conversation = mock(AiConversation.class);
+        when(aiConversationRepository.findById(CONVERSATION_ID)).thenReturn(Optional.of(conversation));
+        String metadata =
+                "{\"kind\":\"photo_check\",\"v\":1,\"shot_label\":\"0-3s\",\"prompt_version\":\"x\","
+                        + "\"result\":{\"what_i_see\":\"A bedroom, window behind you.\","
+                        + "\"ok\":[\"Phone is level\",\"Background is tidy\"],"
+                        + "\"cant_tell\":[\"Whether the audio is clear\"]}}";
+        AiMessage user =
+                AiMessage.builder()
+                        .id("01HUSER")
+                        .conversationId(CONVERSATION_ID)
+                        .role(MessageRole.USER)
+                        .content("Check my set-up: 0-3s")
+                        .creditsCharged(0)
+                        .build();
+        AiMessage check =
+                AiMessage.builder()
+                        .id("01HCHECK")
+                        .conversationId(CONVERSATION_ID)
+                        .role(MessageRole.ASSISTANT)
+                        .content("[Photo check]\nPhoto check saw: A bedroom, window behind you.")
+                        .metadataJson(metadata)
+                        .creditsCharged(0)
+                        .build();
+        when(aiMessageRepository.findByConversationIdOrderByCreatedAtAsc(CONVERSATION_ID)).thenReturn(List.of(user, check));
+
+        ConversationExportResponse export = service.exportConversation(CREATOR_USER_ID, CONVERSATION_ID);
+
+        ConversationExportMessage exportedUser = export.messages().get(0);
+        ConversationExportMessage exportedCheck = export.messages().get(1);
+        assertNull(exportedUser.photoCheck());
+        assertNotNull(exportedCheck.photoCheck());
+        assertEquals("photo_check", exportedCheck.photoCheck().get("kind"));
+        assertEquals("0-3s", exportedCheck.photoCheck().get("shot_label"));
+        JsonNode result = (JsonNode) exportedCheck.photoCheck().get("result");
+        assertEquals(2, result.get("ok").size());
+        assertEquals("Whether the audio is clear", result.get("cant_tell").get(0).asText());
+        // Only the card: nothing else from the metadata (prompt_version, ...) is exported.
+        assertNull(exportedCheck.photoCheck().get("prompt_version"));
     }
 }

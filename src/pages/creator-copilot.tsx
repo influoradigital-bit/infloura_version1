@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Sparkles } from 'lucide-react';
 
 import { CreatorLayout } from '@/components/creator/creator-layout';
@@ -22,7 +23,14 @@ function firstNameOf(displayName?: string): string {
 }
 
 /**
- * Creator AI Co-pilot — route: /creator/copilot (Ananya A2).
+ * Creator AI Co-pilot — route: /creator/copilot (Ananya A2). Shown to creators as "Meera"
+ * (RULINGS 3, 2026-09-26: "Co-pilot" is a Microsoft name, so it leaves the frontend copy; the
+ * route, file and component names stay).
+ *
+ * `?camera=1` (the old /creator/shoot-check link redirects here with it) opens Meera through the
+ * same consent path as "Open Meera", then mounts the chat with `openCameraOnMount` so the chat
+ * opens its camera sheet once connected. The param is removed (replace) once handled, so a reload
+ * does not reopen the camera.
  *
  * Previously the daily-idea experience only existed as a card embedded in
  * creator-deals.tsx with no route or nav link of its own (unlike brand's
@@ -103,6 +111,29 @@ export default function CreatorCopilotPage() {
   const prefillTokenRef = React.useRef(0);
   const pendingBriefPromptRef = React.useRef<string | null>(null);
 
+  // Photo check in Meera (SPEC §4) — `?camera=1` asks for the camera sheet. `openCamera` is what
+  // the mounted chat receives as `openCameraOnMount`; `cameraRequestedRef` carries the ask across
+  // a consent detour, the same way `pendingBriefPromptRef` carries a brief prompt. Every entry
+  // that can reach the consent screen for the chat sets it afresh (`openMeera`, the prompt entries,
+  // a mid-session consent refusal), so a declined ask never leaks into a later open.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const cameraParam = searchParams.get('camera') === '1';
+  const [openCamera, setOpenCamera] = React.useState(false);
+  const cameraRequestedRef = React.useRef(false);
+  // Guards the param effect against running twice for one arrival (StrictMode's double effect).
+  const cameraParamHandledRef = React.useRef(false);
+
+  const clearCameraParam = React.useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('camera');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
   // Probe once on mount so the entry point never renders (then disappears) for a disabled
   // account — the same GET the "Open Meera" click already made, just run earlier and only
   // watched for the one error code. Any other failure here is swallowed; the click handler
@@ -126,9 +157,11 @@ export default function CreatorCopilotPage() {
     };
   }, []);
 
-  const openMeera = async () => {
+  /** `withCamera` is true only for the `?camera=1` arrival; "Open Meera" never opens the camera. */
+  const openMeera = async (withCamera = false) => {
     setConsentLoadError(null);
     setCheckingConsent(true);
+    cameraRequestedRef.current = withCamera;
     try {
       const prefs = await api.creatorAgentPrefs.getPreferences();
       setLanguage(prefs.creator_language || 'en-IN');
@@ -136,6 +169,7 @@ export default function CreatorCopilotPage() {
       if (prefs.consent_accepted) {
         // Plain "Open Meera" never carries a leftover brief prompt from an earlier ask.
         setPrefillMessage(null);
+        setOpenCamera(withCamera);
         setChatOpen(true);
       } else {
         consentForRef.current = 'chat';
@@ -154,6 +188,26 @@ export default function CreatorCopilotPage() {
     }
   };
 
+  // `?camera=1` arrival: open Meera through the normal consent-checked path, once per arrival.
+  // Re-arms when the param is gone, so a second arrival (another tap on an old Shoot Check link)
+  // is handled again.
+  React.useEffect(() => {
+    if (!cameraParam) {
+      cameraParamHandledRef.current = false;
+      return;
+    }
+    if (cameraParamHandledRef.current) return;
+    cameraParamHandledRef.current = true;
+    void openMeera(true);
+    // openMeera is recreated every render; this must run per arrival of the param, not per render.
+  }, [cameraParam]);
+
+  // Drop the param once it is spent: the chat is open (it now holds `openCameraOnMount`), or the
+  // feature is off (only the page shows). Declining consent drops it in the Decline handler.
+  React.useEffect(() => {
+    if (cameraParam && (chatOpen || featureDisabled === true)) clearCameraParam();
+  }, [cameraParam, chatOpen, featureDisabled, clearCameraParam]);
+
   const handleAcceptConsent = async () => {
     await api.creatorAgentPrefs.recordConsent();
     setShowConsent(false);
@@ -165,6 +219,7 @@ export default function CreatorCopilotPage() {
       } else {
         setPrefillMessage(null);
       }
+      setOpenCamera(cameraRequestedRef.current);
       setChatOpen(true);
     }
     pendingBriefPromptRef.current = null;
@@ -203,9 +258,12 @@ export default function CreatorCopilotPage() {
       setLanguage(lang);
       setConsentAccepted(prefs.consent_accepted);
       const text = typeof prompt === 'function' ? prompt(lang) : prompt;
+      // A prompt entry never opens the camera, and drops a camera ask left by a declined arrival.
+      cameraRequestedRef.current = false;
       if (prefs.consent_accepted) {
         prefillTokenRef.current += 1;
         setPrefillMessage({ text, token: prefillTokenRef.current });
+        setOpenCamera(false);
         setChatOpen(true);
       } else {
         pendingBriefPromptRef.current = text;
@@ -227,8 +285,8 @@ export default function CreatorCopilotPage() {
     <CreatorLayout>
       <div className="container mx-auto px-4 py-6 max-w-3xl">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold">Co-pilot</h1>
-          <p className="text-muted-foreground">Your AI content partner</p>
+          <h1 className="text-2xl font-bold">Meera</h1>
+          <p className="text-muted-foreground">Your personal manager</p>
         </div>
 
         {/* Creator 7-day challenge (CHALLENGE-SPEC.md, 2026-09-23, Frontend §7) — top of the
@@ -279,6 +337,7 @@ export default function CreatorCopilotPage() {
                   firstName={firstName}
                   language={language}
                   prefillMessage={prefillMessage}
+                  openCameraOnMount={openCamera}
                   onAnalyseBrief={focusBriefCard}
                   onClose={() => {
                     setChatOpen(false);
@@ -286,6 +345,8 @@ export default function CreatorCopilotPage() {
                   }}
                   onConsentRequired={() => {
                     setChatOpen(false);
+                    // Consent revoked mid-session: an unfulfilled camera ask survives the detour.
+                    cameraRequestedRef.current = openCamera;
                     consentForRef.current = 'chat';
                     setShowConsent(true);
                   }}
@@ -294,7 +355,7 @@ export default function CreatorCopilotPage() {
                 <MeeraHero
                   firstName={firstName}
                   onAsk={(question) => void openMeeraWithPrompt(question)}
-                  onOpen={openMeera}
+                  onOpen={() => void openMeera()}
                   busy={checkingConsent}
                   error={consentLoadError}
                   topRight={<HeroCreditsChip language={language} />}
@@ -332,6 +393,9 @@ export default function CreatorCopilotPage() {
             // U-5 — a declined "Ask Meera about this brief" opens nothing, and the prompt is
             // dropped rather than surviving to a later, unrelated "Open Meera" click.
             pendingBriefPromptRef.current = null;
+            // A declined `?camera=1` ask: drop the param so a reload does not bring the consent
+            // screen back. (Every entry point sets the camera ask afresh, so no reset is needed.)
+            if (cameraParam) clearCameraParam();
           }}
         />
 

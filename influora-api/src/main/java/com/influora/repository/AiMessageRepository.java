@@ -52,4 +52,15 @@ public interface AiMessageRepository extends JpaRepository<AiMessage, String> {
      * {@code AiConversationRepository.findByIdAndWorkspaceId} (Guardrail 4).
      */
     List<AiMessage> findByConversationIdOrderByCreatedAtDesc(String conversationId, Pageable pageable);
+
+    /**
+     * Photo check in Meera's chat, long chats -- the {@code ?before=} page for {@code
+     * MeeraSessionService#listMessagesBefore}: messages strictly OLDER than {@code beforeId} in id
+     * order, NEWEST-first so a {@link Pageable} {@code LIMIT} selects the page just before the
+     * cursor (the caller reverses it to oldest-first). Same ULID reasoning as {@link
+     * #findByConversationIdAndIdGreaterThanOrderByIdAsc}. Same tenant-isolation contract: callers
+     * MUST first resolve the conversation via {@code AiConversationRepository.findByIdAndWorkspaceId}.
+     */
+    List<AiMessage> findByConversationIdAndIdLessThanOrderByIdDesc(
+            String conversationId, String beforeId, Pageable pageable);
 }

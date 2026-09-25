@@ -82,7 +82,6 @@ import CreatorCampaignsPage from '@/pages/creator-campaigns';
 import CreatorApplicationsPage from '@/pages/creator-applications';
 import CreatorCopilotPage from '@/pages/creator-copilot';
 import DevMeeraPresencePage from '@/pages/dev-meera-presence';
-import CreatorShootCheckPage from '@/pages/creator-shoot-check';
 import CreatorCampaignDetailPage from '@/pages/creator-campaign-detail';
 import CreatorDisputesPage from '@/pages/creator-disputes';
 import CreatorReviewsPage from '@/pages/creator-reviews';
@@ -558,14 +557,9 @@ export default function App() {
             </CreatorProtectedRoute>
           }
         />
-        <Route
-          path="/creator/shoot-check"
-          element={
-            <CreatorProtectedRoute>
-              <CreatorShootCheckPage />
-            </CreatorProtectedRoute>
-          }
-        />
+        {/* Photo check moved into Meera's chat (2026-09-26): the old Shoot Check page is gone, and
+            its links land on Meera with the camera sheet open. /creator/copilot is protected. */}
+        <Route path="/creator/shoot-check" element={<Navigate to="/creator/copilot?camera=1" replace />} />
         <Route
           path="/creator/wallet"
           element={

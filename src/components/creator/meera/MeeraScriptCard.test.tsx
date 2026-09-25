@@ -174,3 +174,59 @@ describe('MeeraScriptCard — the optional Set-up line (persona 2026-09-25)', ()
     expect(screen.queryByTestId('script-card-setup')).toBeNull();
   });
 });
+
+describe('MeeraScriptCard — "Check my set-up" per shot (photo check inside Meera)', () => {
+  it('renders no set-up button when onCheckShot is not passed', () => {
+    render(<MeeraScriptCard script={SCRIPT} rawText={RAW_TEXT} language="en-IN" />);
+    expect(screen.queryByTestId('script-card-check-shot')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Check my set-up' })).toBeNull();
+  });
+
+  it('renders one 44px button per beat, and each calls onCheckShot with its own beat index', async () => {
+    const user = userEvent.setup();
+    const onCheckShot = vi.fn();
+    render(<MeeraScriptCard script={SCRIPT} rawText={RAW_TEXT} language="en-IN" onCheckShot={onCheckShot} />);
+
+    const beats = screen.getAllByTestId('script-card-beat');
+    const buttons = screen.getAllByRole('button', { name: 'Check my set-up' });
+    expect(buttons).toHaveLength(SCRIPT.beats.length);
+    buttons.forEach((button, i) => {
+      // Inside its own beat row, at least 44px tall, described by that beat's timing and shot.
+      expect(beats[i]).toContainElement(button);
+      expect(button.className).toContain('min-h-11');
+      expect(button).toHaveAccessibleDescription(`${SCRIPT.beats[i].from}-${SCRIPT.beats[i].to}s · ${SCRIPT.beats[i].shot}`);
+    });
+
+    await user.click(buttons[2]);
+    await user.click(buttons[0]);
+    expect(onCheckShot.mock.calls).toEqual([[2], [0]]);
+  });
+
+  it('shows every set-up button as disabled while the chat is busy, and a tap does nothing', async () => {
+    const user = userEvent.setup();
+    const onCheckShot = vi.fn();
+    const { rerender } = render(
+      <MeeraScriptCard script={SCRIPT} rawText={RAW_TEXT} language="en-IN" onCheckShot={onCheckShot} checkShotDisabled />,
+    );
+    const buttons = screen.getAllByTestId('script-card-check-shot');
+    for (const button of buttons) expect(button).toBeDisabled();
+    await user.click(buttons[0]);
+    expect(onCheckShot).not.toHaveBeenCalled();
+
+    rerender(<MeeraScriptCard script={SCRIPT} rawText={RAW_TEXT} language="en-IN" onCheckShot={onCheckShot} />);
+    for (const button of screen.getAllByTestId('script-card-check-shot')) expect(button).toBeEnabled();
+  });
+
+  it('says "सेट-अप चेक करें" for a Hindi creator (Devanagari, like the rest of the card)', () => {
+    render(<MeeraScriptCard script={SCRIPT} rawText={RAW_TEXT} language="hi-IN" onCheckShot={() => {}} />);
+    expect(screen.getAllByRole('button', { name: 'सेट-अप चेक करें' })).toHaveLength(SCRIPT.beats.length);
+    expect(screen.queryByRole('button', { name: 'Check my set-up' })).toBeNull();
+  });
+
+  it('never says Co-pilot or Copilot on the card', () => {
+    const { container } = render(
+      <MeeraScriptCard script={SCRIPT} rawText={RAW_TEXT} language="en-IN" onCheckShot={() => {}} />,
+    );
+    expect(container.textContent ?? '').not.toMatch(/co-?pilot/i);
+  });
+});

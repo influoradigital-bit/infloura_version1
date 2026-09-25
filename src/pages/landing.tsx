@@ -103,7 +103,7 @@ const FAQS = [
   {
     question: 'How long does it take to launch a campaign?',
     answer:
-      'A brand can create an account, build a brief and send its first creator invites the same day \u2014 Meera, the built-in AI co-pilot, drafts the campaign from a plain-language description of the product and goal. The slower step is usually creator response time, not setup.',
+      'A brand can create an account, build a brief and send its first creator invites the same day \u2014 Meera, the built-in AI campaign manager, drafts the campaign from a plain-language description of the product and goal. The slower step is usually creator response time, not setup.',
   },
 ];
 
@@ -144,7 +144,7 @@ const FEATURES = [
 // Meera — claims verified against influora-ai + MeeraSessionService: she suggests,
 // drafts, and proposes; a human confirms every money step. Never claim autonomy.
 const MEERA = {
-  headline: 'Meet Meera, your AI campaign co-pilot',
+  headline: 'Meet Meera, your AI campaign manager',
   sub: 'Every brand workspace comes with Meera built in. Describe your product and goal in plain language — she does the campaign math with you.',
   points: [
     { icon: Search, text: 'Suggests matching creators by niche, city, and engagement' },
@@ -415,8 +415,8 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Meera AI co-pilot */}
-        <section className="border-t border-border/60 py-20" aria-label="Meera AI co-pilot">
+        {/* Meera, AI campaign manager */}
+        <section className="border-t border-border/60 py-20" aria-label="Meera, AI campaign manager">
           <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 lg:grid-cols-2">
             <FadeUp>
               <Badge variant="outline" className="gap-1.5">
@@ -451,7 +451,7 @@ export default function LandingPage() {
                     <MeeraOrb state="idle" size={40} />
                     <div>
                       <p className="text-sm font-semibold">Meera</p>
-                      <p className="text-xs text-muted-foreground">AI campaign co-pilot · online</p>
+                      <p className="text-xs text-muted-foreground">AI campaign manager · online</p>
                     </div>
                   </div>
                   <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-sm text-primary-foreground">

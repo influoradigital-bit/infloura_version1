@@ -1,5 +1,6 @@
 package com.influora.web;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
 import com.influora.config.MeeraCreatorFeatureProperties;
@@ -17,6 +18,8 @@ import com.influora.service.CreatorContextService;
 import com.influora.service.credits.CreatorCreditService;
 import com.influora.service.meera.MeeraSessionService;
 import com.influora.service.meera.OnBehalfTokenService;
+import com.influora.service.meera.PhotoCheckChatWriter;
+import com.influora.service.meera.PhotoCheckSummary;
 import com.influora.web.dto.meera.MeeraDtos.CreditsSummary;
 import com.influora.web.dto.meera.MeeraDtos.MessageHistoryItem;
 import com.influora.web.dto.meera.MeeraDtos.SendTurnRequest;
@@ -28,8 +31,10 @@ import jakarta.validation.constraints.Size;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -102,7 +107,39 @@ public class CreatorMeeraController {
     private final CreatorCreditService creatorCreditService;
     private final CreatorCreditProperties creditProperties;
     private final OnBehalfTokenService onBehalfTokenService;
+    /**
+     * Photo check in Meera's chat: stores a check sent with a {@code conversation_id} as a USER +
+     * ASSISTANT pair. {@code null} only through the 9-argument constructor older unit tests use;
+     * such a controller answers every check without a conversation exactly as before and refuses
+     * one with a conversation.
+     */
+    private final PhotoCheckChatWriter photoCheckChatWriter;
 
+    @Autowired
+    public CreatorMeeraController(
+            MeeraSessionService sessionService,
+            CreatorContextService creatorContext,
+            MeeraStreamProperties streamProperties,
+            CreatorAgentPreferencesService preferencesService,
+            MeeraVoiceAiClient voiceAiClient,
+            MeeraCreatorFeatureProperties featureProperties,
+            CreatorCreditService creatorCreditService,
+            CreatorCreditProperties creditProperties,
+            OnBehalfTokenService onBehalfTokenService,
+            PhotoCheckChatWriter photoCheckChatWriter) {
+        this.sessionService = sessionService;
+        this.creatorContext = creatorContext;
+        this.streamProperties = streamProperties;
+        this.preferencesService = preferencesService;
+        this.voiceAiClient = voiceAiClient;
+        this.featureProperties = featureProperties;
+        this.creatorCreditService = creatorCreditService;
+        this.creditProperties = creditProperties;
+        this.onBehalfTokenService = onBehalfTokenService;
+        this.photoCheckChatWriter = photoCheckChatWriter;
+    }
+
+    /** The pre-photo-check wiring, kept for the unit tests that build this controller by hand. */
     public CreatorMeeraController(
             MeeraSessionService sessionService,
             CreatorContextService creatorContext,
@@ -113,15 +150,17 @@ public class CreatorMeeraController {
             CreatorCreditService creatorCreditService,
             CreatorCreditProperties creditProperties,
             OnBehalfTokenService onBehalfTokenService) {
-        this.sessionService = sessionService;
-        this.creatorContext = creatorContext;
-        this.streamProperties = streamProperties;
-        this.preferencesService = preferencesService;
-        this.voiceAiClient = voiceAiClient;
-        this.featureProperties = featureProperties;
-        this.creatorCreditService = creatorCreditService;
-        this.creditProperties = creditProperties;
-        this.onBehalfTokenService = onBehalfTokenService;
+        this(
+                sessionService,
+                creatorContext,
+                streamProperties,
+                preferencesService,
+                voiceAiClient,
+                featureProperties,
+                creatorCreditService,
+                creditProperties,
+                onBehalfTokenService,
+                null);
     }
 
     /**
@@ -274,22 +313,53 @@ public class CreatorMeeraController {
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
-    /** Mirrors {@link MeeraController#messages} — same {@code after}-cursor contract. */
+    /**
+     * Mirrors {@link MeeraController#messages} — same {@code after}-cursor contract — plus two
+     * CREATOR-only additions for the photo check in Meera's chat:
+     *
+     * <ul>
+     *   <li>{@code card}: set only on an ASSISTANT row whose metadata says {@code kind ==
+     *       "photo_check"}, as {@code {kind, v, result, shot_label}} ({@link
+     *       PhotoCheckChatWriter#historyCard}); omitted from the JSON everywhere else.
+     *   <li>{@code ?before=<id>}: up to {@link MeeraSessionService#HISTORY_PAGE_BEFORE} OLDER
+     *       messages, oldest-first. {@code after} and {@code before} together is a 400.
+     * </ul>
+     */
     @GetMapping("/sessions/{conversationId}/messages")
     public ResponseEntity<ApiResponse<List<MessageHistoryItem>>> messages(
             @AuthenticationPrincipal AuthPrincipal principal,
             @PathVariable String conversationId,
-            @RequestParam(value = "after", required = false) String after) {
+            @RequestParam(value = "after", required = false) String after,
+            @RequestParam(value = "before", required = false) String before) {
         requireFeatureEnabled();
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
 
+        String beforeId = blankToNull(before);
+        if (beforeId != null && blankToNull(after) != null) {
+            throw new ApiException(
+                    "INVALID_CURSOR", "Use either after or before, not both", HttpStatus.BAD_REQUEST);
+        }
         List<AiMessage> messages =
-                sessionService.listMessages(profile.getUserId(), conversationId, after);
+                beforeId != null
+                        ? sessionService.listMessagesBefore(profile.getUserId(), conversationId, beforeId)
+                        : sessionService.listMessages(profile.getUserId(), conversationId, after);
         List<MessageHistoryItem> response =
                 messages.stream()
-                        .map(m -> new MessageHistoryItem(m.getId(), m.getRole().name(), m.getContent()))
+                        .map(
+                                m ->
+                                        new MessageHistoryItem(
+                                                m.getId(),
+                                                m.getRole().name(),
+                                                m.getContent(),
+                                                PhotoCheckChatWriter.historyCard(m)))
                         .toList();
         return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    /** The {@code after}-only form, as before {@code ?before=} existed. */
+    public ResponseEntity<ApiResponse<List<MessageHistoryItem>>> messages(
+            AuthPrincipal principal, String conversationId, String after) {
+        return messages(principal, conversationId, after, null);
     }
 
     /**
@@ -408,6 +478,24 @@ public class CreatorMeeraController {
      * this server, and the image is held in memory for this request only -- never stored, never
      * logged. Failures are a non-2xx on purpose: the app shows "couldn't check your frame right
      * now" for any of them and never retries.
+     *
+     * <p><b>Photo check in Meera's chat.</b> Optional {@code conversation_id} (form field), {@code
+     * user_line} (form field, at most {@link PhotoCheckChatWriter#MAX_USER_LINE_CHARS} code points,
+     * longer is 400 FIELD_TOO_LONG) and an {@code Idempotency-Key} header, required when {@code
+     * conversation_id} is sent (400 IDEMPOTENCY_KEY_REQUIRED; over {@link
+     * PhotoCheckChatWriter#MAX_IDEMPOTENCY_KEY_CHARS} is 400 IDEMPOTENCY_KEY_INVALID).
+     *
+     * <ul>
+     *   <li>The conversation's ownership is checked BEFORE the model call: a foreign or unknown id
+     *       is 404 CONVERSATION_NOT_FOUND and influora-ai is never called.
+     *   <li>A 200 whose body has {@code "fallback": false} gains {@code chat{text, message_id,
+     *       user_message_id}}; the ids are null when nothing was stored (no conversation, or the
+     *       store failed). Every other 200 body (fallback, cap message, a body with no {@code
+     *       fallback} key) is returned unchanged and nothing is stored.
+     *   <li>A replayed key returns the stored check with no second model call; a key still running
+     *       is 409 PHOTO_CHECK_IN_PROGRESS; a key used for another conversation is 409
+     *       IDEMPOTENCY_KEY_REUSED. See {@link PhotoCheckChatWriter}.
+     * </ul>
      */
     @PostMapping(value = "/shoot-check/frame", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> checkFrame(
@@ -415,7 +503,10 @@ public class CreatorMeeraController {
             @RequestParam(value = "image", required = false) MultipartFile image,
             @RequestParam(value = "shot_label", required = false) String shotLabel,
             @RequestParam(value = "shot_context", required = false) String shotContext,
-            @RequestParam(value = "answers", required = false) String answers) {
+            @RequestParam(value = "answers", required = false) String answers,
+            @RequestParam(value = "conversation_id", required = false) String conversationId,
+            @RequestParam(value = "user_line", required = false) String userLine,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         requireFeatureEnabled();
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
         String creatorUserId = profile.getUserId();
@@ -432,8 +523,24 @@ public class CreatorMeeraController {
         // validates them (unknown coach ids / option indexes ignored). Java only caps their size.
         String context = blankToNull(shotContext);
         String answered = blankToNull(answers);
-        if (tooLong(context, MAX_SHOT_CONTEXT_CHARS) || tooLong(answered, MAX_ANSWERS_CHARS)) {
+        String creatorLine = blankToNull(userLine);
+        if (tooLong(context, MAX_SHOT_CONTEXT_CHARS)
+                || tooLong(answered, MAX_ANSWERS_CHARS)
+                || tooLong(creatorLine, PhotoCheckChatWriter.MAX_USER_LINE_CHARS)) {
             return ResponseEntity.badRequest().body(Map.of("code", "FIELD_TOO_LONG"));
+        }
+
+        String conversation = blankToNull(conversationId);
+        String key = blankToNull(idempotencyKey);
+        if (conversation != null) {
+            if (key == null) {
+                return ResponseEntity.badRequest().body(Map.of("code", "IDEMPOTENCY_KEY_REQUIRED"));
+            }
+            if (key.length() > PhotoCheckChatWriter.MAX_IDEMPOTENCY_KEY_CHARS) {
+                return ResponseEntity.badRequest().body(Map.of("code", "IDEMPOTENCY_KEY_INVALID"));
+            }
+            // Ownership BEFORE the model call: a foreign or unknown conversation costs nothing.
+            requirePhotoCheckChatWriter().requireOwnedConversation(creatorUserId, conversation);
         }
 
         byte[] imageBytes;
@@ -447,21 +554,67 @@ public class CreatorMeeraController {
         if (label != null && label.length() > MAX_SHOT_LABEL_CHARS) {
             label = label.substring(0, MAX_SHOT_LABEL_CHARS);
         }
+        String forwardedLabel = label;
+        String contentType = image.getContentType();
 
-        MeeraVoiceAiClient.FrameCheckResult result =
-                voiceAiClient.checkFrameForCreator(
-                        creatorUserId,
-                        imageBytes,
-                        image.getContentType(),
-                        label,
-                        savedPhoneModelOrNull(creatorUserId),
-                        context,
-                        answered,
-                        mintCreatorOnBehalfJwt(creatorUserId));
-        if (!result.ok()) {
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("code", "FRAME_CHECK_UNAVAILABLE"));
+        Supplier<MeeraVoiceAiClient.FrameCheckResult> vision =
+                () ->
+                        voiceAiClient.checkFrameForCreator(
+                                creatorUserId,
+                                imageBytes,
+                                contentType,
+                                forwardedLabel,
+                                savedPhoneModelOrNull(creatorUserId),
+                                context,
+                                answered,
+                                mintCreatorOnBehalfJwt(creatorUserId));
+
+        if (conversation == null) {
+            MeeraVoiceAiClient.FrameCheckResult result = vision.get();
+            if (!result.ok()) {
+                return frameCheckUnavailable();
+            }
+            ObjectNode kept = PhotoCheckChatWriter.writableResult(result);
+            if (kept == null) {
+                return passThrough(result);
+            }
+            return jsonBody(
+                    PhotoCheckChatWriter.responseBody(kept, PhotoCheckSummary.render(kept, label), null, null));
         }
 
+        PhotoCheckChatWriter.Outcome outcome =
+                photoCheckChatWriter.checkAndWrite(creatorUserId, conversation, key, creatorLine, label, vision);
+        if (outcome.result() == null) {
+            MeeraVoiceAiClient.FrameCheckResult upstream = outcome.upstream();
+            if (upstream == null || !upstream.ok()) {
+                return frameCheckUnavailable();
+            }
+            return passThrough(upstream);
+        }
+        return jsonBody(
+                PhotoCheckChatWriter.responseBody(
+                        outcome.result(), outcome.text(), outcome.userMessageId(), outcome.assistantMessageId()));
+    }
+
+    /** The pre-photo-check form (no conversation), kept for the unit tests that call it directly. */
+    public ResponseEntity<?> checkFrame(
+            AuthPrincipal principal, MultipartFile image, String shotLabel, String shotContext, String answers) {
+        return checkFrame(principal, image, shotLabel, shotContext, answers, null, null, null);
+    }
+
+    private PhotoCheckChatWriter requirePhotoCheckChatWriter() {
+        if (photoCheckChatWriter == null) {
+            throw new IllegalStateException("PhotoCheckChatWriter is not wired into this controller");
+        }
+        return photoCheckChatWriter;
+    }
+
+    private static ResponseEntity<?> frameCheckUnavailable() {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("code", "FRAME_CHECK_UNAVAILABLE"));
+    }
+
+    /** influora-ai's body, byte for byte: a fallback, a cap message, or any body not to be kept. */
+    private static ResponseEntity<?> passThrough(MeeraVoiceAiClient.FrameCheckResult result) {
         MediaType mediaType;
         try {
             mediaType = MediaType.parseMediaType(result.contentType());
@@ -469,6 +622,10 @@ public class CreatorMeeraController {
             mediaType = MediaType.APPLICATION_JSON;
         }
         return ResponseEntity.ok().contentType(mediaType).body(result.jsonBytes());
+    }
+
+    private static ResponseEntity<?> jsonBody(byte[] body) {
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(body);
     }
 
     private static String blankToNull(String value) {

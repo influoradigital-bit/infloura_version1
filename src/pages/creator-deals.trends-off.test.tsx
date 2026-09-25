@@ -52,7 +52,7 @@ function renderPage() {
   );
 }
 
-const TEASER = /get today.s content idea from co-pilot/i;
+const TEASER = /get today.s content idea from meera/i;
 
 describe('CreatorDealsPage — T-TSOFF-0920 Co-pilot teaser', () => {
   beforeEach(() => {

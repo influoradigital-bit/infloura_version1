@@ -321,7 +321,7 @@ export function MeeraSettingsSection() {
       setWithdrawOpen(false);
       toast({
         title: 'Meera turned off',
-        description: 'You can turn Meera back on any time from the Co-pilot page.',
+        description: 'You can turn Meera back on any time from the Meera page.',
       });
       // The whole section is consent-gated, so re-read rather than guess at the new state.
       window.location.reload();
@@ -522,7 +522,7 @@ export function MeeraSettingsSection() {
                 onChange={(e) => setPhoneText(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Optional. Meera and Shoot Check use it to suggest camera settings your phone actually has.
+                Optional. Meera uses it to suggest camera settings your phone actually has.
               </p>
             </div>
 

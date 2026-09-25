@@ -17,7 +17,7 @@ This policy applies to any Influora user who connects an Instagram Business or C
 - **Instagram Login** — connecting your Instagram account directly, or
 - **Facebook Login** — connecting through the Facebook Page linked to your Instagram Business account.
 
-Connecting is entirely optional. Influora works without it; connecting unlocks verified audience analytics, deliverable verification, and the AI Copilot's performance suggestions. You may disconnect at any time (Section 8).
+Connecting is entirely optional. Influora works without it; connecting unlocks verified audience analytics, deliverable verification, and Meera's performance suggestions. You may disconnect at any time (Section 8).
 
 **Influora Digital Private Limited** ("Influora," "we," "us"), CIN `U73100MH2024PTC434321`, is the controller / Data Fiduciary for this data. Registered state: Maharashtra, India. Registered office: `[REGISTERED ADDRESS — TBD]`.
 
@@ -61,7 +61,7 @@ You may grant some permissions and decline others. We record only what Meta actu
 - Verify that a connected account genuinely belongs to you
 - Display your verified handle, follower count and audience profile to brands on Influora
 - Verify that a paid campaign deliverable was actually published, and measure its performance
-- Generate the analytics, scores and AI Copilot suggestions shown in your dashboard
+- Generate the analytics, scores and Meera's suggestions shown in your dashboard
 - Detect fake engagement and fraudulent accounts on the platform
 
 **We do not:** sell Meta Platform Data; share it with data brokers, ad networks or advertising platforms; use it for advertising targeting; use it to build profiles of people other than you; or transfer it to any third party except as described in Section 5.

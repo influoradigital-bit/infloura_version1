@@ -131,6 +131,12 @@ public class MeeraSessionService {
     static final int DEFAULT_HISTORY_LIMIT = 100;
 
     /**
+     * Photo check in Meera's chat, long chats -- the page size of {@link #listMessagesBefore}
+     * ({@code GET .../messages?before=}), matching the frontend's {@code MEERA_HISTORY_PAGE}.
+     */
+    public static final int HISTORY_PAGE_BEFORE = 50;
+
+    /**
      * Package-visible (not {@code private}) so {@link AICreditService#release} can consult it via
      * {@code IdempotencyService#isCompleted} — a COMPLETED row here for a given {@code turnId}
      * means that turn's assistant reply already persisted, which is exactly the condition that
@@ -931,6 +937,30 @@ public class MeeraSessionService {
             return List.copyOf(oldestFirst);
         }
         return messageRepository.findByConversationIdAndIdGreaterThanOrderByIdAsc(conversationId, afterMessageId);
+    }
+
+    /**
+     * Photo check in Meera's chat, long chats -- the page OLDER than {@code beforeMessageId}: up
+     * to {@link #HISTORY_PAGE_BEFORE} messages, returned oldest-first so the client can prepend
+     * them as they are. The reload shows only the newest {@link #DEFAULT_HISTORY_LIMIT}; before
+     * this cursor anything older was unreachable. Same tenant check as {@link
+     * #listMessages(String, String, String)}: an unknown or foreign conversation is a 404.
+     * Cursors on the ULID id, like {@code after}, and bounded by a database {@code LIMIT}.
+     */
+    @Transactional(readOnly = true)
+    public List<AiMessage> listMessagesBefore(String workspaceId, String conversationId, String beforeMessageId) {
+        conversationRepository
+                .findByIdAndWorkspaceId(conversationId, workspaceId)
+                .orElseThrow(
+                        () ->
+                                new ApiException(
+                                        "CONVERSATION_NOT_FOUND", "Conversation not found", HttpStatus.NOT_FOUND));
+        List<AiMessage> newestFirst =
+                messageRepository.findByConversationIdAndIdLessThanOrderByIdDesc(
+                        conversationId, beforeMessageId, PageRequest.of(0, HISTORY_PAGE_BEFORE));
+        List<AiMessage> oldestFirst = new ArrayList<>(newestFirst);
+        Collections.reverse(oldestFirst);
+        return List.copyOf(oldestFirst);
     }
 
     /**

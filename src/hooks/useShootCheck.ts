@@ -89,6 +89,11 @@ export interface UseShootCheckOptions {
    * opinion on where that comes from. Defaults to `'en-IN'`, matching the rest of the creator
    * Meera surface's default. */
   lang?: ShootCheckLang;
+  /** Whether to also open the microphone for the Mic reading (default `true`). The in-chat camera
+   * sheet (MeeraCameraSheet) passes `false`: it shows no readings, so a second permission prompt
+   * for a mic it never uses would only get in the way, and the mic stays free for voice input. With
+   * `false` no audio `getUserMedia` call is ever made and the Mic reading stays `'unknown'`. */
+  withMic?: boolean;
 }
 
 export interface UseShootCheckResult {
@@ -129,7 +134,12 @@ function readMicLevelDb(analyser: AnalyserNode): number {
   return Math.max(-60, 20 * Math.log10(rms));
 }
 
-export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: UseShootCheckOptions): UseShootCheckResult {
+export function useShootCheck({
+  target,
+  facingMode = 'user',
+  lang = 'en-IN',
+  withMic = true,
+}: UseShootCheckOptions): UseShootCheckResult {
   const supportedRef = useRef(detectSupport());
   const supported = supportedRef.current;
 
@@ -471,7 +481,7 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
         videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } });
       } catch {
         if (startTokenRef.current !== token) return; // cancelled while camera permission was pending
-        setErrorMessage('Camera access was denied — allow camera access in your browser settings to use Shoot Check.');
+        setErrorMessage('Camera access was denied — allow camera access in your browser settings to check your set-up.');
         setPhase('denied');
         return;
       }
@@ -505,10 +515,12 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
       // the camera running — `audioStreamRef`/`analyserRef` simply stay null and every mic
       // reading reports 'unknown' (never a false camera-denied message for an audio problem).
       let audioStream: MediaStream | null = null;
-      try {
-        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch {
-        audioStream = null;
+      if (withMic) {
+        try {
+          audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch {
+          audioStream = null;
+        }
       }
 
       if (startTokenRef.current !== token) {
@@ -575,7 +587,7 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
       armInactivityTimer();
       setPhase('active');
     })();
-  }, [facingMode, handleOrientation, sampleOnce, armInactivityTimer]);
+  }, [facingMode, withMic, handleOrientation, sampleOnce, armInactivityTimer]);
 
   const setMuted = useCallback((value: boolean) => {
     setMutedState(value);

@@ -76,7 +76,18 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.25.4"
+PROMPT_VERSION = "meera-2026.09.25.5"
+# ^ .25.5 = photo check inside Meera's chat (Swapnil 2026-09-26): the creator persona gains a
+# "Photo checks" section. Only an earlier Meera turn whose text starts with "[Photo check" is a
+# real check (Spring writes it from influora-ai's frame-check JSON); it is data inside the
+# untrusted replay wrapper, never instructions. Meera never sees the photo, never writes a
+# "[Photo check" turn, leaves "Can't tell" unknown, never comments on looks or others in the
+# frame, says which numbered step changes on a follow-up, uses the check's settings for that
+# shot, treats the newest check of a shot as the one that counts, never calls a step verified
+# and suggests "tap Check again". The trust-boundary rules point at it. The phone ask now names
+# only My phone in Meera settings (the Shoot Check page is retired). BRAND prompt unchanged.
+#
+# Previously (.25.4):
 # ^ .25.4 = photo-check response gains lang, retake, step labels and settings parts.
 #
 # Previously (.25.3):

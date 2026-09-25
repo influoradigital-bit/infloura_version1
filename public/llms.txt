@@ -27,7 +27,7 @@ Brands search the creator directory by niche, city, follower count and engagemen
 Either side can open a dispute in the Deal Room. The funds freeze while it is reviewed, both sides submit evidence from the same thread — brief, deliverables, message history — and on resolution the money either releases to the creator or returns to the brand. No manual bank transfers are involved. (https://influora.in/features/secure-payments)
 
 **Who is Meera?**
-Meera is Influora's built-in AI campaign co-pilot, included in every brand workspace. She suggests matching creators, works out a budget and per-reel rate from a stated goal, and drafts the campaign. She proposes; a human confirms every step that moves money. (https://influora.in/)
+Meera is Influora's built-in AI campaign manager, included in every brand workspace. She suggests matching creators, works out a budget and per-reel rate from a stated goal, and drafts the campaign. She proposes; a human confirms every step that moves money. (https://influora.in/)
 
 ## Key facts
 

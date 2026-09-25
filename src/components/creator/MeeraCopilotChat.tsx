@@ -1,11 +1,10 @@
 import * as React from 'react';
 import { useReducedMotion } from 'framer-motion';
-import { Send, Mic, MicOff, Volume2, VolumeX, X, Loader2, AudioLines, Lock } from 'lucide-react';
+import { Send, Mic, MicOff, Volume2, VolumeX, X, Loader2, AudioLines, Lock, Camera, ArrowDown } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { renderMeeraText } from '@/lib/meera-text';
 import {
   CREATOR_HISTORY_MAX_CHARS,
   CREATOR_HISTORY_MAX_TURNS,
@@ -14,34 +13,45 @@ import {
 } from '@/lib/meera-history';
 import { ApiError, isApiLive } from '@/lib/api';
 import {
+  MEERA_HISTORY_PAGE,
+  PHOTO_CHECK_SAME_PHOTO_PREFIX,
+  PHOTO_CHECK_USER_LINE_MAX,
   isCreatorLocalToolName,
   isCreatorToolName,
+  isSamePhotoRecheckLine,
   meeraApi,
-  type CreatorToolName,
-  type CreatorTrailToolName,
+  neutralisePhotoCheckHeader,
+  photoCheckFromHistoryCard,
+  type MeeraHistoryItem,
+  type MeeraShootCheckAsk,
+  type MeeraShotContext,
 } from '@/lib/meera-api';
-import { CreatorToolResultRenderer } from '@/components/creator/meera/CreatorToolResultRenderer';
-import { MeeraWorkTrail } from '@/components/creator/meera/MeeraWorkTrail';
-import { MeeraDesk } from '@/components/creator/meera/MeeraDesk';
-import { MeeraScriptCard } from '@/components/creator/meera/MeeraScriptCard';
-import { MeeraReviewCard } from '@/components/creator/meera/MeeraReviewCard';
-import { uniqueId } from '@/lib/unique-id';
 import {
-  parseMeeraReview,
-  parseMeeraScript,
-  type ParsedMeeraReview,
-  type ParsedMeeraScript,
-} from '@/lib/meera-result-cards';
+  MeeraMessageRow,
+  type ChatMessage,
+  type ChatMessageResultCard,
+  type CreatorToolResult,
+  type PhotoCheckCard,
+} from '@/components/creator/meera/MeeraMessageRow';
+import { MeeraDesk } from '@/components/creator/meera/MeeraDesk';
+import { MeeraCameraSheet } from '@/components/creator/meera/MeeraCameraSheet';
+import { MAX_COACH_ANSWERS, replyLangFor, type CoachAnswer } from '@/components/creator/shoot-check/CoachResult';
+import type { ShootCheckShot } from '@/components/creator/shoot-check/ShootCheckPanel';
+import type { ShootCheckLang } from '@/lib/shoot-check/advice-copy';
+import { shotFromBeat, shotFromLabel } from '@/lib/shoot-check/beat-to-shot';
+import { uniqueId } from '@/lib/unique-id';
+import { parseMeeraReview, parseMeeraScript, type ParsedMeeraScript } from '@/lib/meera-result-cards';
 import { useMeeraStream } from '@/hooks/useMeeraStream';
 import { useVoiceOutput } from '@/hooks/useVoiceOutput';
 import { useVoiceInput } from '@/hooks/useVoiceInput';
+import { useStickToBottom } from '@/hooks/useStickToBottom';
+import { useVisualViewportHeight } from '@/hooks/useVisualViewportHeight';
 import { VoicePoweredOrb } from '@/components/ui/voice-powered-orb';
 import { MeeraVoiceMode, type MeeraVoiceStatus } from '@/components/creator/meera/MeeraVoiceMode';
 import { useToast } from '@/hooks/use-toast';
 import { useCreatorCredits } from '@/hooks/useCreatorCredits';
 import { CreditBalancePill } from '@/components/creator/credits/CreditBalancePill';
 import { BuyCreditsSheet } from '@/components/creator/credits/BuyCreditsSheet';
-import { BuyCreditsCard } from '@/components/creator/credits/BuyCreditsCard';
 import { WelcomeCreditsModal } from '@/components/creator/credits/WelcomeCreditsModal';
 import { CreditCostHint } from '@/components/creator/credits/CreditCostHint';
 import { ZeroCreditsBanner } from '@/components/creator/credits/ZeroCreditsBanner';
@@ -52,11 +62,10 @@ import {
   HEADER_STATUS_ONLINE,
   HEADER_STATUS_SPEAKING,
   HEADER_STATUS_WORKING,
-  RESULT_CARD_SHOW_AS_CARD,
-  RESULT_CARD_SHOW_AS_TEXT,
   TRAIL_UNDERSTANDING,
   TRUST_LINE,
   pickLang,
+  type BilingualText,
 } from '@/lib/copy/meera-chat';
 import { MeeraActionStrip, MeeraQuickActions } from '@/components/creator/meera/MeeraQuickActions';
 import { actionBlockedReason } from '@/lib/creator-quick-actions';
@@ -73,81 +82,40 @@ import type { CreatorTurnAction } from '@/lib/meera-api';
  * logic that would need to no-op for every branch, or (b) risking a brand regression editing a
  * component with existing brand test coverage. Both panels talk to the SAME `meeraApi` — this one
  * just passes `role: 'creator'` everywhere (see meera-api.ts's MeeraRole threading).
- */
-
-/**
- * T-MEERA-CREATOR-PHASE-B (SPEC.md §8.3) — one of Meera's tool calls, captured against the
- * assistant turn it belongs to so it renders inline right after that message.
  *
- * `'pending'` is the loading state `onToolStart` appends; `onToolResult` REPLACES that same entry
- * in place rather than appending a second one. Only `'ok'`/`'error'` entries are handed to
- * {@link CreatorToolResultRenderer}, whose `status` prop is that two-value union.
+ * Photo check in Meera's chat (2026-09-26 build SPEC): the old Shoot Check page's "Check my
+ * frame" now lives here. A camera sheet (composer camera button, or "Check my set-up" on a script
+ * beat) captures one still; the result comes back as Meera's message with the coach card, and
+ * Spring stores a text summary of it so later turns ("now I'm standing") can use it.
+ *
+ * Long chats (same SPEC, section 3): rows are memoised (`MeeraMessageRow`), the list follows new
+ * content only when the reader is at the bottom (`useStickToBottom`), only the newest 50 rows are
+ * in the DOM ("Show earlier messages" reveals more, then pages older ones from the server), and
+ * rows that exist only on this screen are never replayed to the model (`buildModelHistory`).
  */
-interface CreatorToolResult {
-  id: string;
-  /**
-   * A Spring-backed creator tool (gets a card) or a LOCAL one (`get_creator_knowledge`), which
-   * gets only its work-trail step: no spinner row, no card, and its `data` (Influora's notes, the
-   * model's reference text) is never kept, so it can never be dumped into the chat.
-   */
-  name: CreatorTrailToolName;
-  status: 'pending' | 'ok' | 'error';
-  data?: unknown;
-  errorMessage?: string;
-  /** `get_creator_knowledge` only: the topic looked up, for the "notes on audio" trail label. */
-  topic?: string;
-}
 
-/**
- * PHASE-C-SPEC.md §2/§3 — the parsed shape of a finished-card message, or `undefined` for every
- * normal reply. A union keyed on `kind` rather than two optional fields, so a message can never
- * carry both (or neither with a truthy discriminant) by construction.
- */
-type ChatMessageResultCard =
-  | { kind: 'script'; script: ParsedMeeraScript }
-  | { kind: 'review'; review: ParsedMeeraReview };
-
-interface ChatMessage {
-  id: string;
-  role: 'meera' | 'creator';
-  text: string;
-  /** LIVE-only — never set in mock mode, which opens no stream and so sees no tool events. */
-  toolResults?: CreatorToolResult[];
-  /**
-   * T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F7) — true on the bubble created for a
-   * `CREATOR_CREDITS_EXHAUSTED`/`CREATOR_DAILY_CAP_REACHED` refusal, so the render below attaches
-   * a `BuyCreditsCard` right under it (R6 — the chat never just goes silent on a refusal).
-   */
-  creditsRefusal?: boolean;
-  /**
-   * MEERA-CHAT-DESIGN-SPEC.md Part A — true once THIS turn's stream has finished
-   * (`onDone`/`onError`/`onHeartbeatTimeout`), which is when `MeeraWorkTrail` collapses its live
-   * list into the "Meera did N things · Show" summary line. Undefined for every message that
-   * isn't a live, in-flight assistant turn (history rows, the mock-mode echo, the local
-   * greeting) — `MeeraWorkTrail` never renders anything for those anyway, since none of them
-   * carry `toolResults`.
-   */
-  toolTrailDone?: boolean;
-  /**
-   * PHASE-C-SPEC.md §3 — set only for a `meera` message whose FINAL text parsed as a script or a
-   * review (`parseResultCard` below). Never set from partial/streaming text — see the `onDone`
-   * handler, the only place a live turn's card is computed.
-   */
-  resultCard?: ChatMessageResultCard;
-  /** PHASE-C-SPEC.md §3 — "Show as text" toggle state for a message that has a `resultCard`.
-   *  `m.text` itself is never touched by this: the card renders while false, the ORIGINAL text
-   *  renders unchanged while true. Undefined/false is "show the card". */
-  showRawText?: boolean;
-}
-
-/**
- * PHASE-C-SPEC.md §1/§3 — tries the script contract, then the review contract, on a FINISHED
- * message's text. Returns `undefined` (never a partial object) the instant either parser does,
- * so the caller's fallback is always "render the plain bubble", exactly as if this function did
- * not exist.
- */
 /** What mock mode answers with when there is no backend to talk to. */
 const MOCK_MODE_REPLY = 'This is mock mode — connect a live backend to chat with Meera.';
+
+/** DOM window (SPEC 3b): rows rendered at once; "Show earlier messages" reveals this many more. */
+const CHAT_RENDER_WINDOW = 50;
+/** The creator `messages()` endpoint's first page (MeeraSessionService's cap). A first load this
+ *  long may have older rows on the server. */
+const CREATOR_HISTORY_FIRST_PAGE = 100;
+const PHONE_QUERY = '(max-width: 639px)';
+
+/** Hindi chat chrome is Devanagari (like the placeholder, the trust line and the lines below).
+ *  Only the check's own result card and its re-check line keep the server's Hinglish register. */
+const CAMERA_BUTTON: BilingualText = { en: 'Check my set-up', hi: 'सेट-अप चेक करें' };
+const SHOW_EARLIER: BilingualText = { en: 'Show earlier messages', hi: 'पहले के मैसेज दिखाएं' };
+const NEW_MESSAGES: BilingualText = { en: 'New messages', hi: 'नए मैसेज' };
+const PHOTO_CHECK_UNAVAILABLE: BilingualText = {
+  en: "I couldn't check your photo right now. Try again in a minute.",
+  hi: 'अभी आपकी फ़ोटो चेक नहीं हो पाई। एक मिनट बाद फिर कोशिश करें।',
+};
+/** The streamed and the non-streaming path's stand-in for a blank reply. Meera never said it, so
+ *  the row is `localOnly` and never replayed to her. */
+const BLANK_REPLY_TEXT = 'Sorry, I lost my train of thought there. Say that again?';
 
 function parseResultCard(text: string): ChatMessageResultCard | undefined {
   const script = parseMeeraScript(text);
@@ -157,29 +125,6 @@ function parseResultCard(text: string): ChatMessageResultCard | undefined {
   return undefined;
 }
 
-/**
- * What to say while a tool is still running. Typed `Record<CreatorToolName, string>` on purpose:
- * adding a seventh name to `CREATOR_TOOL_NAMES` (Phase B1/B7 add `send_routine_reply`,
- * `rank_open_campaigns`, `draft_application`) becomes a compile error here until it has a label,
- * rather than silently falling back to something vague.
- */
-const TOOL_PENDING_LABELS: Record<CreatorToolName, string> = {
-  get_my_deals: 'Looking up your deals…',
-  get_brief: 'Reading that brief…',
-  estimate_my_rate: 'Working out a rate…',
-  get_my_metrics: 'Pulling your metrics…',
-  check_deal_risks: 'Checking this deal…',
-  draft_reply: 'Drafting a reply…',
-  get_todays_topics: 'Checking today’s topics…',
-  plan_my_week: 'Planning your week…',
-};
-
-/**
- * The human-readable reason out of an ERROR `tool_result` payload. The Python loop yields
- * `{error: <code>, message: <text>}` on a Spring/mesh failure, and without this the card can only
- * show its own generic sentence — masking the actual cause (auth/mesh/scope) exactly the way the
- * brand panel's `toolErrorMessage` was written to stop doing.
- */
 /** The `topic` string out of a `get_creator_knowledge` tool_start input or result payload. */
 function knowledgeTopicOf(value: unknown): string | undefined {
   if (value && typeof value === 'object') {
@@ -189,6 +134,11 @@ function knowledgeTopicOf(value: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * The human-readable reason out of an ERROR `tool_result` payload. The Python loop yields
+ * `{error: <code>, message: <text>}` on a Spring/mesh failure, and without this the card can only
+ * show its own generic sentence — masking the actual cause (auth/mesh/scope).
+ */
 function toolErrorMessage(data: unknown): string | undefined {
   if (data && typeof data === 'object') {
     const d = data as { message?: unknown; error?: unknown };
@@ -248,12 +198,157 @@ function friendlyStreamErrorText(code: string, message: string | undefined): str
 }
 
 /** Client-side-only greeting shown while a brand-new conversation has no history yet. Never
- *  sent to the model as history — purely a "someone's home" placeholder while the backend's
- *  own day-one onboarding turn (SPEC.md §4.7) lands on the wire. */
+ *  sent to the model as history (`localOnly`) — purely a "someone's home" placeholder while the
+ *  backend's own day-one onboarding turn (SPEC.md §4.7) lands on the wire. */
 function onboardingGreeting(firstName: string, language: string): string {
   return language.startsWith('hi')
     ? `नमस्ते ${firstName}! मैं Meera हूं, Influora पर आपकी मैनेजर। मैं आपकी डील्स, कमाई और मेट्रिक्स समझने में मदद कर सकती हूं। आप क्या जानना चाहेंगे?`
     : `Hi ${firstName}! I'm Meera, your manager here on Influora. I can help you track your deals, understand your earnings, and answer questions about the platform. What would you like to know?`;
+}
+
+function newIdempotencyKey(prefix: string): string {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : uniqueId(prefix);
+}
+
+/** Clip to `max` Unicode code points (the server counts code points, not UTF-16 units). */
+function clipCodePoints(text: string, max: number): string {
+  const points = Array.from(text);
+  return points.length <= max ? text : points.slice(0, max).join('');
+}
+
+/** Same feature test as useShootCheck's own: the camera button is hidden without it. */
+function cameraSupportedNow(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof navigator !== 'undefined' &&
+    Boolean(navigator.mediaDevices?.getUserMedia) &&
+    window.isSecureContext
+  );
+}
+
+function shootLangFor(language: string): ShootCheckLang {
+  return language.startsWith('hi') ? 'hi-IN' : 'en-IN';
+}
+
+/** The creator line that starts a check: "Check my set-up: <shot label>", or without a shot. */
+function checkUserLine(shot: ShootCheckShot | null, language: string): string {
+  const base = pickLang(language, CAMERA_BUTTON);
+  const label = shot?.label.trim();
+  return clipCodePoints(label ? `${base}: ${label}` : base, PHOTO_CHECK_USER_LINE_MAX);
+}
+
+/** The planned shot as `shot_context`; the label stands in as `line` when the beat gave none
+ *  (the same rule the old Shoot Check page used). */
+function shotContextFor(shot: ShootCheckShot | null): MeeraShotContext | undefined {
+  if (!shot) return undefined;
+  const context: MeeraShotContext = { ...(shot.context ?? {}) };
+  if (shot.label.trim() && !context.line?.trim()) context.line = shot.label.trim();
+  return Object.values(context).some((v) => typeof v === 'string' && v.trim()) ? context : undefined;
+}
+
+/**
+ * The history a chat turn sends to the model (long-chat bug 4, Ash 5 and 8):
+ * - rows marked `localOnly` (greeting, mock reply, errors, timeouts, credits refusals, photo-check
+ *   placeholders and failures) and rows with no text are dropped: Meera never said them;
+ * - only the NEWEST check of each photo is kept, with its own creator line (a chip re-check
+ *   replaces the check before it, instead of taking two more of the 20 history slots);
+ * - every row that is not a real photo-check card has a leading "[Photo check" neutralised;
+ * - then the usual 20-message / 16,000-character window (meera-history).
+ */
+function buildModelHistory(messages: ChatMessage[], newUserText: string): HistoryTurn[] {
+  const newestOfPhoto = new Map<string, string>();
+  for (const m of messages) {
+    if (m.resultCard?.kind === 'photoCheck' && !m.localOnly && m.text.trim()) {
+      newestOfPhoto.set(m.resultCard.photoId, m.id);
+    }
+  }
+  const skip = new Set<string>();
+  messages.forEach((m, i) => {
+    if (m.resultCard?.kind !== 'photoCheck') return;
+    const photoId = m.resultCard.photoId;
+    if (newestOfPhoto.get(photoId) === m.id) return;
+    skip.add(m.id);
+    const before = messages[i - 1];
+    if (before && before.role === 'creator' && before.photoCheckUserOf === photoId) skip.add(before.id);
+  });
+
+  const turns: HistoryTurn[] = [];
+  for (const m of messages) {
+    if (m.localOnly || m.photoCheckPending || skip.has(m.id) || !m.text.trim()) continue;
+    const realCheck = m.role === 'meera' && m.resultCard?.kind === 'photoCheck';
+    turns.push({
+      role: m.role === 'creator' ? 'user' : 'assistant',
+      // Ash 5: only a real card row may start a line with "[Photo check" (meera-api.ts).
+      content: realCheck ? m.text : neutralisePhotoCheckHeader(m.text),
+    });
+  }
+  turns.push({ role: 'user', content: neutralisePhotoCheckHeader(newUserText) });
+  return recentHistory(turns, CREATOR_HISTORY_MAX_TURNS, CREATOR_HISTORY_MAX_CHARS);
+}
+
+/**
+ * Stored history rows to chat rows. A row with a server `card` of kind `photo_check` becomes a
+ * photo-check card built from that metadata (SPEC 2d) — NEVER from its text, so a reply that
+ * imitates the summary cannot become a card. A re-check (its creator row starts with the
+ * "Same photo" line, `isSamePhotoRecheckLine`) keeps the photo id of the check before it, so the
+ * replay rule above still keeps only the newest check of each photo after a reload.
+ */
+function mapHistoryItems(items: MeeraHistoryItem[]): ChatMessage[] {
+  const rows: ChatMessage[] = [];
+  let lastPhotoId: string | null = null;
+  for (const item of items) {
+    const role: ChatMessage['role'] = item.role === 'ASSISTANT' ? 'meera' : 'creator';
+    const stored = role === 'meera' ? photoCheckFromHistoryCard(item.card) : null;
+    if (stored) {
+      const before = rows[rows.length - 1];
+      const recheck =
+        !!before &&
+        before.role === 'creator' &&
+        lastPhotoId !== null &&
+        isSamePhotoRecheckLine(before.text);
+      const photoId: string = recheck && lastPhotoId ? lastPhotoId : uniqueId('photo');
+      lastPhotoId = photoId;
+      if (before && before.role === 'creator') rows[rows.length - 1] = { ...before, photoCheckUserOf: photoId };
+      const card: PhotoCheckCard = {
+        kind: 'photoCheck',
+        result: stored.result,
+        shotLabel: stored.shotLabel,
+        photoId,
+      };
+      rows.push({ id: item.id, role, text: item.content, resultCard: card });
+      continue;
+    }
+    // History text is always complete (never a streaming partial), so it is safe to parse
+    // immediately rather than deferring to an `onDone` this row has no stream for.
+    rows.push({ id: item.id, role, text: item.content, resultCard: role === 'meera' ? parseResultCard(item.content) : undefined });
+  }
+  return rows;
+}
+
+/** Every beat of a script as a camera-sheet shot. */
+function shotsOfScript(script: ParsedMeeraScript): ShootCheckShot[] {
+  return script.beats.map((_, i) => shotFromBeat(script, i));
+}
+
+/** The newest script card in the chat, for the composer camera's shot picker. */
+function newestScript(messages: ChatMessage[]): ParsedMeeraScript | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const card = messages[i].resultCard;
+    if (card?.kind === 'script' && card.script.beats.length > 0) return card.script;
+  }
+  return null;
+}
+
+/** The one in-memory still for chip re-checks (SPEC 1e): the newest check only, never persisted,
+ *  gone when the chat unmounts. */
+interface PhotoCheckSession {
+  messageId: string;
+  photoId: string;
+  blob: Blob;
+  shot: ShootCheckShot | null;
+  answers: CoachAnswer[];
 }
 
 export interface MeeraCopilotChatProps {
@@ -285,6 +380,11 @@ export interface MeeraCopilotChatProps {
    * (the brief flow already exists there, with its own 3-credit charge). Omitted = no brief button.
    */
   onAnalyseBrief?: () => void;
+  /**
+   * Photo check SPEC section 4 — the old `/creator/shoot-check` link lands here with `?camera=1`.
+   * The camera sheet opens once, after the chat has connected (live: once it has a conversation).
+   */
+  openCameraOnMount?: boolean;
 }
 
 export function MeeraCopilotChat({
@@ -294,6 +394,7 @@ export function MeeraCopilotChat({
   onConsentRequired,
   prefillMessage,
   onAnalyseBrief,
+  openCameraOnMount = false,
 }: MeeraCopilotChatProps) {
   const [live] = React.useState(() => isApiLive());
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
@@ -304,28 +405,38 @@ export function MeeraCopilotChat({
   /**
    * MEERA-CHAT-DESIGN-SPEC.md Part A — true once the CURRENT turn has produced its first real
    * signal (a token or a tool_start). Before that, and only while `sending`, the messages list
-   * shows the one placeholder trail step "Understanding your question…" (replacing the old
-   * plain "Thinking…" line) — see the render below. Reset to false at the start of every send.
+   * shows the one placeholder trail step "Understanding your question…". Reset at every send.
    */
   const [turnStarted, setTurnStarted] = React.useState(false);
   const [draft, setDraft] = React.useState('');
   // 2026-09-22 — a quick-action button the chat box is currently in ("Write a script" /
   // "Review my profile"). The next Send goes out as that action and is charged as it.
   const [action, setAction] = React.useState<CreatorTurnAction | null>(null);
+  const rootRef = React.useRef<HTMLDivElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   // Round 2 QA — a stable id for the composer `<Textarea>` so `handleSendClick` can focus it
-  // without needing `Textarea` (a shared shadcn primitive, `components/ui/textarea.tsx`) to
-  // forward a ref, which it does not do today.
+  // without needing `Textarea` (a shared shadcn primitive) to forward a ref.
   const composerId = React.useId();
   const reduceMotion = useReducedMotion();
   const stream = useMeeraStream();
   const { toast } = useToast();
 
+  // Photo check (SPEC 1b-1e).
+  const [cameraSupported] = React.useState(cameraSupportedNow);
+  const [camera, setCamera] = React.useState<{ shots: ShootCheckShot[]; initialShotIndex?: number } | null>(null);
+  const [checking, setChecking] = React.useState(false);
+  const [liveCheckId, setLiveCheckId] = React.useState<string | null>(null);
+  const photoSessionRef = React.useRef<PhotoCheckSession | null>(null);
+
+  // Long chats (SPEC 3b): the DOM window starts at this row; null means "the newest 50".
+  const [firstVisibleId, setFirstVisibleId] = React.useState<string | null>(null);
+  const [olderOnServer, setOlderOnServer] = React.useState(false);
+  const [loadingOlder, setLoadingOlder] = React.useState(false);
+  const anchorRef = React.useRef<{ height: number; top: number } | null>(null);
+
   // T-CREATOR-CREDITS-V2 (SPEC.md §9.3) — the ONE `GET /creator/credits` fetch for this panel.
-  // `credits.enabled` gates every credits-UI piece below; with the server flag off (or the fetch
-  // simply hasn't resolved yet) none of it renders and this component behaves exactly as it did
-  // before this ticket.
   const credits = useCreatorCredits();
+  const refreshCredits = credits.refresh;
   const [buySheetOpen, setBuySheetOpen] = React.useState(false);
 
   const {
@@ -362,6 +473,48 @@ export function MeeraCopilotChat({
     setVoiceModeOpen(false);
   };
 
+  // What the stable row callbacks below read at call time. Written after every commit, never
+  // during render, so the callbacks themselves never change identity (memoised rows, SPEC 3b).
+  // The voice hooks' stop functions are read here too, so no row callback depends on their
+  // identity.
+  const latestRef = React.useRef({
+    messages,
+    sending,
+    checking,
+    voiceModeOpen,
+    isListening,
+    conversationId,
+    language,
+    stopListening,
+    stopSpeaking,
+  });
+  React.useLayoutEffect(() => {
+    latestRef.current = {
+      messages,
+      sending,
+      checking,
+      voiceModeOpen,
+      isListening,
+      conversationId,
+      language,
+      stopListening,
+      stopSpeaking,
+    };
+  });
+
+  // ---- Scroll that respects the reader (SPEC 3b) -------------------------------------------
+  const lastRow = messages[messages.length - 1];
+  const contentKey = [
+    lastRow?.id ?? '',
+    lastRow?.text.length ?? 0,
+    lastRow?.toolResults?.map((t) => t.status).join(',') ?? '',
+    lastRow?.photoCheckPending ? 'p' : '',
+    sending ? 's' : '',
+    turnStarted ? 't' : '',
+  ].join('|');
+  const stick = useStickToBottom(scrollRef, { contentKey, reduceMotion });
+  const { forceScroll } = stick;
+
   /**
    * Fix round 1, Q4 item (2): pulled out of the mount effect so the `connectError` retry button
    * can re-run the exact same connect sequence instead of forcing a full page reload — a dead
@@ -380,24 +533,23 @@ export function MeeraCopilotChat({
             .getHistory(session.conversationId, 'creator')
             .then((history) => {
               if (onCancelledRef.current) return;
+              forceScroll();
               if (history.length > 0) {
-                setMessages(
-                  history.map((m) => {
-                    const role: ChatMessage['role'] = m.role === 'ASSISTANT' ? 'meera' : 'creator';
-                    // History text is always complete (never a streaming partial), so it is safe
-                    // to parse immediately rather than deferring to an `onDone` this row has no
-                    // stream for.
-                    return { id: m.id, role, text: m.content, resultCard: role === 'meera' ? parseResultCard(m.content) : undefined };
-                  }),
-                );
+                setMessages(mapHistoryItems(history));
+                setFirstVisibleId(null);
+                setOlderOnServer(history.length >= CREATOR_HISTORY_FIRST_PAGE);
               } else {
                 // Backend day-one onboarding hasn't sent a first turn yet (or this build predates
                 // it) — show a local, non-persisted greeting so the panel never opens blank.
-                setMessages([{ id: uniqueId('meera-greet'), role: 'meera', text: onboardingGreeting(firstName, language) }]);
+                setMessages([
+                  { id: uniqueId('meera-greet'), role: 'meera', text: onboardingGreeting(firstName, language), localOnly: true },
+                ]);
               }
             })
             .catch(() => {
-              setMessages([{ id: uniqueId('meera-greet'), role: 'meera', text: onboardingGreeting(firstName, language) }]);
+              setMessages([
+                { id: uniqueId('meera-greet'), role: 'meera', text: onboardingGreeting(firstName, language), localOnly: true },
+              ]);
             });
         })
         .catch((err: unknown) => {
@@ -412,13 +564,15 @@ export function MeeraCopilotChat({
           if (!onCancelledRef.current) setConnecting(false);
         });
     },
-    [firstName, language, onConsentRequired],
+    [firstName, language, onConsentRequired, forceScroll],
   );
 
   React.useEffect(() => {
     if (!live) {
       setConnecting(false);
-      setMessages([{ id: uniqueId('meera-mock'), role: 'meera', text: onboardingGreeting(firstName, language) }]);
+      setMessages([
+        { id: uniqueId('meera-mock'), role: 'meera', text: onboardingGreeting(firstName, language), localOnly: true },
+      ]);
       return;
     }
     const cancelledRef = { current: false };
@@ -434,37 +588,18 @@ export function MeeraCopilotChat({
   }, [connectToMeera]);
 
   // U-5 — fill the composer, never send. The TOKEN guard below stops an unrelated re-render of
-  // the caller (new `prefillMessage` object, same token) from re-firing; it does NOT by itself
-  // stop two DIFFERENT tokens carrying the same text from both appending (a fast double-click on
-  // "Ask Meera" resolves as two distinct requests) — the effect's own text-suffix check (PRIYA-
-  // LASTCALL-U3-U5-0917.md, U-5 LOW (c)) is what makes a back-to-back repeat of the same prompt a
-  // no-op instead of appending it twice.
+  // the caller (new `prefillMessage` object, same token) from re-firing; the effect's own
+  // text-suffix check (PRIYA-LASTCALL-U3-U5-0917.md, U-5 LOW (c)) is what makes a back-to-back
+  // repeat of the same prompt a no-op instead of appending it twice.
   const appliedPrefillTokenRef = React.useRef<number | null>(null);
   React.useEffect(() => {
     if (!prefillMessage || prefillMessage.token === appliedPrefillTokenRef.current) return;
     appliedPrefillTokenRef.current = prefillMessage.token;
     setDraft((prev) => {
-      // PRIYA-LASTCALL-U3-U5-0917.md, U-5 LOW (c) — the page's own consent re-probe is async, so
-      // a fast double-click on "Ask Meera" produces two DISTINCT tokens (each request increments
-      // the counter) before the first click's own effect has run, and both carry the same
-      // prompt text. Token equality alone (the check above) does not catch that, since the two
-      // tokens are genuinely different. Skip re-appending when the composer already ends with
-      // this exact text, rather than doubling it up.
       if (prev.endsWith(prefillMessage.text)) return prev;
       return prev.trim() ? `${prev} ${prefillMessage.text}` : prefillMessage.text;
     });
   }, [prefillMessage]);
-
-  React.useEffect(() => {
-    const el = scrollRef.current;
-    // Feature-detect rather than assume `scrollTo` exists — jsdom (this repo's test DOM) has no
-    // implementation, and an unguarded call throws inside the effect, uncaught, on every render
-    // that touches this panel (this is how F-0324-shaped bugs get missed: it only ever throws in
-    // an environment nobody currently asserts against).
-    if (el && typeof el.scrollTo === 'function') {
-      el.scrollTo({ top: el.scrollHeight, behavior: reduceMotion ? 'auto' : 'smooth' });
-    }
-  }, [messages, sending, reduceMotion]);
 
   React.useEffect(() => {
     return () => stopSpeaking();
@@ -473,10 +608,8 @@ export function MeeraCopilotChat({
   /**
    * T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F8) — the monthly-grant and 7-day paid-expiry toasts.
    * Both are "at most once" guards backed by `localStorage` (try/catch — same discipline as
-   * `WelcomeCreditsModal`'s seen-marker): the monthly one keyed by `monthly.period` (a fresh
-   * period is a fresh toast, forever, one per period), the expiry one keyed by the IST calendar
-   * day so a creator who has the panel open across a day boundary sees at most one per day, not
-   * one per fetch.
+   * `WelcomeCreditsModal`'s seen-marker): the monthly one keyed by `monthly.period`, the expiry
+   * one keyed by the IST calendar day.
    */
   React.useEffect(() => {
     const balance = credits.balance;
@@ -521,18 +654,191 @@ export function MeeraCopilotChat({
 
   /**
    * MEERA-CHAT-DESIGN-SPEC.md Part B — the desk's tiles/starter prompts and "Ask Meera my rate"
-   * all go through this: fill the composer, never send (R-U1, same rule the `prefillMessage`
-   * prop already follows). Appends to whatever is already typed rather than overwriting it, for
-   * the same reason the `prefillMessage` effect above does.
+   * all go through this: fill the composer, never send (R-U1).
    */
   const prefillComposer = React.useCallback((text: string) => {
     setDraft((prev) => (prev.trim() ? `${prev} ${text}` : text));
   }, []);
 
+  // ---- Stable row callbacks (SPEC 3b) -------------------------------------------------------
+  const handleToggleRaw = React.useCallback((messageId: string) => {
+    setMessages((prev) => prev.map((row) => (row.id === messageId ? { ...row, showRawText: !row.showRawText } : row)));
+  }, []);
+
+  const handleCredited = React.useCallback(() => {
+    void refreshCredits();
+  }, [refreshCredits]);
+
+  /** Opens the camera sheet. Stops the mic and any reply being read aloud first, and never opens
+   *  over voice mode (SPEC 1b "Before opening"). */
+  const openCamera = React.useCallback(
+    (shots: ShootCheckShot[], initialShotIndex?: number) => {
+      const latest = latestRef.current;
+      if (latest.voiceModeOpen || latest.checking || latest.sending) return;
+      if (latest.isListening) latest.stopListening();
+      latest.stopSpeaking();
+      setCamera({ shots, initialShotIndex });
+    },
+    [],
+  );
+
+  const handleCheckShot = React.useCallback(
+    (messageId: string, beatIndex: number) => {
+      const row = latestRef.current.messages.find((m) => m.id === messageId);
+      if (row?.resultCard?.kind !== 'script') return;
+      openCamera(shotsOfScript(row.resultCard.script), beatIndex);
+    },
+    [openCamera],
+  );
+
+  const openComposerCamera = React.useCallback(() => {
+    const script = newestScript(latestRef.current.messages);
+    openCamera(script ? shotsOfScript(script) : []);
+  }, [openCamera]);
+
+  /**
+   * One photo check, start to finish (SPEC 1c/1d): the creator's line and a "Looking at your
+   * photo…" placeholder go in at once, then `checkFrame` (with the conversation, so Spring stores
+   * the pair, and a fresh idempotency key), then the placeholder becomes the result card — or a
+   * `localOnly` failure bubble, and the creator's line turns `localOnly` too, since nothing was
+   * saved. On success the rows take the server's ids.
+   */
+  const runPhotoCheck = React.useCallback(
+    async (args: { blob: Blob; shot: ShootCheckShot | null; answers: CoachAnswer[]; photoId: string; userLine: string }) => {
+      const latest = latestRef.current;
+      if (latest.checking) return;
+      latest.checking = true;
+      setChecking(true);
+      const userRowId = uniqueId('creator-check');
+      const placeholderId = uniqueId('meera-check');
+      forceScroll();
+      setMessages((prev) => [
+        ...prev,
+        { id: userRowId, role: 'creator', text: args.userLine, photoCheckUserOf: args.photoId },
+        { id: placeholderId, role: 'meera', text: '', photoCheckPending: true, localOnly: true },
+      ]);
+      const conversation = live ? latest.conversationId : null;
+      try {
+        const outcome = await meeraApi.checkFrame(args.blob, args.shot?.label.trim() || undefined, 'creator', {
+          shotContext: shotContextFor(args.shot),
+          answers: args.answers.map((a) => ({ id: a.ask.id, option: a.option })),
+          ...(conversation ? { conversationId: conversation } : {}),
+          idempotencyKey: newIdempotencyKey('photo-check'),
+          userLine: args.userLine,
+        });
+
+        if (outcome.kind === 'ok') {
+          const chat = outcome.chat;
+          const text = chat?.text?.trim() ? chat.text : '';
+          const cardId = chat?.messageId || placeholderId;
+          const userId = chat?.userMessageId || userRowId;
+          const card: PhotoCheckCard = {
+            kind: 'photoCheck',
+            result: outcome.result,
+            shotLabel: args.shot?.label.trim() || undefined,
+            shot: args.shot,
+            answers: args.answers,
+            photoId: args.photoId,
+          };
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id === userRowId) return { ...m, id: userId, ...(text ? {} : { localOnly: true as const }) };
+              if (m.id === placeholderId) {
+                return { id: cardId, role: 'meera', text, resultCard: card, ...(text ? {} : { localOnly: true as const }) };
+              }
+              return m;
+            }),
+          );
+          photoSessionRef.current = { messageId: cardId, photoId: args.photoId, blob: args.blob, shot: args.shot, answers: args.answers };
+          setLiveCheckId(cardId);
+          return;
+        }
+
+        const failText =
+          outcome.kind === 'capped' ? outcome.message : pickLang(latest.language, PHOTO_CHECK_UNAVAILABLE);
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id === userRowId) return { ...m, localOnly: true };
+            if (m.id === placeholderId) return { id: placeholderId, role: 'meera', text: failText, localOnly: true };
+            return m;
+          }),
+        );
+      } finally {
+        latestRef.current.checking = false;
+        setChecking(false);
+      }
+    },
+    [forceScroll, live],
+  );
+
+  const handleCapture = React.useCallback(
+    (blob: Blob, shot: ShootCheckShot | null) => {
+      setCamera(null);
+      void runPhotoCheck({
+        blob,
+        shot,
+        answers: [],
+        photoId: uniqueId('photo'),
+        userLine: checkUserLine(shot, latestRef.current.language),
+      });
+    },
+    [runPhotoCheck],
+  );
+
+  /** A tapped chip re-checks the SAME still with the answers so far (SPEC 1e). Only the newest
+   *  card's chips are live; anything else is ignored. */
+  const handleCoachAnswer = React.useCallback(
+    (messageId: string, ask: MeeraShootCheckAsk, option: number) => {
+      const session = photoSessionRef.current;
+      const latest = latestRef.current;
+      if (!session || session.messageId !== messageId || latest.checking || latest.sending) return;
+      const row = latest.messages.find((m) => m.id === messageId);
+      if (row?.resultCard?.kind !== 'photoCheck') return;
+      const replyLang = replyLangFor(row.resultCard.result, shootLangFor(latest.language));
+      const answers = [...session.answers.filter((a) => a.ask.id !== ask.id), { ask, option }].slice(-MAX_COACH_ANSWERS);
+      const said = answers.map((a) => a.ask.options[a.option]?.[replyLang] ?? '').filter(Boolean);
+      const prefix = PHOTO_CHECK_SAME_PHOTO_PREFIX[replyLang];
+      void runPhotoCheck({
+        blob: session.blob,
+        shot: session.shot,
+        answers,
+        photoId: session.photoId,
+        userLine: clipCodePoints(said.length > 0 ? `${prefix} ${said.join('; ')}` : prefix, PHOTO_CHECK_USER_LINE_MAX),
+      });
+    },
+    [runPhotoCheck],
+  );
+
+  /** "Check again" (or "Take a new photo" on an older card): the camera on the same shot. A card
+   *  that came back from history has only its label, so the shot (framing target, angle, action,
+   *  on_camera) is rebuilt from it (`shotFromLabel`). */
+  const handlePhotoRetake = React.useCallback(
+    (messageId: string) => {
+      const row = latestRef.current.messages.find((m) => m.id === messageId);
+      if (row?.resultCard?.kind !== 'photoCheck') return;
+      const { shot, shotLabel } = row.resultCard;
+      const again: ShootCheckShot | null = shot ?? (shotLabel ? shotFromLabel(shotLabel) : null);
+      openCamera(again ? [again] : [], again ? 0 : undefined);
+    },
+    [openCamera],
+  );
+
+  // The old /creator/shoot-check link (SPEC 4): open the camera once, after connecting.
+  const openedOnMountRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!openCameraOnMount || openedOnMountRef.current) return;
+    if (connecting || connectError) return;
+    if (live && !conversationId) return;
+    openedOnMountRef.current = true;
+    openComposerCamera();
+  }, [openCameraOnMount, connecting, connectError, live, conversationId, openComposerCamera]);
+
   const handleSend = () => {
     const typed = draft.trim();
     const currentAction = action;
-    if (sending) return;
+    // Ash 13: never while a photo check is in flight, or the stored order would differ from the
+    // screen's (the check's pair is written when it completes).
+    if (sending || checking) return;
     // A script needs a topic; a profile review may be sent with no extra text.
     if (!typed && currentAction !== 'PROFILE_REVIEW') return;
     if (currentAction && actionBlockedReason(currentAction, credits.balance, language)) return;
@@ -546,11 +852,14 @@ export function MeeraCopilotChat({
           : typed;
     setAction(null);
     setDraft('');
+    // A send jumps to the bottom, and the DOM window goes back to the newest rows (plus this turn).
+    forceScroll();
+    const windowStart = messages[Math.max(0, messages.length + 1 - CHAT_RENDER_WINDOW)];
+    setFirstVisibleId(messages.length + 1 > CHAT_RENDER_WINDOW && windowStart ? windowStart.id : null);
     setMessages((prev) => [...prev, { id: uniqueId('creator'), role: 'creator', text }]);
 
     if (!live) {
-      // Mock mode — no backend to talk to. Echo a short, honest placeholder rather than a
-      // scripted brand-shaped conversation this panel has no script for.
+      // Mock mode — no backend to talk to. Echo a short, honest placeholder.
       window.setTimeout(() => {
         setMessages((prev) => [
           ...prev,
@@ -561,6 +870,7 @@ export function MeeraCopilotChat({
             role: 'meera',
             text: MOCK_MODE_REPLY,
             resultCard: parseResultCard(MOCK_MODE_REPLY),
+            localOnly: true,
           },
         ]);
       }, 500);
@@ -573,44 +883,27 @@ export function MeeraCopilotChat({
     const assistantId = uniqueId('meera');
     let assistantText = '';
     let bubbleAdded = false;
+    // Built from the rows as they were when the creator pressed Send (bug 4: local-only rows out).
+    const conversation = buildModelHistory(messages, text);
 
     /**
      * §8.3 — edit this turn's tool-result list, creating the assistant bubble FIRST if the stream
-     * has not produced a token yet.
-     *
-     * The lazy create is the whole point: a `tool_start`/`tool_result` can legitimately arrive
-     * before any token (the model calls a tool before it narrates anything), and the bubble is
-     * only born in `onToken`. Without this the card would have no message to attach to and would
-     * be dropped silently. Pattern copied from the brand panel's `onToolResult`
-     * (`components/feature/meera/MeeraChatPanel.tsx`), which solves exactly this — formatting
-     * deliberately not copied, see the fork note at the top of this file.
-     *
-     * `bubbleAdded` is assigned inside the updater because `exists` is only knowable there. The
-     * assignment is idempotent, so a double-invoked updater (StrictMode) is harmless.
+     * has not produced a token yet (a `tool_start` can arrive before any token). `bubbleAdded` is
+     * assigned inside the updater because `exists` is only knowable there; the assignment is
+     * idempotent, so a double-invoked updater (StrictMode) is harmless.
      */
     const editToolResults = (edit: (current: CreatorToolResult[]) => CreatorToolResult[]) => {
       setMessages((prev) => {
         const exists = prev.some((m) => m.id === assistantId);
-        const base = exists
-          ? prev
-          : [...prev, { id: assistantId, role: 'meera' as const, text: assistantText }];
+        const base = exists ? prev : [...prev, { id: assistantId, role: 'meera' as const, text: assistantText }];
         if (!exists) bubbleAdded = true;
-        return base.map((m) =>
-          m.id === assistantId ? { ...m, toolResults: edit(m.toolResults ?? []) } : m,
-        );
+        return base.map((m) => (m.id === assistantId ? { ...m, toolResults: edit(m.toolResults ?? []) } : m));
       });
     };
 
     // T-CREATOR-CREDITS-V2 (SPEC.md §9.2, F3/K-27) — ONE Idempotency-Key per user message,
-    // minted here (not inside `meeraApi.sendTurn`, whose own default would mint a fresh one every
-    // call). Nothing in this panel retries a send today, so there is currently only ever one POST
-    // per key — but the key still has to be minted at the call site and handed to `sendTurn`
-    // rather than left to its default, so that if/when a retry path is added here it can resend
-    // this SAME key instead of double-charging the creator for one logical turn.
-    const turnIdempotencyKey =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : uniqueId('turn-idem');
+    // minted here so a future retry path can resend this SAME key instead of double-charging.
+    const turnIdempotencyKey = newIdempotencyKey('turn-idem');
 
     meeraApi
       .sendTurn(conversationId, text, 'creator', {
@@ -621,22 +914,23 @@ export function MeeraCopilotChat({
         ...(currentAction ? { action: currentAction } : {}),
       })
       .then((turnRes) => {
-        // Review finding #6 — creditsRemaining is `number | null` on the wire type (the server's
-        // Integer is nullable); today it is always a number (0 when the flag is off), but a null
-        // guard here keeps a future server regression from crashing the optimistic pill update
-        // instead of just skipping it (the trailing credits.refresh() below still corrects it).
+        // Review finding #6 — creditsRemaining is `number | null` on the wire type.
         if (turnRes.creditsRemaining != null) {
           credits.applyCreditsRemaining(turnRes.creditsRemaining);
         }
         void credits.refresh();
 
         if (turnRes.reply != null) {
-          const replyText = turnRes.reply.trim() || "Sorry, I lost my train of thought there. Say that again?";
+          const blank = turnRes.reply.trim() === '';
+          const replyText = blank ? BLANK_REPLY_TEXT : turnRes.reply;
           // Non-streaming reply — the text is already final, so (PHASE-C-SPEC.md §3) it is parsed
-          // immediately rather than waiting for a stream `onDone` this path never opens.
+          // immediately rather than waiting for a stream `onDone` this path never opens. A blank
+          // reply's stand-in is local only, exactly as on the streamed path: never replayed.
           setMessages((prev) => [
             ...prev,
-            { id: assistantId, role: 'meera', text: replyText, resultCard: parseResultCard(replyText) },
+            blank
+              ? { id: assistantId, role: 'meera', text: replyText, localOnly: true }
+              : { id: assistantId, role: 'meera', text: replyText, resultCard: parseResultCard(replyText) },
           ]);
           if (!currentAction) speak(replyText, language, turnRes.messageId);
           setSending(false);
@@ -651,6 +945,7 @@ export function MeeraCopilotChat({
               setTurnStarted(true);
               assistantText += event.text;
               const rendered = assistantText;
+              // Every other row keeps its object identity, so only this row re-renders (SPEC 3b).
               setMessages((prev) => {
                 if (!bubbleAdded) {
                   bubbleAdded = true;
@@ -660,17 +955,8 @@ export function MeeraCopilotChat({
               });
             },
             /**
-             * §8.3 — append a loading card. An unknown name is IGNORED with a dev-only warn: it
-             * is a tool this build has no card for (a newer AI-service build, or a brand tool
-             * leaking onto a creator stream), and a spinner for it would promise a card that can
-             * never arrive. Never thrown on — a stray tool name must not take the chat down.
-             *
-             * A KNOWN name whose card has not been built yet (`draft_reply`, B0-49 — `get_brief`,
-             * B0-44, is wired up as of U-4) deliberately DOES get its spinner, which then resolves
-             * to nothing. The gate here is `isCreatorToolName` and nothing narrower on purpose: a second,
-             * hand-maintained "names that have a card" list would silently stop rendering a card
-             * the day someone added one to the renderer's switch and forgot this file — the exact
-             * failure mode this ticket exists to fix.
+             * §8.3 — append a loading card. An unknown name is IGNORED with a dev-only warn: a
+             * spinner for it would promise a card that can never arrive. Never thrown on.
              */
             onToolStart: (event) => {
               setTurnStarted(true);
@@ -691,10 +977,8 @@ export function MeeraCopilotChat({
 
             /**
              * §8.3 — REPLACE this tool's loading card rather than appending beside it. Matched on
-             * the first still-`pending` entry with the same name, so a turn that calls the same
-             * tool twice resolves the older spinner first and never leaves one spinning forever.
-             * With no pending entry to replace (a `tool_result` with no preceding `tool_start`)
-             * the result is appended, so it is still shown.
+             * the first still-`pending` entry with the same name; with none, the result is
+             * appended, so it is still shown.
              */
             onToolResult: (event) => {
               const name = event.name;
@@ -704,9 +988,8 @@ export function MeeraCopilotChat({
                 }
                 return;
               }
-              // A LOCAL tool's payload is Meera's reference text ({topic, knowledge}) or its own
-              // {error, topics} refusal: neither is for the creator, so only the status and the
-              // topic are kept. No `data` means nothing downstream can ever render it.
+              // A LOCAL tool's payload is Meera's reference text or its own refusal: neither is
+              // for the creator, so only the status and the topic are kept.
               const resolved: CreatorToolResult = isCreatorLocalToolName(name)
                 ? { id: uniqueId('tool'), name, status: event.status, topic: knowledgeTopicOf(event.data) }
                 : {
@@ -729,28 +1012,20 @@ export function MeeraCopilotChat({
 
             onDone: () => {
               setSending(false);
-              // MEERA-CHAT-DESIGN-SPEC.md Part A — this turn's stream is finished, so its work
-              // trail (if it has one) collapses to the summary line. A no-op when the bubble
-              // was never created (no tokens, no tool calls at all).
-              setMessages((prev) =>
-                prev.map((m) => (m.id === assistantId ? { ...m, toolTrailDone: true } : m)),
-              );
+              // MEERA-CHAT-DESIGN-SPEC.md Part A — this turn's work trail collapses.
+              setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, toolTrailDone: true } : m)));
               if (assistantText.trim() === '') {
-                assistantText = "Sorry, I lost my train of thought there. Say that again?";
+                assistantText = BLANK_REPLY_TEXT;
                 setMessages((prev) =>
                   bubbleAdded
-                    ? prev.map((m) => (m.id === assistantId ? { ...m, text: assistantText } : m))
-                    : [...prev, { id: assistantId, role: 'meera', text: assistantText }],
+                    ? prev.map((m) => (m.id === assistantId ? { ...m, text: assistantText, localOnly: true } : m))
+                    : [...prev, { id: assistantId, role: 'meera', text: assistantText, localOnly: true }],
                 );
               }
-              // PHASE-C-SPEC.md §3 — parse ONLY here, now that the turn is fully finished. Never
-              // on `onToken`'s partial text, or a half-written script would flash a broken card
-              // before settling into its real shape.
+              // PHASE-C-SPEC.md §3 — parse ONLY here, now that the turn is fully finished.
               const resultCard = parseResultCard(assistantText);
               if (resultCard) {
-                setMessages((prev) =>
-                  prev.map((m) => (m.id === assistantId ? { ...m, resultCard } : m)),
-                );
+                setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, resultCard } : m)));
               }
               if (!currentAction) speak(assistantText, language, turnRes.messageId);
             },
@@ -761,9 +1036,8 @@ export function MeeraCopilotChat({
                 return;
               }
               // Cap-reached carries its own friendly copy from spend_tracker.py — show it
-              // verbatim instead of a generic failure message. Everything else (including the
-              // transport-level CONNECTION_ERROR / STREAM_INCOMPLETE codes from useMeeraStream's
-              // `fail()`) goes through friendlyStreamErrorText rather than the raw event.message.
+              // verbatim; everything else goes through friendlyStreamErrorText. Either way the
+              // bubble is local only: Meera never said it, so it is never replayed to her.
               const fallbackText =
                 event.code === CAP_REACHED_ERROR_CODE
                   ? event.message ?? "You've reached your monthly Meera usage limit."
@@ -771,24 +1045,23 @@ export function MeeraCopilotChat({
               setMessages((prev) =>
                 prev.some((m) => m.id === assistantId)
                   ? prev.map((m) =>
-                      m.id === assistantId ? { ...m, text: fallbackText, toolTrailDone: true } : m,
+                      m.id === assistantId ? { ...m, text: fallbackText, toolTrailDone: true, localOnly: true } : m,
                     )
-                  : [...prev, { id: assistantId, role: 'meera', text: fallbackText }],
+                  : [...prev, { id: assistantId, role: 'meera', text: fallbackText, localOnly: true }],
               );
             },
             onHeartbeatTimeout: () => {
-              // Fix round 1, Q4 item (1): a hung (not dead) Python process — SIGSTOP, GC stall,
-              // wedged provider socket — never fires onError/onDone, so without this the panel
-              // sat in `sending=true` forever with no message and no way out but reload.
+              // Fix round 1, Q4 item (1): a hung (not dead) Python process never fires
+              // onError/onDone, so without this the panel sat in `sending=true` forever.
               stream.close();
               setSending(false);
               const timeoutText = 'Meera stopped responding — try again?';
               setMessages((prev) =>
                 prev.some((m) => m.id === assistantId)
                   ? prev.map((m) =>
-                      m.id === assistantId ? { ...m, text: timeoutText, toolTrailDone: true } : m,
+                      m.id === assistantId ? { ...m, text: timeoutText, toolTrailDone: true, localOnly: true } : m,
                     )
-                  : [...prev, { id: assistantId, role: 'meera', text: timeoutText }],
+                  : [...prev, { id: assistantId, role: 'meera', text: timeoutText, localOnly: true }],
               );
             },
           },
@@ -797,15 +1070,9 @@ export function MeeraCopilotChat({
             conversation_id: conversationId,
             turn_id: turnRes.messageId,
             onbehalf_jwt: turnRes.onBehalfToken ?? '',
-            // EV-044: only the recent part of the transcript goes to the model (see lib/meera-history).
-            conversation: recentHistory(
-              [
-                ...messages.map((m): HistoryTurn => ({ role: m.role === 'creator' ? 'user' : 'assistant', content: m.text })),
-                { role: 'user', content: text },
-              ],
-              CREATOR_HISTORY_MAX_TURNS,
-              CREATOR_HISTORY_MAX_CHARS,
-            ),
+            // EV-044: only the recent part of the transcript goes to the model (lib/meera-history),
+            // and never a row Meera did not say (buildModelHistory).
+            conversation,
           },
         );
       })
@@ -816,35 +1083,32 @@ export function MeeraCopilotChat({
           return;
         }
 
-        // T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F7/A47/R6) — a 402/429 refusal from the credits
-        // ledger renders the server's own en/hi-templated `message` as a Meera bubble (never a
-        // generic failure sentence — the chat must never go silent) plus a `BuyCreditsCard`
-        // directly under it, and the balance/pill is refetched so the numbers on screen agree with
-        // what just refused the send.
+        // T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F7/A47/R6) — a 402/429 refusal renders the server's
+        // own message as a Meera bubble plus a `BuyCreditsCard` directly under it.
         if (err instanceof ApiError && isCreditsRefusal(err.code)) {
           setMessages((prev) => [
             ...prev,
-            { id: uniqueId('meera-credits-refusal'), role: 'meera', text: err.message, creditsRefusal: true },
+            {
+              id: uniqueId('meera-credits-refusal'),
+              role: 'meera',
+              text: err.message,
+              creditsRefusal: true,
+              localOnly: true,
+            },
           ]);
           void credits.refresh();
           return;
         }
 
         // Cap-reached (spend_tracker.py) carries its own friendly copy — show it verbatim.
-        const text =
+        const errorText =
           err instanceof ApiError && err.code === CAP_REACHED_ERROR_CODE
             ? err.message
             : 'Something went wrong sending that — try again?';
-        setMessages((prev) => [...prev, { id: uniqueId('meera-error'), role: 'meera', text }]);
+        setMessages((prev) => [...prev, { id: uniqueId('meera-error'), role: 'meera', text: errorText, localOnly: true }]);
       });
   };
 
-  /**
-   * Round 2 QA — the Send button's own click handler, separate from `handleSend` (which stays
-   * the single source of truth for what "send" actually does, unchanged). An empty composer
-   * moves focus to the textarea instead of silently doing nothing — the button is never
-   * `disabled` for this case any more, so it needs its own honest response to a tap.
-   */
   const statusText = isListening
     ? pickLang(language, HEADER_STATUS_LISTENING)
     : isSpeaking
@@ -853,6 +1117,10 @@ export function MeeraCopilotChat({
         ? pickLang(language, HEADER_STATUS_WORKING)
         : pickLang(language, HEADER_STATUS_ONLINE);
 
+  /**
+   * Round 2 QA — the Send button's own click handler, separate from `handleSend`. An empty
+   * composer moves focus to the textarea instead of silently doing nothing.
+   */
   const handleSendClick = () => {
     // 'Review my profile' is sent with nothing typed, so only a plain turn falls back to focus.
     if (!draft.trim() && action !== 'PROFILE_REVIEW') {
@@ -863,60 +1131,133 @@ export function MeeraCopilotChat({
   };
 
   const voiceStatus: MeeraVoiceStatus = isListening ? 'listening' : isSpeaking ? 'speaking' : sending ? 'thinking' : 'idle';
-  // Full screen on a phone: stop the page behind the chat from scrolling while it is open.
+
+  // Full screen on a phone: stop the page behind the chat from scrolling while it is open. The
+  // phone test follows the media query's change events (rotation, resize), not just the mount.
+  const [isPhone, setIsPhone] = React.useState(
+    () => typeof window !== 'undefined' && Boolean(window.matchMedia?.(PHONE_QUERY)?.matches),
+  );
   React.useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia?.('(max-width: 639px)').matches) return;
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia?.(PHONE_QUERY);
+    if (!mql) return;
+    // The initial value was read in useState; from here on only change events update it.
+    const onChange = (e: MediaQueryListEvent) => setIsPhone(e.matches);
+    if (typeof mql.addEventListener === 'function') {
+      mql.addEventListener('change', onChange);
+      return () => mql.removeEventListener('change', onChange);
+    }
+    mql.addListener?.(onChange);
+    return () => mql.removeListener?.(onChange);
+  }, []);
+  React.useEffect(() => {
+    if (!isPhone) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = prev;
     };
-  }, []);
+  }, [isPhone]);
 
-  const lastMeeraReply = [...messages].reverse().find((m) => m.role === 'meera' && m.text.trim() !== '')?.text;
+  // iOS keyboard (SPEC 3b): --chat-vh follows the visible viewport; while the keyboard is up on a
+  // phone the trust line and quick actions step aside for the transcript.
+  const { keyboardOpen } = useVisualViewportHeight(rootRef);
+  const keyboardUp = isPhone && keyboardOpen;
 
-  // Phones (live screenshots, 2026-09-24): as a 512px box inside a page that also scrolls, the
-  // message area was about 300px — three short bubbles — and a script had to be read by
-  // scrolling inside a scroll. Below `sm` the chat now opens full screen like a messaging app
-  // (100dvh, above the app header, page scroll locked behind it); the close button returns to
-  // the page. From `sm` up it keeps its original in-page size.
+  // Voice mode reads Meera's last reply aloud/on screen. A photo-check card's text is the machine
+  // summary for the model, so it (and the placeholder) is skipped (Ash 16).
+  const lastMeeraReply = React.useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role !== 'meera' || m.photoCheckPending || m.resultCard?.kind === 'photoCheck') continue;
+      if (m.text.trim() !== '') return m.text;
+    }
+    return undefined;
+  }, [messages]);
+
+  // ---- DOM window (SPEC 3b) -----------------------------------------------------------------
+  const windowStartIndex = React.useMemo(() => {
+    const fallback = Math.max(0, messages.length - CHAT_RENDER_WINDOW);
+    if (!firstVisibleId) return fallback;
+    const at = messages.findIndex((m) => m.id === firstVisibleId);
+    return at === -1 ? fallback : at;
+  }, [messages, firstVisibleId]);
+  const visibleMessages = React.useMemo(() => messages.slice(windowStartIndex), [messages, windowStartIndex]);
+  const canShowEarlier = windowStartIndex > 0 || (olderOnServer && live && !!conversationId);
+  const hasCreatorMessage = React.useMemo(() => messages.some((m) => m.role === 'creator'), [messages]);
+
+  const measureAnchor = () => {
+    const el = scrollRef.current;
+    anchorRef.current = el ? { height: el.scrollHeight, top: el.scrollTop } : null;
+  };
+
+  const handleShowEarlier = async () => {
+    if (windowStartIndex > 0) {
+      measureAnchor();
+      setFirstVisibleId(messages[Math.max(0, windowStartIndex - CHAT_RENDER_WINDOW)].id);
+      return;
+    }
+    if (!olderOnServer || !conversationId || loadingOlder || messages.length === 0) return;
+    setLoadingOlder(true);
+    try {
+      const older = await meeraApi.getHistoryBefore(conversationId, messages[0].id, 'creator');
+      // Deploy-order guard: a Spring without `?before=` answers the NEWEST rows again. Rows already
+      // on screen are dropped, and a page with nothing new ends the paging instead of prepending a
+      // second copy of the transcript on every click.
+      const shown = new Set(messages.map((m) => m.id));
+      const fresh = older.filter((item) => !shown.has(item.id));
+      setOlderOnServer(fresh.length > 0 && older.length >= MEERA_HISTORY_PAGE);
+      const rows = mapHistoryItems(fresh);
+      if (rows.length > 0) {
+        measureAnchor();
+        setMessages((prev) => [...rows, ...prev]);
+        setFirstVisibleId(rows[0].id);
+      }
+    } catch {
+      toast({ title: pickLang(language, { en: "Couldn't load earlier messages.", hi: 'पहले के मैसेज लोड नहीं हो पाए।' }) });
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
+  // Scroll anchor: rows added ABOVE the reader keep what they were reading in place.
+  React.useLayoutEffect(() => {
+    const anchor = anchorRef.current;
+    const el = scrollRef.current;
+    if (!anchor || !el) return;
+    anchorRef.current = null;
+    el.scrollTop = anchor.top + (el.scrollHeight - anchor.height);
+  }, [windowStartIndex, messages]);
+
+  const shootLang = shootLangFor(language);
+  // What `openCamera` / `handleCoachAnswer` would ignore: the chat's camera controls show as
+  // disabled while it is true, never as live buttons that do nothing.
+  const cameraBusy = sending || checking;
+  const cameraDisabled = connecting || cameraBusy || (live && !conversationId);
+
+  // Phones (live screenshots, 2026-09-24): below `sm` the chat opens full screen like a messaging
+  // app (the visible viewport's height, above the app header, page scroll locked behind it); the
+  // close button returns to the page. From `sm` up it keeps its original in-page size.
   return (
-    <div className="fixed inset-0 z-50 flex h-[100dvh] flex-col bg-card sm:static sm:z-auto sm:h-[32rem] sm:max-h-[75vh] sm:rounded-xl sm:border sm:border-border sm:shadow-sm">
+    <div
+      ref={rootRef}
+      className="fixed inset-0 top-[var(--chat-vv-top,0px)] z-50 flex h-[var(--chat-vh,100dvh)] flex-col bg-card sm:static sm:z-auto sm:h-[32rem] sm:max-h-[75vh] sm:rounded-xl sm:border sm:border-border sm:shadow-sm"
+    >
       {/* MEERA-CHAT-DESIGN-SPEC.md Part 0.1 — header on the 30% band (--meera-stage), white text. */}
-      <div className="flex shrink-0 items-center justify-between bg-[var(--meera-stage)] px-4 py-3 text-white">
+      <div className="flex shrink-0 items-center justify-between bg-[var(--meera-stage)] px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-white sm:pt-3">
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          {/* Meera's presence: follows her REAL state. The mic is opened by the orb only while the
-              creator is already recording (useVoiceInput has the permission by then).
-              Round 2 QA — at rest (low `activity`) the orb's thin ring alone read as an empty
-              "grey ring" in the live render. A soft filled core (primary colour) behind it, with
-              a gentle pulse that is off under `prefers-reduced-motion`, makes it read as alive.
-              Header only — the big hero orb (MeeraHero.tsx) is untouched. */}
+          {/* Meera's presence: follows her REAL state. A soft filled core behind the orb's ring,
+              with a gentle pulse that is off under `prefers-reduced-motion`. */}
           <div className="relative h-9 w-9 shrink-0" aria-hidden="true">
-            <div
-              className={cn(
-                'absolute inset-[22%] rounded-full bg-primary/70',
-                !reduceMotion && 'animate-pulse',
-              )}
-            />
+            <div className={cn('absolute inset-[22%] rounded-full bg-primary/70', !reduceMotion && 'animate-pulse')} />
             <div className="relative z-10 h-full w-full">
-              <VoicePoweredOrb
-                enableVoiceControl={isListening}
-                activity={isSpeaking ? 0.7 : sending ? 0.35 : 0.08}
-              />
+              <VoicePoweredOrb enableVoiceControl={isListening} activity={isSpeaking ? 0.7 : sending ? 0.35 : 0.08} />
             </div>
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold">Meera</p>
-            {/* `truncate` + `min-w-0`: at 375px this sentence wrapped to five lines and made the
-                header 156px tall. One line, cut with an ellipsis; the full text stays in the
-                accessible name for screen readers. */}
-            <p
-              className="flex items-center gap-1.5 truncate text-xs text-white/75"
-              aria-live="polite"
-              title={statusText}
-            >
-              {/* Round 2 QA — `success-foreground` failed contrast on this dark band; a bright
-                  mint (≥3:1 on #221e35) at ≥8px reads clearly as an online indicator. */}
+            {/* One line, cut with an ellipsis; the full text stays in the accessible name. */}
+            <p className="flex items-center gap-1.5 truncate text-xs text-white/75" aria-live="polite" title={statusText}>
               <span className="h-2 w-2 shrink-0 rounded-full bg-[#5DCAA5]" aria-hidden="true" />
               <span className="truncate">{statusText}</span>
             </p>
@@ -933,7 +1274,7 @@ export function MeeraCopilotChat({
               aria-label="Voice mode"
               title="Voice mode"
               onClick={openVoiceMode}
-              disabled={connecting}
+              disabled={connecting || camera !== null}
             >
               <AudioLines className="h-4 w-4" />
             </Button>
@@ -965,192 +1306,116 @@ export function MeeraCopilotChat({
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-4">
-        {connecting && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Connecting to Meera…
-          </div>
-        )}
-        {connectError && (
-          <div className="flex flex-col items-start gap-2">
-            <p className="text-sm text-destructive-foreground">{connectError}</p>
-            <Button type="button" variant="outline" size="sm" onClick={handleRetryConnect}>
-              Try again
-            </Button>
-          </div>
-        )}
-        {messages.map((m) => (
-          <div key={m.id} data-testid="chat-turn" className="space-y-1.5">
-            {/* MEERA-CHAT-DESIGN-SPEC.md Part A — the work trail renders ABOVE the answer it
-                belongs to, in addition to (never instead of) the tool-result cards below. Only
-                ever real tool events: `m.toolResults` is exactly what `onToolStart`/`onToolResult`
-                built for this turn, so a turn with none renders no trail at all. */}
-            {m.role === 'meera' && (
-              <MeeraWorkTrail
-                steps={m.toolResults ?? []}
-                done={!!m.toolTrailDone}
-                language={language}
-              />
-            )}
-
-            {/* A bubble is skipped while its text is empty rather than rendered as a blank pill.
-                That window is real and only exists because of the lazy create above: a tool card
-                can attach to this turn before the first token arrives. `onToken`/`onDone` fill the
-                text in, and the bubble appears then. */}
-            {m.text ? (
-              m.role === 'meera' && m.resultCard && !m.showRawText ? (
-                // PHASE-C-SPEC.md §3 — a finished script/review renders as its card INSTEAD of
-                // the bubble. `rawText={m.text}` is the untouched original — Copy and "Show as
-                // text" both read from it, never from a re-serialized version of the parsed
-                // fields.
-                <div className="max-w-[85%]">
-                  {m.resultCard.kind === 'script' ? (
-                    <MeeraScriptCard
-                      script={m.resultCard.script}
-                      rawText={m.text}
-                      language={language}
-                    />
-                  ) : (
-                    <MeeraReviewCard
-                      review={m.resultCard.review}
-                      rawText={m.text}
-                      language={language}
-                      onPrefill={prefillComposer}
-                    />
-                  )}
-                </div>
-              ) : (
-                <div className={cn('flex items-end gap-1.5', m.role === 'creator' ? 'justify-end' : 'justify-start')}>
-                  {/* Part 0.2 — Meera's bubbles get a small orb-coloured dot avatar. */}
-                  {m.role === 'meera' && (
-                    <span
-                      className="mb-1 h-2 w-2 shrink-0 rounded-full bg-primary"
-                      aria-hidden="true"
-                    />
-                  )}
-                  <div
-                    className={cn(
-                      'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm',
-                      m.role === 'creator'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'border border-border bg-white text-foreground',
-                    )}
-                  >
-                    {/* Meera's light markdown (**bold**, --- dividers) shown cleanly, never as
-                        raw asterisks; the creator's own words are shown exactly as typed. */}
-                    {m.role === 'meera' ? renderMeeraText(m.text) : m.text}
-                  </div>
-                </div>
-              )
-            ) : null}
-
-            {/* PHASE-C-SPEC.md §3 — the toggle that reveals (or re-hides) the ORIGINAL text under
-                a rendered card. `m.text` is never discarded either way, so a creator who wants to
-                copy the reply exactly as written, or hear a voice reply read from it, still can. */}
-            {m.role === 'meera' && m.resultCard ? (
-              <button
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={scrollRef}
+          onScroll={stick.onScroll}
+          data-testid="chat-scroll"
+          className="flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-4"
+        >
+          {canShowEarlier && (
+            <div className="flex justify-center">
+              <Button
                 type="button"
-                data-testid="result-card-text-toggle"
-                onClick={() =>
-                  setMessages((prev) =>
-                    prev.map((row) => (row.id === m.id ? { ...row, showRawText: !row.showRawText } : row)),
-                  )
-                }
-                className="text-xs font-medium text-primary hover:underline"
+                variant="ghost"
+                size="sm"
+                className="min-h-11 text-xs"
+                onClick={() => void handleShowEarlier()}
+                disabled={loadingOlder}
+                data-testid="show-earlier"
               >
-                {pickLang(language, m.showRawText ? RESULT_CARD_SHOW_AS_CARD : RESULT_CARD_SHOW_AS_TEXT)}
-              </button>
-            ) : null}
+                {loadingOlder ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                {pickLang(language, SHOW_EARLIER)}
+              </Button>
+            </div>
+          )}
+          {connecting && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Connecting to Meera…
+            </div>
+          )}
+          {connectError && (
+            <div className="flex flex-col items-start gap-2">
+              <p className="text-sm text-destructive-foreground">{connectError}</p>
+              <Button type="button" variant="outline" size="sm" onClick={handleRetryConnect}>
+                Try again
+              </Button>
+            </div>
+          )}
+          {visibleMessages.map((m) => (
+            <MeeraMessageRow
+              key={m.id}
+              message={m}
+              language={language}
+              isLivePhotoCheck={m.id === liveCheckId}
+              photoCheckBusy={
+                m.resultCard?.kind === 'photoCheck' || m.resultCard?.kind === 'script' ? cameraBusy : false
+              }
+              creditsBalance={m.creditsRefusal ? credits.balance : null}
+              onPrefill={prefillComposer}
+              onToggleRaw={handleToggleRaw}
+              onCheckShot={cameraSupported ? handleCheckShot : undefined}
+              onCoachAnswer={handleCoachAnswer}
+              onPhotoRetake={handlePhotoRetake}
+              onCredited={handleCredited}
+            />
+          ))}
 
-            {/* T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F7) — a real Buy CTA directly under a 402/429
-                refusal bubble, never just the sentence on its own (R6). */}
-            {m.creditsRefusal ? (
-              <BuyCreditsCard
-                language={language}
-                balance={credits.balance}
-                onCredited={() => void credits.refresh()}
-                className="ml-0 mr-auto max-w-[85%]"
-              />
-            ) : null}
+          {/* Part B — "Meera is on it" desk, in place of the empty screen. Shown only until the
+              creator sends their first message THIS session. */}
+          {!connecting && !connectError && !hasCreatorMessage && <MeeraDesk language={language} onPrefill={prefillComposer} />}
 
-            {/* §8.3 — tool cards render AFTER the bubble they belong to. No `onPrefillCounter` or
-                `onOpenDeal` is passed: this panel has no counter form and no deal navigation to
-                hand them to (both live on the deal pages, §8.6), and every card hides the matching
-                control when the callback is absent. A visible button wired to nothing would be
-                worse than no button. */}
-            {/* Only the Spring-backed tools get a spinner row and a card. A LOCAL tool
-                (get_creator_knowledge) is shown by its work-trail step above and nothing else. */}
-            {m.toolResults?.map((tool) =>
-              !isCreatorToolName(tool.name) ? null : tool.status === 'pending' ? (
-                <div
-                  key={tool.id}
-                  data-testid="creator-tool-pending"
-                  className="flex items-center gap-2 text-xs text-muted-foreground"
-                >
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  {TOOL_PENDING_LABELS[tool.name]}
-                </div>
-              ) : (
-                <CreatorToolResultRenderer
-                  key={tool.id}
-                  toolName={tool.name}
-                  status={tool.status}
-                  data={tool.data}
-                  errorMessage={tool.errorMessage}
-                />
-              ),
-            )}
-          </div>
-        ))}
+          {/* Part A — before the first tool event AND before the first token, one placeholder step. */}
+          {sending && !turnStarted && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground" aria-live="polite" data-testid="trail-understanding">
+              <Loader2 className="h-3 w-3 animate-spin text-primary" />
+              {pickLang(language, TRAIL_UNDERSTANDING)}
+            </div>
+          )}
+        </div>
 
-        {/* Part B — "Meera is on it" desk, in place of the empty screen. Shown only until the
-            creator sends their first message THIS session; `messages.some(creator)` never goes
-            back to false once true, so the desk never reappears later in the same conversation. */}
-        {!connecting && !connectError && !messages.some((m) => m.role === 'creator') && (
-          <MeeraDesk language={language} onPrefill={prefillComposer} />
-        )}
-
-        {/* Part A — before the first tool event AND before the first token, one placeholder step.
-            Replaces the old plain "Thinking…" line. Disappears the instant a tool step or text
-            arrives (`turnStarted`, flipped by `onToken`/`onToolStart` above). */}
-        {sending && !turnStarted && (
-          <div
-            className="flex items-center gap-2 text-xs text-muted-foreground"
-            aria-live="polite"
-            data-testid="trail-understanding"
-          >
-            <Loader2 className="h-3 w-3 animate-spin text-primary" />
-            {pickLang(language, TRAIL_UNDERSTANDING)}
-          </div>
-        )}
+        {/* New content arrived while the reader was scrolled up: a pill that jumps down, instead
+            of yanking them there (SPEC 3b). */}
+        <div aria-live="polite" className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+          {stick.showPill ? (
+            <Button
+              type="button"
+              size="sm"
+              className="pointer-events-auto h-11 rounded-full px-4 shadow-md"
+              onClick={stick.scrollToBottom}
+              data-testid="new-messages-pill"
+            >
+              {pickLang(language, NEW_MESSAGES)}
+              <ArrowDown className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          ) : null}
+        </div>
       </div>
 
-      {/* Part 0.4 — trust line, under the messages area. */}
-      <div className="flex shrink-0 items-center gap-1.5 border-t border-border px-4 py-2 text-xs text-muted-foreground">
-        <Lock className="h-3 w-3 shrink-0" aria-hidden="true" />
-        {pickLang(language, TRUST_LINE)}
-      </div>
+      {/* Part 0.4 — trust line, under the messages area (steps aside while the phone keyboard is up). */}
+      {!keyboardUp && (
+        <div className="flex shrink-0 items-center gap-1.5 border-t border-border px-4 py-2 text-xs text-muted-foreground">
+          <Lock className="h-3 w-3 shrink-0" aria-hidden="true" />
+          {pickLang(language, TRUST_LINE)}
+        </div>
+      )}
 
-      <div className="shrink-0 border-t border-border p-3">
-        {/* T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F9) — proactive zero-balance banner, above the
-            composer so it never blocks reading the transcript, and the per-turn voice-cost hint,
-            shown only while a voice reply is actually going to be requested. */}
-        <ZeroCreditsBanner
-          language={language}
-          balance={credits.balance}
-          onCredited={() => void credits.refresh()}
-          className="mb-2"
-        />
-        <MeeraQuickActions
-          language={language}
-          balance={credits.balance}
-          active={action}
-          onPick={setAction}
-          onAnalyseBrief={onAnalyseBrief}
-          disabled={connecting || sending}
-          className="mb-1.5"
-        />
+      <div className="shrink-0 border-t border-border px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+        {/* T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F9) — proactive zero-balance banner and the per-turn
+            voice-cost hint, shown only while a voice reply is actually going to be requested. */}
+        <ZeroCreditsBanner language={language} balance={credits.balance} onCredited={handleCredited} className="mb-2" />
+        {!keyboardUp && (
+          <MeeraQuickActions
+            language={language}
+            balance={credits.balance}
+            active={action}
+            onPick={setAction}
+            onAnalyseBrief={onAnalyseBrief}
+            disabled={connecting || sending || checking}
+            className="mb-1.5"
+          />
+        )}
         {action ? (
           <MeeraActionStrip
             action={action}
@@ -1164,6 +1429,21 @@ export function MeeraCopilotChat({
           <CreditCostHint variant="voice" language={language} className="mb-1.5" />
         ) : null}
         <div className="flex items-end gap-2">
+          {cameraSupported && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-11 w-11 shrink-0"
+              title={pickLang(language, CAMERA_BUTTON)}
+              aria-label={pickLang(language, CAMERA_BUTTON)}
+              onClick={openComposerCamera}
+              disabled={cameraDisabled}
+              data-testid="composer-camera"
+            >
+              <Camera className="h-4 w-4" />
+            </Button>
+          )}
           <Textarea
             id={composerId}
             value={draft}
@@ -1182,7 +1462,9 @@ export function MeeraCopilotChat({
                   : pickLang(language, COMPOSER_PLACEHOLDER)
             }
             rows={1}
-            className="min-h-11 resize-none text-sm focus-visible:border-primary focus-visible:ring-primary/50"
+            // 16px on phones (iOS zooms the page on focus for smaller inputs), 14px from sm up;
+            // grows to 8rem, then scrolls inside itself.
+            className="max-h-32 min-h-11 resize-none overflow-y-auto text-base focus-visible:border-primary focus-visible:ring-primary/50 sm:text-sm"
             disabled={connecting}
           />
           {voiceInputSupported && (
@@ -1199,14 +1481,9 @@ export function MeeraCopilotChat({
               {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
             </Button>
           )}
-          {/* Round 2 QA — the send button must stay solid primary at full opacity at ALL times
-              (the washed-out `disabled:opacity-50` look was explicitly rejected), including while
-              the composer is empty and while a turn is sending. `disabled` is therefore only ever
-              `connecting` (a brief, legitimate loading state, not the "everyday empty box" the
-              complaint was about); "empty" and "sending" are handled inside `handleSendClick`
-              instead — tapping an empty box focuses the textarea rather than doing nothing, and
-              `handleSend`'s own `if (!text || sending) return;` guard (unchanged) still makes a
-              tap-while-sending a no-op, so nothing here can double-send. */}
+          {/* Round 2 QA — the send button stays solid primary at full opacity; "empty" and
+              "sending" are handled inside `handleSendClick`/`handleSend` instead. A running photo
+              check does disable it (Ash 13): a turn sent mid-check would be stored out of order. */}
           <Button
             type="button"
             size="icon"
@@ -1214,16 +1491,13 @@ export function MeeraCopilotChat({
             onClick={handleSendClick}
             disabled={
               connecting ||
+              checking ||
               (action !== null && actionBlockedReason(action, credits.balance, language) !== null)
             }
             aria-label="Send message"
             title="Send message"
           >
-            {sending ? (
-              <Loader2 data-testid="send-spinner" className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
+            {sending ? <Loader2 data-testid="send-spinner" className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>
       </div>
@@ -1241,19 +1515,32 @@ export function MeeraCopilotChat({
           setDraft('');
           startListening();
         }}
-        sendDisabled={connecting || sending}
+        sendDisabled={connecting || sending || checking}
         language={language}
       />
 
-      {/* T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F6/F8) — both render `null`/stay closed whenever
-          `credits.balance` is `null`/disabled, so mounting them unconditionally here is safe with
-          the flag off. */}
+      {/* Photo check camera (SPEC 1b). Mounted only while open, so closing it always runs the
+          camera hook's full teardown (tracks stopped, wake lock released). */}
+      {camera ? (
+        <MeeraCameraSheet
+          open
+          onOpenChange={(open) => {
+            if (!open) setCamera(null);
+          }}
+          lang={shootLang}
+          shots={camera.shots}
+          initialShotIndex={camera.initialShotIndex}
+          onCapture={handleCapture}
+        />
+      ) : null}
+
+      {/* T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F6/F8) — both stay closed/null with the flag off. */}
       <BuyCreditsSheet
         open={buySheetOpen}
         onOpenChange={setBuySheetOpen}
         language={language}
         balance={credits.balance}
-        onCredited={() => void credits.refresh()}
+        onCredited={handleCredited}
       />
       <WelcomeCreditsModal language={language} balance={credits.balance} />
     </div>

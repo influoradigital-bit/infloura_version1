@@ -32,7 +32,12 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-vi.mock('@/lib/meera-api', () => ({
+vi.mock('@/lib/meera-api', async () => ({
+  // The chat's pure photo-check helpers, real (no network): replay neutraliser, history card.
+  neutralisePhotoCheckHeader: (await vi.importActual<typeof import('@/lib/meera-api')>('@/lib/meera-api'))
+    .neutralisePhotoCheckHeader,
+  photoCheckFromHistoryCard: (await vi.importActual<typeof import('@/lib/meera-api')>('@/lib/meera-api'))
+    .photoCheckFromHistoryCard,
   meeraApi: {
     startSession: (...args: unknown[]) => startSessionMock(...args),
     getHistory: (...args: unknown[]) => getHistoryMock(...args),

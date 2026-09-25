@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Check, Copy } from 'lucide-react';
+import { Camera, Check, Copy } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { copyPlainText } from '@/lib/clipboard';
@@ -24,6 +24,9 @@ import type { ParsedMeeraScript } from '@/lib/meera-result-cards';
  *  alongside the other SCRIPT_CARD_* labels when next touching that file. */
 const SCRIPT_CARD_SETUP_LABEL = { en: 'Set-up', hi: 'सेट-अप' };
 
+/** The per-beat photo-check button (SPEC section 1a). Same "kept here" reason as the label above. */
+const SCRIPT_CARD_CHECK_SHOT_LABEL = { en: 'Check my set-up', hi: 'सेट-अप चेक करें' };
+
 /**
  * The rich reel-script card — reads a `ParsedMeeraScript` (the "Full script format" in
  * `influora-ai/app/prompt/creator_persona.py`, via `parseMeeraScript`) and renders it as a
@@ -45,9 +48,24 @@ export interface MeeraScriptCardProps {
   rawText: string;
   language: string;
   className?: string;
+  /** Photo check inside Meera's chat: when passed, every beat gets a "Check my set-up" button
+   *  that calls this with the beat's 0-based index (the chat maps it with `shotFromBeat` and opens
+   *  the camera on that shot). When absent, no button renders at all. */
+  onCheckShot?: (beatIndex: number) => void;
+  /** The chat is busy (a turn is streaming or a photo check is running) and would ignore a tap:
+   *  the set-up buttons show as disabled instead of doing nothing. */
+  checkShotDisabled?: boolean;
 }
 
-export function MeeraScriptCard({ script, rawText, language, className }: MeeraScriptCardProps) {
+export function MeeraScriptCard({
+  script,
+  rawText,
+  language,
+  className,
+  onCheckShot,
+  checkShotDisabled = false,
+}: MeeraScriptCardProps) {
+  const beatIdPrefix = React.useId();
   const [copied, setCopied] = React.useState(false);
   const copiedTimeoutRef = React.useRef<number | null>(null);
 
@@ -71,6 +89,7 @@ export function MeeraScriptCard({ script, rawText, language, className }: MeeraS
   const onScreenLabel = pickLang(language, SCRIPT_CARD_ON_SCREEN_LABEL);
   const stressLabel = pickLang(language, SCRIPT_CARD_STRESS_LABEL);
   const pauseLabel = pickLang(language, SCRIPT_CARD_PAUSE_LABEL);
+  const checkShotLabel = pickLang(language, SCRIPT_CARD_CHECK_SHOT_LABEL);
 
   return (
     <div
@@ -122,7 +141,7 @@ export function MeeraScriptCard({ script, rawText, language, className }: MeeraS
       <ul className="space-y-2 border-t border-border pt-2">
         {script.beats.map((beat, index) => (
           <li key={`${beat.from}-${beat.to}-${index}`} data-testid="script-card-beat" className="text-sm">
-            <p className="break-words">
+            <p id={`${beatIdPrefix}-beat-${index}`} className="break-words">
               <span className="text-xs font-medium text-muted-foreground">
                 {beat.from}-{beat.to}s ·{' '}
               </span>
@@ -140,6 +159,21 @@ export function MeeraScriptCard({ script, rawText, language, className }: MeeraS
             <p className="break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
               {onScreenLabel}: {beat.onScreen}
             </p>
+            {onCheckShot ? (
+              <button
+                type="button"
+                data-testid="script-card-check-shot"
+                // Every beat's button reads the same, so the beat's timing and shot line is
+                // attached as its description: a screen reader hears which shot it checks.
+                aria-describedby={`${beatIdPrefix}-beat-${index}`}
+                onClick={() => onCheckShot(index)}
+                disabled={checkShotDisabled}
+                className="mt-1 -ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-primary hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Camera className="h-4 w-4" aria-hidden="true" />
+                {checkShotLabel}
+              </button>
+            ) : null}
           </li>
         ))}
       </ul>

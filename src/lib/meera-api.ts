@@ -261,15 +261,19 @@ export interface MeeraShotContext {
   line?: string;
 }
 
-/** Priority order: when the JSON does not fit, keys are dropped from the END of this list. */
+/** Priority order: when the JSON does not fit, keys are dropped from the END of this list.
+ *  `on_camera` and `sit_or_walk` sit right after `line` (Ash review 2026-09-25, item 10): they are
+ *  the only keys that settle a coach question server-side (influora-ai frame_check.py
+ *  `answered_question_ids`), and they are a few words each, so they must never be the first to
+ *  go when a long `line`/`where` fills the budget. */
 const SHOT_CONTEXT_KEYS: ReadonlyArray<keyof MeeraShotContext> = [
   'line',
+  'on_camera',
+  'sit_or_walk',
   'angle',
   'action',
   'where',
   'light',
-  'on_camera',
-  'sit_or_walk',
   'prop',
 ];
 
@@ -460,9 +464,206 @@ export const SHOOT_CHECK_CREATOR_CAP_CODE = 'CREATOR_MONTHLY_CAP_REACHED';
  * own message) here — its `fixes`/`settings`/`ok` are never read as a real result.
  */
 export type MeeraShootCheckFrameOutcome =
-  | { kind: 'ok'; result: MeeraShootCheckFrameResult }
+  | { kind: 'ok'; result: MeeraShootCheckFrameResult; chat?: MeeraPhotoCheckChat }
   | { kind: 'capped'; message: string }
   | { kind: 'unavailable' };
+
+/**
+ * Photo check inside Meera's chat (SPEC section 2b): on a real (`fallback: false`) result Spring
+ * adds `chat: {text, message_id, user_message_id}` to the body. `text` is the compact summary
+ * Spring built from influora-ai's JSON (`PhotoCheckSummary`) — the chat keeps it as the message's
+ * `text`, so later turns replay it to the model exactly as it was stored. The two ids are the
+ * USER and ASSISTANT rows Spring saved into the conversation; both are `null` when no
+ * `conversation_id` was sent or the write failed (the card still shows, it just will not reload).
+ * Absent from an older server, and from every fallback body.
+ */
+export interface MeeraPhotoCheckChat {
+  text: string;
+  messageId: string | null;
+  userMessageId: string | null;
+}
+
+/** Server limit for `user_line` (CreatorMeeraController answers a longer one with 400
+ *  FIELD_TOO_LONG, which would turn the whole check into "couldn't check"). Code points, not
+ *  UTF-16 units, to match Java's `codePointCount`. */
+export const PHOTO_CHECK_USER_LINE_MAX = 200;
+
+/** `?before=` page size on `GET /creator/meera/sessions/{id}/messages` (SPEC section 3b). */
+export const MEERA_HISTORY_PAGE = 50;
+
+/**
+ * The persisted photo-check card on a history item (SPEC section 2d). Spring sets `card` only for
+ * an ASSISTANT row whose metadata says `kind: "photo_check"`, and only these four keys. The card
+ * is ALWAYS rebuilt from here — never parsed out of the message text — so a model reply that
+ * imitates the summary's format can never turn into a card.
+ */
+export interface MeeraHistoryCard {
+  kind: 'photo_check';
+  v: 1;
+  result: Record<string, unknown>;
+  shot_label?: string;
+}
+
+/** One stored message from `GET .../sessions/{id}/messages`. `card` is creator-only and absent
+ *  (`@JsonInclude(NON_NULL)`) on every ordinary row and on the whole brand wire. */
+export interface MeeraHistoryItem {
+  id: string;
+  role: 'USER' | 'ASSISTANT';
+  content: string;
+  card?: MeeraHistoryCard;
+}
+
+function parsePhotoCheckChat(value: unknown): MeeraPhotoCheckChat | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const { text, message_id, user_message_id } = value as {
+    text?: unknown;
+    message_id?: unknown;
+    user_message_id?: unknown;
+  };
+  // Kept byte-for-byte (not trimmed): it is what Spring stored and what reload will show.
+  if (typeof text !== 'string' || !text.trim()) return undefined;
+  const id = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
+  return { text, messageId: id(message_id), userMessageId: id(user_message_id) };
+}
+
+/**
+ * A history item's `card` as a photo-check result, or `null` when it is not a usable photo-check
+ * card: missing, another kind or version, a `result` that is not an object, a fallback body, or a
+ * result with nothing to show. The ONE way the chat turns a stored row back into a card
+ * (`parseShootCheckFrameBody` is the one body parser).
+ */
+export function photoCheckFromHistoryCard(
+  card: unknown,
+): { result: MeeraShootCheckFrameResult; shotLabel?: string } | null {
+  if (!card || typeof card !== 'object' || Array.isArray(card)) return null;
+  const { kind, v, result, shot_label } = card as {
+    kind?: unknown;
+    v?: unknown;
+    result?: unknown;
+    shot_label?: unknown;
+  };
+  if (kind !== 'photo_check' || v !== 1) return null;
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return null;
+  const body = result as Record<string, unknown>;
+  if (body.fallback === true) return null;
+  const parsed = parseShootCheckFrameBody(body);
+  const hasContent =
+    parsed.whatISee !== null ||
+    parsed.steps.length > 0 ||
+    parsed.fixes.length > 0 ||
+    parsed.settings.length > 0 ||
+    parsed.ok.length > 0 ||
+    parsed.cantTell.length > 0 ||
+    parsed.ask !== null;
+  if (!hasContent) return null;
+  const label = typeof shot_label === 'string' && shot_label.trim() ? shot_label.trim() : undefined;
+  return label ? { result: parsed, shotLabel: label } : { result: parsed };
+}
+
+/** One line, trimmed, at most `max` code points (never splits a surrogate pair). */
+function clipLine(text: string, max: number): string {
+  const one = text.replace(/\s+/g, ' ').trim();
+  const points = Array.from(one);
+  return points.length <= max ? one : points.slice(0, max).join('').trimEnd();
+}
+
+/**
+ * The start of a tap-chip re-check's creator line (Ash review item 8): "Same photo, my answers:
+ * ...". The chat writes it in the reply's language, like the chips. After a reload the row is
+ * whatever Spring stored (Spring strips trailing spaces), so `isSamePhotoRecheckLine` is the one
+ * test for it, in either language.
+ */
+export const PHOTO_CHECK_SAME_PHOTO_PREFIX: Record<'en' | 'hi', string> = {
+  en: 'Same photo, my answers:',
+  hi: 'Wahi photo, mere jawab:',
+};
+
+const SAME_PHOTO_RE = /^\s*(?:same photo, my answers|wahi photo, mere jawab)\s*:/i;
+
+/** True when a creator row is a chip re-check of the photo before it (either language). */
+export function isSamePhotoRecheckLine(text: string): boolean {
+  return SAME_PHOTO_RE.test(text);
+}
+
+/**
+ * Lookalike letters that fold to the Latin letters of "photo check" (after NFKD and lowercase):
+ * Cyrillic, Greek, Armenian and Latin small capitals. Only used to spot a header in the MIDDLE
+ * of a line; a line-leading bracket is neutralised whatever follows it.
+ */
+const PHOTO_CHECK_HOMOGLYPHS: Record<string, string> = {
+  а: 'a', е: 'e', о: 'o', р: 'p', с: 'c', х: 'x', у: 'y', к: 'k', т: 't', һ: 'h', н: 'h', і: 'i',
+  ο: 'o', ρ: 'p', τ: 't', κ: 'k', ε: 'e', χ: 'x', ϲ: 'c', η: 'h',
+  օ: 'o', հ: 'h',
+  ᴘ: 'p', ʜ: 'h', ᴏ: 'o', ᴛ: 't', ᴄ: 'c', ᴇ: 'e', ᴋ: 'k',
+};
+
+/** The letters of `text` only, folded: NFKD (fullwidth and styled letters become plain, accents
+ *  come off), lowercase, lookalikes mapped, then every non-letter dropped. So "Photo-check",
+ *  "Photo_check", "Ｐｈｏｔｏ check", "[Рhoto check" (Cyrillic Р) and a soft hyphen or bidi mark
+ *  between the words all read "photocheck". */
+function foldLetters(text: string): string {
+  let out = '';
+  for (const ch of text.normalize('NFKD').toLowerCase()) {
+    const mapped = PHOTO_CHECK_HOMOGLYPHS[ch] ?? ch;
+    if (/\p{L}/u.test(mapped)) out += mapped;
+  }
+  return out;
+}
+
+/** An opening bracket of any script (Unicode Ps): "[", "［", "⟦", "【", "〔", "{", ... */
+const OPEN_BRACKET_RE = /\p{Ps}/u;
+const OPEN_BRACKET_GLOBAL_RE = /\p{Ps}/gu;
+/** What can come before a line's first real character without being text: whitespace, invisible
+ *  format characters (bidi marks, zero-width, soft hyphen, BOM), combining marks (CGJ, variation
+ *  selectors), invisible fillers, markdown lead-ins ("**", "_", ">", "-", "#", "`", "~", "+",
+ *  "|", bullets) and a list number ("1." / "1)"). */
+const LINE_LEAD_RE =
+  /^(?:[\s\p{Cf}\p{M}\u115f\u1160\u3164\uffa0\u2800*_>#`~+\-|=\u2022\u00b7\u2023\u25e6\u25aa\u25cf]|\d{1,3}[.)])*/u;
+/** A markdown checkbox ("- [ ] item", "[x] done") is a list, never a header: left alone. */
+const CHECKBOX_RE = /^\[[ xX]\](?=\s|$)/;
+/** Every line break a reader or a model would treat as one. */
+const LINE_BREAK_SPLIT_RE = /(\r\n|[\n\r\v\f\u0085\u2028\u2029])/;
+/** How far after a bracket a mid-line header is looked for (code units). */
+const HEADER_LOOKAHEAD = 64;
+
+function neutraliseLine(line: string): string {
+  const chars = line.split('');
+  // 1) A line whose first real character is an opening bracket: the bracket becomes "(" whatever
+  //    follows it. No homoglyph list can be complete, so a line-leading "[" never reaches the model
+  //    from a row that is not a real check.
+  const lead = LINE_LEAD_RE.exec(line)?.[0].length ?? 0;
+  const first = line.slice(lead);
+  if (first && OPEN_BRACKET_RE.test(first[0]) && first[0] !== '(' && !CHECKBOX_RE.test(first)) {
+    chars[lead] = '(';
+  }
+  // 2) Anywhere else on the line: a bracket followed by letters that fold to "photo check".
+  for (const match of line.matchAll(OPEN_BRACKET_GLOBAL_RE)) {
+    const at = match.index ?? 0;
+    if (chars[at] === '(') continue;
+    if (foldLetters(line.slice(at + 1, at + 1 + HEADER_LOOKAHEAD)).startsWith('photocheck')) chars[at] = '(';
+  }
+  return chars.join('');
+}
+
+/**
+ * Ash review item 5, with the checker's and Kabir's bypasses closed: only a REAL photo-check row
+ * (a Meera row whose card came from Spring) may start with "[Photo check". In every other row —
+ * a creator who types it, or a model reply that imitates, bolds, bullets or quotes the header —
+ * the header's bracket becomes "(" so the persona's "an earlier Meera turn that starts with
+ * [Photo check" rule can never be met by forged text:
+ *   - on every line, the first real character (after whitespace, invisible format characters,
+ *     combining marks and markdown lead-ins such as "**", "- ", "> ", "# ", "1. ") becomes "(" when
+ *     it is an opening bracket of any script ("[", "［", "⟦", "【", ...), whatever follows it;
+ *   - anywhere on a line, an opening bracket followed by letters that fold to "photo check"
+ *     (NFKD, lowercase, lookalike letters, any separator) becomes "(".
+ * A markdown checkbox ("[ ]", "[x]") is left alone. The rest of the text is unchanged.
+ */
+export function neutralisePhotoCheckHeader(text: string): string {
+  return text
+    .split(LINE_BREAK_SPLIT_RE)
+    .map((part, i) => (i % 2 === 1 ? part : neutraliseLine(part)))
+    .join('');
+}
 
 /** Escrow status response (02 section 1.5) */
 export interface MeeraEscrowStatus {
@@ -1351,16 +1552,29 @@ export const meeraApi = {
    * (MeeraController#messages). Returns [] in mock mode (the scripted panel
    * owns its own transcript there).
    */
-  getHistory: async (
-    conversationId: string,
-    role: MeeraRole = 'brand'
-  ): Promise<Array<{ id: string; role: 'USER' | 'ASSISTANT'; content: string }>> => {
+  getHistory: async (conversationId: string, role: MeeraRole = 'brand'): Promise<MeeraHistoryItem[]> => {
     if (!isApiLive()) return [];
-    return request<Array<{ id: string; role: 'USER' | 'ASSISTANT'; content: string }>>(
-      'GET',
-      `${basePath(role)}/sessions/${conversationId}/messages`,
-      { role }
-    );
+    // A creator ASSISTANT row may carry `card` (a stored photo check, SPEC section 2d). Read it
+    // with `photoCheckFromHistoryCard`, never by parsing `content`.
+    return request<MeeraHistoryItem[]>('GET', `${basePath(role)}/sessions/${conversationId}/messages`, { role });
+  },
+
+  /**
+   * GET /creator/meera/sessions/{conversationId}/messages?before={messageId} — up to
+   * `MEERA_HISTORY_PAGE` (50) messages OLDER than `beforeId`, oldest first (SPEC section 3b), for
+   * "Show earlier messages" once the in-memory transcript runs out. Creator-only: the brand
+   * controller has no `before` cursor, hence the 'creator' default. Returns [] in mock mode.
+   */
+  getHistoryBefore: async (
+    conversationId: string,
+    beforeId: string,
+    role: MeeraRole = 'creator'
+  ): Promise<MeeraHistoryItem[]> => {
+    if (!isApiLive()) return [];
+    return request<MeeraHistoryItem[]>('GET', `${basePath(role)}/sessions/${conversationId}/messages`, {
+      query: { before: beforeId },
+      role,
+    });
   },
 
   /**
@@ -1371,7 +1585,7 @@ export const meeraApi = {
     conversationId: string,
     afterMessageId: string,
     role: MeeraRole = 'brand'
-  ): Promise<Array<{ id: string; role: 'USER' | 'ASSISTANT'; content: string }>> => {
+  ): Promise<MeeraHistoryItem[]> => {
     if (!isApiLive()) {
       await delay();
       return [
@@ -1382,11 +1596,10 @@ export const meeraApi = {
         },
       ];
     }
-    return request<Array<{ id: string; role: 'USER' | 'ASSISTANT'; content: string }>>(
-      'GET',
-      `${basePath(role)}/sessions/${conversationId}/messages`,
-      { query: { after: afterMessageId }, role }
-    );
+    return request<MeeraHistoryItem[]>('GET', `${basePath(role)}/sessions/${conversationId}/messages`, {
+      query: { after: afterMessageId },
+      role,
+    });
   },
 
   /**
@@ -1556,19 +1769,59 @@ export const meeraApi = {
    * `fallback: true` body other than the cap one, or a network error. Never throws.
    * `ShootCheckPanel` renders `'unavailable'` as a plain "couldn't check your frame right now"
    * line and does not retry automatically.
+   *
+   * Photo check inside Meera's chat (SPEC section 2b) adds three optional extras:
+   *   - `conversationId` -> form field `conversation_id`: Spring then saves the check into that
+   *     conversation as a creator row plus a Meera row, and answers with `chat` (see
+   *     `MeeraPhotoCheckChat`). Spring requires an `Idempotency-Key` header with it, so one is
+   *     minted here when the caller passes none; a caller that may retry the SAME capture must
+   *     mint one key per capture and pass it on every retry (a replayed key returns the stored
+   *     result with no second vision call).
+   *   - `idempotencyKey` -> the `Idempotency-Key` header.
+   *   - `userLine` -> form field `user_line`, the creator row Spring stores (one line, clipped here
+   *     to `PHOTO_CHECK_USER_LINE_MAX` code points; the chat builds it — "Check my set-up: <shot>",
+   *     or `PHOTO_CHECK_SAME_PHOTO_PREFIX` plus the answers for a chip re-check).
    */
   checkFrame: async (
     image: Blob,
     shotLabel: string | undefined,
     role: MeeraRole = 'creator',
-    extras: { shotContext?: MeeraShotContext; answers?: MeeraCoachAnswer[] } = {}
+    extras: {
+      shotContext?: MeeraShotContext;
+      answers?: MeeraCoachAnswer[];
+      conversationId?: string;
+      idempotencyKey?: string;
+      userLine?: string;
+    } = {}
   ): Promise<MeeraShootCheckFrameOutcome> => {
     const shotContextJson = serializeShotContext(extras.shotContext);
     const answersJson = serializeCoachAnswers(extras.answers);
+    const conversationId = extras.conversationId?.trim() || undefined;
+    const idempotencyKey = extras.idempotencyKey?.trim() || (conversationId ? safeRandomUUID() : undefined);
+    const userLine = extras.userLine ? clipLine(extras.userLine, PHOTO_CHECK_USER_LINE_MAX) : '';
 
     if (!isApiLive()) {
       await delay(600);
       const answered = answersJson !== null;
+      // Demo-mode stand-in for Spring's summary (`chat.text`); ids only when a conversation was
+      // named, the same as the live server.
+      const mockLabel = shotLabel ? clipLine(shotLabel, 120).replace(/[[\]]/g, '') : '';
+      const mockChat: MeeraPhotoCheckChat = {
+        text: [
+          '[Photo check]',
+          ...(mockLabel ? [`Shot: "${mockLabel}"`] : []),
+          "Photo check saw: I can see you're in a bedroom, window light from behind you, phone below your eyes, framed chest up.",
+          'Steps:',
+          '1) Window behind you: Turn so the window is at your side, not behind you, or close the curtain and put your own light on your face.',
+          '2) Eye-level phone: Phone at eye-level: neutral point of view, reliable eye contact.',
+          '3) Talking head by a window: Lens: 1x Main. Distance: 0.8-1m. Framing: Chest up. EV: +0.5. Stabilization: Tripod (stabilization off).',
+          'Looking good: Chest-up framing suits a talking head; The background behind you is tidy',
+          "Can't tell from one photo: Whether the room is quiet enough to record; Whether you have a lamp you can move",
+          ...(answered ? [] : ['I asked: Can you move to a different spot for this shot? (Yes, I can move / No, fixed spot)']),
+        ].join('\n'),
+        messageId: conversationId ? `mock_pc_${Date.now()}_assistant` : null,
+        userMessageId: conversationId ? `mock_pc_${Date.now()}_user` : null,
+      };
       // A realistic sample in the current shape: a bedroom talking head with the window behind the
       // creator, checked for an OPPO A78 (no Pro video mode, so no Pro-only settings parts).
       const demoSteps: MeeraShootCheckStep[] = [
@@ -1622,6 +1875,7 @@ export const meeraApi = {
           lang: 'en',
           retake: false,
         },
+        chat: mockChat,
       };
     }
 
@@ -1629,12 +1883,15 @@ export const meeraApi = {
       const headers: Record<string, string> = {};
       const token = getToken(role);
       if (token) headers.Authorization = `Bearer ${token}`;
+      if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
 
       const formData = new FormData();
       formData.append('image', image, 'frame.jpg');
       if (shotLabel) formData.append('shot_label', shotLabel);
       if (shotContextJson) formData.append('shot_context', shotContextJson);
       if (answersJson) formData.append('answers', answersJson);
+      if (conversationId) formData.append('conversation_id', conversationId);
+      if (userLine) formData.append('user_line', userLine);
 
       const res = await fetch(`${API_BASE_URL}${basePath(role)}/shoot-check/frame`, {
         method: 'POST',
@@ -1670,7 +1927,12 @@ export const meeraApi = {
         return { kind: 'unavailable' };
       }
 
-      return { kind: 'ok', result: parseShootCheckFrameBody(body) };
+      // `chat` is Spring's addition (never influora-ai's), so it is read here and never by the
+      // body parser; an older server simply sends none.
+      const chat = parsePhotoCheckChat(body.chat);
+      return chat
+        ? { kind: 'ok', result: parseShootCheckFrameBody(body), chat }
+        : { kind: 'ok', result: parseShootCheckFrameBody(body) };
     } catch {
       return { kind: 'unavailable' };
     }

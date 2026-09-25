@@ -66,7 +66,7 @@ export function BusinessAccountRequired({ onSkip, className }: BusinessAccountRe
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Co-pilot needs a Business or Creator account linked to a Facebook Page — this is
+          Meera needs a Business or Creator account linked to a Facebook Page — this is
           free and takes under a minute in the Instagram app.
         </p>
         <ol className="space-y-1.5 text-sm text-muted-foreground">

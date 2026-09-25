@@ -6,7 +6,13 @@
          reporter installs (GTM via /site-tags.js runs earlier than the app bundle). Blocking and
          external on purpose: an inline script is exactly what the CSP blocks. -->
     <script src="/csp-violation-buffer.js"></script>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover makes env(safe-area-inset-*) real on iOS (Meera's chat and camera sheet
+         pad with it); interactive-widget=resizes-content makes Android Chrome shrink the layout
+         viewport for the keyboard, so 100dvh follows it. Affects every page: real-device check. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <title>Influencer Marketing Platform for India | Influora</title>
     <meta
       name="description"

@@ -317,3 +317,75 @@ describe('camera and microphone requested separately', () => {
     expect(getUserMedia).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * The in-chat camera sheet shows no readings, so it opens the camera only: `withMic: false` must
+ * never make an audio `getUserMedia` call (a second permission prompt for a mic nothing uses, and a
+ * mic held away from voice input). The default stays `true` so the old panel is unchanged.
+ */
+describe('withMic', () => {
+  it('withMic: false opens the camera only - no audio getUserMedia call - and still goes active', async () => {
+    const { stream } = fakeStream();
+    const getUserMedia = vi.fn().mockResolvedValue(stream);
+    setMediaDevices({ getUserMedia });
+
+    const { result } = renderHook(() => useShootCheck({ target: 'medium', withMic: false }));
+    await act(async () => {
+      result.current.start();
+    });
+
+    await waitFor(() => expect(result.current.phase).toBe('active'));
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(getUserMedia).toHaveBeenCalledWith({ video: { facingMode: 'user' } });
+    for (const call of getUserMedia.mock.calls) expect(call[0]).not.toHaveProperty('audio');
+  });
+
+  it('withMic defaults to true: the mic is still requested when the option is left out', async () => {
+    const { stream } = fakeStream();
+    const getUserMedia = vi.fn().mockResolvedValue(stream);
+    setMediaDevices({ getUserMedia });
+
+    const { result } = renderHook(() => useShootCheck({ target: 'medium' }));
+    await act(async () => {
+      result.current.start();
+    });
+
+    await waitFor(() => expect(result.current.phase).toBe('active'));
+    expect(getUserMedia).toHaveBeenCalledWith({ audio: true });
+  });
+});
+
+/**
+ * Flipping the camera: `start()` reads `facingMode` from its own closure, so a flip is stop() on
+ * the old camera, a re-render with the new facingMode, then start() again. The old camera's track
+ * must be stopped and the new call must ask for the new facing mode.
+ */
+describe('switching facingMode', () => {
+  it('stop() then start() after a facingMode change releases the old camera and opens the rear one', async () => {
+    const front = fakeStream();
+    const rear = fakeStream();
+    const getUserMedia = vi.fn().mockResolvedValueOnce(front.stream).mockResolvedValueOnce(rear.stream);
+    setMediaDevices({ getUserMedia });
+
+    const { result, rerender } = renderHook(
+      ({ facingMode }: { facingMode: 'user' | 'environment' }) =>
+        useShootCheck({ target: 'medium', facingMode, withMic: false }),
+      { initialProps: { facingMode: 'user' as 'user' | 'environment' } }
+    );
+    await act(async () => {
+      result.current.start();
+    });
+    await waitFor(() => expect(result.current.phase).toBe('active'));
+
+    act(() => result.current.stop());
+    expect(front.stopped()).toBeGreaterThan(0);
+    rerender({ facingMode: 'environment' });
+    await act(async () => {
+      result.current.start();
+    });
+
+    await waitFor(() => expect(result.current.phase).toBe('active'));
+    expect(getUserMedia).toHaveBeenNthCalledWith(2, { video: { facingMode: 'environment' } });
+    expect(rear.stopped()).toBe(0);
+  });
+});

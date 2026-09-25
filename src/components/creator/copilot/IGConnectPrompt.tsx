@@ -62,7 +62,7 @@ export function IGConnectPrompt({ className }: IGConnectPromptProps) {
           </div>
           <div>
             <p className="text-sm font-medium">Get your first daily idea</p>
-            <p className="text-xs text-muted-foreground">Link Instagram to unlock Co-pilot.</p>
+            <p className="text-xs text-muted-foreground">Link Instagram to unlock Meera.</p>
           </div>
         </div>
         <Button size="sm" onClick={() => setShowPathChoice(true)} disabled={isConnecting}>

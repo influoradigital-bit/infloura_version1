@@ -85,7 +85,7 @@ export default function DevMeeraPresencePage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-sm font-medium text-muted-foreground">Hero on the Co-pilot page</h2>
+          <h2 className="text-sm font-medium text-muted-foreground">Hero on the Meera page</h2>
           <MeeraHero firstName="Rohit" onAsk={(q) => setAsked(q)} onOpen={() => setVoiceOpen(true)} />
         </section>
 

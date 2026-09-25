@@ -501,7 +501,7 @@ export default function CreatorDealsPage() {
             Deals doesn't carry a second full copy of it.
 
             T-TSOFF-0920: hidden entirely while trend ingest is off. The card's whole promise is
-            its label — "Get today's content idea from Co-pilot" — and with the feature off there
+            its label — "Get today's content idea from Meera" — and with the feature off there
             is no idea behind it, so it is a dead control: it navigates somewhere that can only
             say "not available yet". The /creator/copilot ROUTE and its sidebar nav entry both
             stay, because that page also hosts Meera chat, which is on for the beta. */}
@@ -513,7 +513,7 @@ export default function CreatorDealsPage() {
             <CardContent className="flex items-center justify-between gap-3 py-3">
               <div className="flex items-center gap-2.5">
                 <Sparkles className="h-4 w-4 text-primary" aria-hidden="true" />
-                <p className="text-sm font-medium">Get today&rsquo;s content idea from Co-pilot</p>
+                <p className="text-sm font-medium">Get today&rsquo;s content idea from Meera</p>
               </div>
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
             </CardContent>

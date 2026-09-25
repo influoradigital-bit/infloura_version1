@@ -42,7 +42,7 @@ from app.prompt.creator_persona import (
     render_creator_capabilities,
 )
 from app.prompt.persona import get_persona_block, stamp_prompt_version
-from app.prompt.untrusted import neutralize_angle_brackets, wrap_untrusted
+from app.prompt.untrusted import neutralize_angle_brackets, neutralize_photo_check_header, wrap_untrusted
 from app.tools.creator_schemas import (
     CREATOR_LOCAL_TOOL_NAMES,
     creator_local_tool_schemas,
@@ -945,7 +945,13 @@ def build_block_c_messages(conversation: list[dict[str, Any]]) -> list[dict[str,
         ):
             continue
         if role_key == "user":
-            messages.append({"role": "user", "content": _wrap_untrusted("user_message", content)})
+            # A user turn can never be a photo check (only an earlier ASSISTANT turn that starts
+            # with "[Photo check" is one): any header-like bracket in it is softened here, whatever
+            # the client did (Kabir, photo-check fix round).
+            text = content if isinstance(content, str) else str(content)
+            messages.append(
+                {"role": "user", "content": _wrap_untrusted("user_message", neutralize_photo_check_header(text))}
+            )
         elif role_key == "assistant":
             text = content if isinstance(content, str) else str(content)
             summary = _replayed_tool_calls_summary(turn.get("tool_calls"))

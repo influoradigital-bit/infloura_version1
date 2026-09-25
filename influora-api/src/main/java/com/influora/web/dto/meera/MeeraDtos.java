@@ -102,9 +102,25 @@ public final class MeeraDtos {
      * src/lib/meera-api.ts}'s {@code getMessagesAfter} return type exactly ({@code {id, role,
      * content}}) — deliberately no extra fields (e.g. no {@code createdAt}) so this stays a strict
      * match to the frontend's already-declared contract rather than a superset it doesn't ask for.
+     *
+     * <p>Photo check in Meera's chat: {@code card} is set ONLY by the CREATOR history route, and
+     * only for an ASSISTANT row whose metadata says {@code kind == "photo_check"} -- then it is
+     * {@code {kind, v, result, shot_label}} and nothing else from the metadata (never
+     * prompt_version or token_usage). The client rebuilds the coach card from it; a card is never
+     * parsed out of {@code content}. Null everywhere else, and omitted from the JSON.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record MessageHistoryItem(String id, String role, String content) {}
+    public record MessageHistoryItem(String id, String role, String content, Object card) {
+
+        /**
+         * The pre-photo-check shape, kept so {@code MeeraController} (the BRAND route) builds its
+         * rows unchanged: {@code card} stays null and {@code NON_NULL} leaves it off the wire, so
+         * the brand JSON is byte-identical to before.
+         */
+        public MessageHistoryItem(String id, String role, String content) {
+            this(id, role, content, null);
+        }
+    }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record CreditStatusResponse(

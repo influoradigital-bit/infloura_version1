@@ -45,7 +45,6 @@ import {
   Briefcase,
   Megaphone,
   Sparkles,
-  Camera,
   BarChart3,
   Wallet,
   User,
@@ -132,8 +131,9 @@ const navGroups: CreatorNavGroup[] = [
       { label: 'Deals', href: '/creator/deals', icon: Briefcase },
       { label: 'Campaigns', href: '/creator/campaigns', icon: Megaphone },
       { label: 'Applications', href: '/creator/applications', icon: ClipboardList },
-      { label: 'Co-pilot', href: '/creator/copilot', icon: Sparkles },
-      { label: 'Shoot Check', href: '/creator/shoot-check', icon: Camera },
+      // Shown as "Meera" (RULINGS 3, 2026-09-26: "Co-pilot" is a Microsoft name); the route stays.
+      // Photo check lives inside Meera's chat now, so the Shoot Check row is gone.
+      { label: 'Meera', href: '/creator/copilot', icon: Sparkles },
       { label: 'Analytics', href: '/creator/analytics', icon: BarChart3 },
     ],
   },

@@ -9,6 +9,7 @@ import com.influora.repository.AiConversationRepository;
 import com.influora.repository.AiMessageRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.MeeraCreatorConversationRepository;
+import com.influora.service.meera.PhotoCheckChatWriter;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationExportMessage;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationExportResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationListResponse;
@@ -28,9 +29,11 @@ import org.springframework.transaction.annotation.Transactional;
  * that mismatch entirely and gives one single ownership check for list/export/delete alike.
  *
  * <p><b>Write side (fix round 1, item 4 — closed; fix round 2, item 2 — corrected):</b> {@link
- * #recordTurnForUser} is called from exactly ONE place: {@code
+ * #recordTurnForUser} is called from exactly TWO places: {@code
  * MeeraSessionService#doPersistAssistantWriteback}, once the turn's on-behalf-verified {@code
- * UserType} is confirmed CREATOR and the ASSISTANT reply has actually been persisted. It is
+ * UserType} is confirmed CREATOR and the ASSISTANT reply has actually been persisted; and {@code
+ * PhotoCheckChatWriter#writePair}, in the same transaction that stores a photo check's USER and
+ * ASSISTANT pair (so {@code message_count} also counts photo-check pairs, one per check). It is
  * deliberately NOT also called from {@code doSendTurn} (the USER-message-persist step) any more —
  * that used to inflate {@code message_count} and create/touch a {@link MeeraCreatorConversation}
  * row for a turn whose provider call never completed (Python down, stream dropped, etc.), leaving
@@ -38,6 +41,11 @@ import org.springframework.transaction.annotation.Transactional;
  * COMPLETED turns, while the DPDP consent screen's "you can export or delete your conversations
  * anytime" promise (SPEC.md 2.5-2.7) is still backed by real data for every turn that actually
  * finished.
+ *
+ * <p><b>Export:</b> a photo-check ASSISTANT row also carries its stored check card ({@code
+ * photo_check}: the frame-check result the service holds in {@code metadata_json}, including what
+ * the check saw and every step, even where the summary text had to leave items out), so the DPDP
+ * export holds everything the service keeps about the conversation.
  */
 @Service
 public class CreatorAgentConversationService {
@@ -98,7 +106,8 @@ public class CreatorAgentConversationService {
                                         new ConversationExportMessage(
                                                 m.getRole().name().toLowerCase(java.util.Locale.ROOT),
                                                 m.getContent(),
-                                                m.getCreatedAt()))
+                                                m.getCreatedAt(),
+                                                PhotoCheckChatWriter.historyCard(m)))
                         .toList();
         return new ConversationExportResponse(tracking.getConversationId(), conversation.getCreatedAt(), messages);
     }
@@ -130,9 +139,10 @@ public class CreatorAgentConversationService {
      * see {@code MeeraContextService#assembleCreatorContext} javadoc), never a {@code
      * creator_profiles.id} directly. Resolves the profile first, then delegates to {@link
      * #recordTurn}. Closes the "Write side" gap this class's javadoc used to flag: this is now
-     * actually called — from {@code MeeraSessionService#doPersistAssistantWriteback} only, once
-     * the ASSISTANT reply for a CREATOR turn has actually persisted (see class javadoc, fix round
-     * 2 item 2, for why the earlier {@code doSendTurn}-side call was removed).
+     * actually called — from {@code MeeraSessionService#doPersistAssistantWriteback}, once the
+     * ASSISTANT reply for a CREATOR turn has actually persisted, and from {@code
+     * PhotoCheckChatWriter#writePair} for a stored photo check (see class javadoc, fix round 2
+     * item 2, for why the earlier {@code doSendTurn}-side call was removed).
      */
     @Transactional
     public void recordTurnForUser(String creatorUserId, String conversationId, java.time.Instant when) {

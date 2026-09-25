@@ -239,7 +239,7 @@ describe('T-TSOFF-0920 — trend promises are gated, not hardcoded', () => {
   it('positive control: each rule matches the sentence it was written against', () => {
     const SAMPLES: Record<string, string> = {
       'daily-idea': 'Get your first daily idea',
-      'todays-content-idea': 'Get today’s content idea from Co-pilot',
+      'todays-content-idea': 'Get today’s content idea from Meera',
       'content-idea': 'A fresh content idea every morning',
       'first-idea': 'your first idea lands by tomorrow morning',
       trendspark: 'Powered by Trend-Spark AI',
@@ -256,7 +256,7 @@ describe('T-TSOFF-0920 — trend promises are gated, not hardcoded', () => {
       'Reach & Engagement Trend — All creators combined',
       'High-quality reel with trending audio',
       'Follower & Reach Trend (30d)',
-      'Meera is Influora’s built-in AI campaign co-pilot',
+      'Meera is Influora’s built-in AI campaign manager',
     ];
     for (const line of BENIGN) {
       for (const rule of PROMISE_RULES) {

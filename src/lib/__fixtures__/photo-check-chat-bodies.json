@@ -1,0 +1,514 @@
+{
+  "with_conversation" : {
+    "bedroom_window_behind_en_a78" : {
+      "what_i_see" : "I can see you're in a bedroom, window light from behind you, a bright window behind you, phone below your eyes, framed chest up.",
+      "steps" : [ {
+        "kind" : "move_you",
+        "text" : "Change where the phone points so the window moves to the side, close or cover the curtain, or add your own light on your face. Don't just make the whole video darker, or your face can turn into a dark shape. Wide shots are the hardest here.",
+        "note" : "Window behind you",
+        "label" : "Window behind you"
+      }, {
+        "kind" : "move_phone",
+        "text" : "Keep the phone at your eye level. It gives a neutral view and easy eye contact, the best default for interviews, teaching and talking straight to camera.",
+        "note" : "Eye-level",
+        "label" : "Eye-level phone"
+      }, {
+        "kind" : "settings",
+        "text" : "Lens: 1x Main. Distance: 0.8-1m. Framing: Chest up. EV: +0.5. Stabilization: Tripod (stabilization off).",
+        "note" : "Talking Head (Window light)",
+        "label" : "Talking head by a window",
+        "parts" : [ {
+          "label" : "Lens",
+          "value" : "1x Main",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Distance",
+          "value" : "0.8-1m",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Framing",
+          "value" : "Chest up",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "EV",
+          "value" : "+0.5",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Stabilization",
+          "value" : "Tripod (stabilization off)",
+          "needs_pro" : false,
+          "needs_ois" : false
+        } ]
+      } ],
+      "ok" : [ "The framing suits this kind of shot.", "The background is clean and doesn't pull the eye away." ],
+      "cant_tell" : [ "A photo can't tell me how your audio sounds.", "I can't see the room behind the phone." ],
+      "ask" : {
+        "id" : "can_move",
+        "question_en" : "Can you move to a different spot for this shot?",
+        "question_hi" : "Kya aap is shot ke liye jagah badal sakte ho?",
+        "options" : [ {
+          "en" : "Yes, I can move",
+          "hi" : "Haan, jagah badal sakte hain"
+        }, {
+          "en" : "No, fixed spot",
+          "hi" : "Nahi, jagah fixed hai"
+        } ]
+      },
+      "fixes" : [ "Change where the phone points so the window moves to the side, close or cover the curtain, or add your own light on your face. Don't just make the whole video darker, or your face can turn into a dark shape. Wide shots are the hardest here.", "Keep the phone at your eye level. It gives a neutral view and easy eye contact, the best default for interviews, teaching and talking straight to camera." ],
+      "settings" : [ "Lens: 1x Main. Distance: 0.8-1m. Framing: Chest up. EV: +0.5. Stabilization: Tripod (stabilization off)." ],
+      "lang" : "en",
+      "retake" : false,
+      "fallback" : false,
+      "chat" : {
+        "text" : "[Photo check]\nShot: \"0-3s · Talking to camera by the window\"\nPhoto check saw: I can see you're in a bedroom, window light from behind you, a bright window behind you, phone below your eyes, framed chest up.\nSteps:\n1) Window behind you: Change where the phone points so the window moves to the side, close or cover the curtain, or add your own light on your face. Don't just make the whole video darker, or your face can turn into a dark shape. Wide shots are the hardest here.\n2) Eye-level phone: Keep the phone at your eye level. It gives a neutral view and easy eye contact, the best default for interviews, teaching and talking straight to camera.\n3) Talking head by a window: Lens: 1x Main. Distance: 0.8-1m. Framing: Chest up. EV: +0.5. Stabilization: Tripod (stabilization off).\nLooking good: The framing suits this kind of shot. The background is clean and doesn't pull the eye away.\nCan't tell from one photo: A photo can't tell me how your audio sounds. I can't see the room behind the phone.\nI asked: Can you move to a different spot for this shot? (Yes, I can move / No, fixed spot)",
+        "message_id" : "01J00000000000000000000002",
+        "user_message_id" : "01J00000000000000000000001"
+      }
+    },
+    "kitchen_tube_light_hi_no_phone" : {
+      "what_i_see" : "Mujhe dikh raha hai: aap kitchen mein ho, tube light upar se aa rahi hai, background busy hai, phone eye level pe hai, framing waist up hai.",
+      "steps" : [ {
+        "kind" : "move_you",
+        "text" : "Jo light aapne chuni hai, usi ki taraf face karo, aur ceiling light aur cabinet ke neeche wali light ko alag-alag control karo. Mixed light colours, chamakti tiles aur steel, aur upar ki lights ki shadows check karo.",
+        "note" : "Kitchen",
+        "label" : "Kitchen ka setup"
+      }, {
+        "kind" : "move_light",
+        "text" : "Kitchen aur corridor mein aksar warm aur cool lights mix hoti hain. Face ke liye warm ya cool mein se koi colour chuno aur clash karne wali lights off karo, ya unhe background mein jaanboojhkar colour accent ki tarah rakho.",
+        "note" : "Kitchen/corridor mixed lights",
+        "label" : "Kitchen ya corridor ki lights"
+      }, {
+        "kind" : "settings",
+        "text" : "Lens: 1x Main. Doori: 0.3m (macro). Frame: Macro. EV: -0.3. Agar aapke camera app mein Pro video mode hai: FPS 25; shutter 1/50; ISO <800; white balance 3200K. Agar aapke phone mein OIS (optical stabilisation) hai: phone steady OIS only.",
+        "note" : "Food close-up (restaurant or home)",
+        "label" : "Khaane ka close-up",
+        "parts" : [ {
+          "label" : "Lens",
+          "value" : "1x Main",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Doori",
+          "value" : "0.3m (macro)",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Frame",
+          "value" : "Macro",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "EV",
+          "value" : "-0.3",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "FPS",
+          "value" : "25",
+          "needs_pro" : true,
+          "needs_ois" : false
+        }, {
+          "label" : "Shutter",
+          "value" : "1/50",
+          "needs_pro" : true,
+          "needs_ois" : false
+        }, {
+          "label" : "ISO",
+          "value" : "<800",
+          "needs_pro" : true,
+          "needs_ois" : false
+        }, {
+          "label" : "White balance",
+          "value" : "3200K",
+          "needs_pro" : true,
+          "needs_ois" : false
+        }, {
+          "label" : "Phone steady",
+          "value" : "OIS only",
+          "needs_pro" : false,
+          "needs_ois" : true
+        } ]
+      } ],
+      "ok" : [ "Phone eye level pe hai, isliye eye contact natural lagta hai." ],
+      "cant_tell" : [ "Frame ke bahar ki light, jaise side mein rakha lamp, photo mein nahi dikhti." ],
+      "ask" : {
+        "id" : "other_light",
+        "question_en" : "Apart from the ceiling or tube light, do you have any other light you can move?",
+        "question_hi" : "Ceiling ya tube light ke alawa koi aur light hai jo aap hila sako?",
+        "options" : [ {
+          "en" : "A lamp",
+          "hi" : "Ek lamp"
+        }, {
+          "en" : "A ring light",
+          "hi" : "Ring light"
+        }, {
+          "en" : "Only the tube or ceiling light",
+          "hi" : "Sirf tube ya ceiling light"
+        }, {
+          "en" : "Nothing else",
+          "hi" : "Aur kuch nahi"
+        } ]
+      },
+      "fixes" : [ "Jo light aapne chuni hai, usi ki taraf face karo, aur ceiling light aur cabinet ke neeche wali light ko alag-alag control karo. Mixed light colours, chamakti tiles aur steel, aur upar ki lights ki shadows check karo.", "Kitchen aur corridor mein aksar warm aur cool lights mix hoti hain. Face ke liye warm ya cool mein se koi colour chuno aur clash karne wali lights off karo, ya unhe background mein jaanboojhkar colour accent ki tarah rakho." ],
+      "settings" : [ "Lens: 1x Main. Doori: 0.3m (macro). Frame: Macro. EV: -0.3. Agar aapke camera app mein Pro video mode hai: FPS 25; shutter 1/50; ISO <800; white balance 3200K. Agar aapke phone mein OIS (optical stabilisation) hai: phone steady OIS only." ],
+      "lang" : "hi",
+      "retake" : false,
+      "fallback" : false,
+      "chat" : {
+        "text" : "[Photo check]\nShot: \"3-6s · Khaane ka close-up\"\nPhoto check saw: Mujhe dikh raha hai: aap kitchen mein ho, tube light upar se aa rahi hai, background busy hai, phone eye level pe hai, framing waist up hai.\nSteps:\n1) Kitchen ka setup: Jo light aapne chuni hai, usi ki taraf face karo, aur ceiling light aur cabinet ke neeche wali light ko alag-alag control karo. Mixed light colours, chamakti tiles aur steel, aur upar ki lights ki shadows check karo.\n2) Kitchen ya corridor ki lights: Kitchen aur corridor mein aksar warm aur cool lights mix hoti hain. Face ke liye warm ya cool mein se koi colour chuno aur clash karne wali lights off karo, ya unhe background mein jaanboojhkar colour accent ki tarah rakho.\n3) Khaane ka close-up: Lens: 1x Main. Doori: 0.3m (macro). Frame: Macro. EV: -0.3. Agar aapke camera app mein Pro video mode hai: FPS 25; shutter 1/50; ISO under 800; white balance 3200K. Agar aapke phone mein OIS (optical stabilisation) hai: phone steady OIS only.\nLooking good: Phone eye level pe hai, isliye eye contact natural lagta hai.\nCan't tell from one photo: Frame ke bahar ki light, jaise side mein rakha lamp, photo mein nahi dikhti.\nI asked: Ceiling ya tube light ke alawa koi aur light hai jo aap hila sako? (Ek lamp / Ring light / Sirf tube ya ceiling light / Aur kuch nahi)",
+        "message_id" : "01J00000000000000000000002",
+        "user_message_id" : "01J00000000000000000000001"
+      }
+    },
+    "park_sun_en_find_x8_ultra" : {
+      "what_i_see" : "I can see you're in a park, direct sunlight from above, a clean background, phone at eye level, framed full length.",
+      "steps" : [ {
+        "kind" : "move_you",
+        "text" : "Move into open shade, like a building's or tree's shadow with open sky in front of you, for soft, even light on your face. Stuck in the sun? Hold a white sheet, dupatta or thermocol board low in front of you to bounce light up onto your face, then tap your face to lock brightness and raise it a bit.",
+        "note" : "Harsh midday sun (sun high, your shadow short and right under you)",
+        "label" : "Harsh midday sun"
+      }, {
+        "kind" : "settings",
+        "text" : "Lens: 0.5x Ultrawide. Distance: 2m. Framing: Full body. FPS: 60. Shutter: 1/120 (outdoors in daylight). ISO: 100. White balance: 5600K. EV: 0. Stabilization: Super Steady / EIS On.",
+        "note" : "Outdoor Fitness",
+        "label" : "Outdoor fitness video",
+        "parts" : [ {
+          "label" : "Lens",
+          "value" : "0.5x Ultrawide",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Distance",
+          "value" : "2m",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Framing",
+          "value" : "Full body",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "FPS",
+          "value" : "60",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Shutter",
+          "value" : "1/120 (outdoors in daylight)",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "ISO",
+          "value" : "100",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "White balance",
+          "value" : "5600K",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "EV",
+          "value" : "0",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Stabilization",
+          "value" : "Super Steady / EIS On",
+          "needs_pro" : false,
+          "needs_ois" : false
+        } ]
+      } ],
+      "ok" : [ "The phone is at eye level, so it feels like natural eye contact.", "The background is clean and doesn't pull the eye away." ],
+      "cant_tell" : [ "A photo can't tell me how your audio sounds.", "A still photo can't show shake or movement while you film." ],
+      "ask" : null,
+      "fixes" : [ "Move into open shade, like a building's or tree's shadow with open sky in front of you, for soft, even light on your face. Stuck in the sun? Hold a white sheet, dupatta or thermocol board low in front of you to bounce light up onto your face, then tap your face to lock brightness and raise it a bit." ],
+      "settings" : [ "Lens: 0.5x Ultrawide. Distance: 2m. Framing: Full body. FPS: 60. Shutter: 1/120 (outdoors in daylight). ISO: 100. White balance: 5600K. EV: 0. Stabilization: Super Steady / EIS On." ],
+      "lang" : "en",
+      "retake" : false,
+      "fallback" : false,
+      "chat" : {
+        "text" : "[Photo check]\nShot: \"6-12s · Squats in the park\"\nPhoto check saw: I can see you're in a park, direct sunlight from above, a clean background, phone at eye level, framed full length.\nSteps:\n1) Harsh midday sun: Move into open shade, like a building's or tree's shadow with open sky in front of you, for soft, even light on your face. Stuck in the sun? Hold a white sheet, dupatta or thermocol board low in front of you to bounce light up onto your face, then tap your face to lock brightness and raise it a bit.\n2) Outdoor fitness video: Lens: 0.5x Ultrawide. Distance: 2m. Framing: Full body. FPS: 60. Shutter: 1/120 (outdoors in daylight). ISO: 100. White balance: 5600K. EV: 0. Stabilization: Super Steady / EIS On.\nLooking good: The phone is at eye level, so it feels like natural eye contact. The background is clean and doesn't pull the eye away.\nCan't tell from one photo: A photo can't tell me how your audio sounds. A still photo can't show shake or movement while you film.",
+        "message_id" : "01J00000000000000000000002",
+        "user_message_id" : "01J00000000000000000000001"
+      }
+    },
+    "too_dark_en" : {
+      "what_i_see" : "It's too dark to judge anything here; retake the photo with more light on you.",
+      "steps" : [ ],
+      "ok" : [ ],
+      "cant_tell" : [ ],
+      "ask" : null,
+      "fixes" : [ ],
+      "settings" : [ ],
+      "lang" : "en",
+      "retake" : true,
+      "fallback" : false,
+      "chat" : {
+        "text" : "[Photo check]\nShot: \"0-3s · Close-up on your face\"\nCouldn't judge the photo: It's too dark to judge anything here; retake the photo with more light on you.\nAsked for a retake.",
+        "message_id" : "01J00000000000000000000002",
+        "user_message_id" : "01J00000000000000000000001"
+      }
+    }
+  },
+  "without_conversation" : {
+    "bedroom_window_behind_en_a78" : {
+      "what_i_see" : "I can see you're in a bedroom, window light from behind you, a bright window behind you, phone below your eyes, framed chest up.",
+      "steps" : [ {
+        "kind" : "move_you",
+        "text" : "Change where the phone points so the window moves to the side, close or cover the curtain, or add your own light on your face. Don't just make the whole video darker, or your face can turn into a dark shape. Wide shots are the hardest here.",
+        "note" : "Window behind you",
+        "label" : "Window behind you"
+      }, {
+        "kind" : "move_phone",
+        "text" : "Keep the phone at your eye level. It gives a neutral view and easy eye contact, the best default for interviews, teaching and talking straight to camera.",
+        "note" : "Eye-level",
+        "label" : "Eye-level phone"
+      }, {
+        "kind" : "settings",
+        "text" : "Lens: 1x Main. Distance: 0.8-1m. Framing: Chest up. EV: +0.5. Stabilization: Tripod (stabilization off).",
+        "note" : "Talking Head (Window light)",
+        "label" : "Talking head by a window",
+        "parts" : [ {
+          "label" : "Lens",
+          "value" : "1x Main",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Distance",
+          "value" : "0.8-1m",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Framing",
+          "value" : "Chest up",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "EV",
+          "value" : "+0.5",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Stabilization",
+          "value" : "Tripod (stabilization off)",
+          "needs_pro" : false,
+          "needs_ois" : false
+        } ]
+      } ],
+      "ok" : [ "The framing suits this kind of shot.", "The background is clean and doesn't pull the eye away." ],
+      "cant_tell" : [ "A photo can't tell me how your audio sounds.", "I can't see the room behind the phone." ],
+      "ask" : {
+        "id" : "can_move",
+        "question_en" : "Can you move to a different spot for this shot?",
+        "question_hi" : "Kya aap is shot ke liye jagah badal sakte ho?",
+        "options" : [ {
+          "en" : "Yes, I can move",
+          "hi" : "Haan, jagah badal sakte hain"
+        }, {
+          "en" : "No, fixed spot",
+          "hi" : "Nahi, jagah fixed hai"
+        } ]
+      },
+      "fixes" : [ "Change where the phone points so the window moves to the side, close or cover the curtain, or add your own light on your face. Don't just make the whole video darker, or your face can turn into a dark shape. Wide shots are the hardest here.", "Keep the phone at your eye level. It gives a neutral view and easy eye contact, the best default for interviews, teaching and talking straight to camera." ],
+      "settings" : [ "Lens: 1x Main. Distance: 0.8-1m. Framing: Chest up. EV: +0.5. Stabilization: Tripod (stabilization off)." ],
+      "lang" : "en",
+      "retake" : false,
+      "fallback" : false,
+      "chat" : {
+        "text" : "[Photo check]\nShot: \"0-3s · Talking to camera by the window\"\nPhoto check saw: I can see you're in a bedroom, window light from behind you, a bright window behind you, phone below your eyes, framed chest up.\nSteps:\n1) Window behind you: Change where the phone points so the window moves to the side, close or cover the curtain, or add your own light on your face. Don't just make the whole video darker, or your face can turn into a dark shape. Wide shots are the hardest here.\n2) Eye-level phone: Keep the phone at your eye level. It gives a neutral view and easy eye contact, the best default for interviews, teaching and talking straight to camera.\n3) Talking head by a window: Lens: 1x Main. Distance: 0.8-1m. Framing: Chest up. EV: +0.5. Stabilization: Tripod (stabilization off).\nLooking good: The framing suits this kind of shot. The background is clean and doesn't pull the eye away.\nCan't tell from one photo: A photo can't tell me how your audio sounds. I can't see the room behind the phone.\nI asked: Can you move to a different spot for this shot? (Yes, I can move / No, fixed spot)",
+        "message_id" : null,
+        "user_message_id" : null
+      }
+    },
+    "kitchen_tube_light_hi_no_phone" : {
+      "what_i_see" : "Mujhe dikh raha hai: aap kitchen mein ho, tube light upar se aa rahi hai, background busy hai, phone eye level pe hai, framing waist up hai.",
+      "steps" : [ {
+        "kind" : "move_you",
+        "text" : "Jo light aapne chuni hai, usi ki taraf face karo, aur ceiling light aur cabinet ke neeche wali light ko alag-alag control karo. Mixed light colours, chamakti tiles aur steel, aur upar ki lights ki shadows check karo.",
+        "note" : "Kitchen",
+        "label" : "Kitchen ka setup"
+      }, {
+        "kind" : "move_light",
+        "text" : "Kitchen aur corridor mein aksar warm aur cool lights mix hoti hain. Face ke liye warm ya cool mein se koi colour chuno aur clash karne wali lights off karo, ya unhe background mein jaanboojhkar colour accent ki tarah rakho.",
+        "note" : "Kitchen/corridor mixed lights",
+        "label" : "Kitchen ya corridor ki lights"
+      }, {
+        "kind" : "settings",
+        "text" : "Lens: 1x Main. Doori: 0.3m (macro). Frame: Macro. EV: -0.3. Agar aapke camera app mein Pro video mode hai: FPS 25; shutter 1/50; ISO <800; white balance 3200K. Agar aapke phone mein OIS (optical stabilisation) hai: phone steady OIS only.",
+        "note" : "Food close-up (restaurant or home)",
+        "label" : "Khaane ka close-up",
+        "parts" : [ {
+          "label" : "Lens",
+          "value" : "1x Main",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Doori",
+          "value" : "0.3m (macro)",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Frame",
+          "value" : "Macro",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "EV",
+          "value" : "-0.3",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "FPS",
+          "value" : "25",
+          "needs_pro" : true,
+          "needs_ois" : false
+        }, {
+          "label" : "Shutter",
+          "value" : "1/50",
+          "needs_pro" : true,
+          "needs_ois" : false
+        }, {
+          "label" : "ISO",
+          "value" : "<800",
+          "needs_pro" : true,
+          "needs_ois" : false
+        }, {
+          "label" : "White balance",
+          "value" : "3200K",
+          "needs_pro" : true,
+          "needs_ois" : false
+        }, {
+          "label" : "Phone steady",
+          "value" : "OIS only",
+          "needs_pro" : false,
+          "needs_ois" : true
+        } ]
+      } ],
+      "ok" : [ "Phone eye level pe hai, isliye eye contact natural lagta hai." ],
+      "cant_tell" : [ "Frame ke bahar ki light, jaise side mein rakha lamp, photo mein nahi dikhti." ],
+      "ask" : {
+        "id" : "other_light",
+        "question_en" : "Apart from the ceiling or tube light, do you have any other light you can move?",
+        "question_hi" : "Ceiling ya tube light ke alawa koi aur light hai jo aap hila sako?",
+        "options" : [ {
+          "en" : "A lamp",
+          "hi" : "Ek lamp"
+        }, {
+          "en" : "A ring light",
+          "hi" : "Ring light"
+        }, {
+          "en" : "Only the tube or ceiling light",
+          "hi" : "Sirf tube ya ceiling light"
+        }, {
+          "en" : "Nothing else",
+          "hi" : "Aur kuch nahi"
+        } ]
+      },
+      "fixes" : [ "Jo light aapne chuni hai, usi ki taraf face karo, aur ceiling light aur cabinet ke neeche wali light ko alag-alag control karo. Mixed light colours, chamakti tiles aur steel, aur upar ki lights ki shadows check karo.", "Kitchen aur corridor mein aksar warm aur cool lights mix hoti hain. Face ke liye warm ya cool mein se koi colour chuno aur clash karne wali lights off karo, ya unhe background mein jaanboojhkar colour accent ki tarah rakho." ],
+      "settings" : [ "Lens: 1x Main. Doori: 0.3m (macro). Frame: Macro. EV: -0.3. Agar aapke camera app mein Pro video mode hai: FPS 25; shutter 1/50; ISO <800; white balance 3200K. Agar aapke phone mein OIS (optical stabilisation) hai: phone steady OIS only." ],
+      "lang" : "hi",
+      "retake" : false,
+      "fallback" : false,
+      "chat" : {
+        "text" : "[Photo check]\nShot: \"3-6s · Khaane ka close-up\"\nPhoto check saw: Mujhe dikh raha hai: aap kitchen mein ho, tube light upar se aa rahi hai, background busy hai, phone eye level pe hai, framing waist up hai.\nSteps:\n1) Kitchen ka setup: Jo light aapne chuni hai, usi ki taraf face karo, aur ceiling light aur cabinet ke neeche wali light ko alag-alag control karo. Mixed light colours, chamakti tiles aur steel, aur upar ki lights ki shadows check karo.\n2) Kitchen ya corridor ki lights: Kitchen aur corridor mein aksar warm aur cool lights mix hoti hain. Face ke liye warm ya cool mein se koi colour chuno aur clash karne wali lights off karo, ya unhe background mein jaanboojhkar colour accent ki tarah rakho.\n3) Khaane ka close-up: Lens: 1x Main. Doori: 0.3m (macro). Frame: Macro. EV: -0.3. Agar aapke camera app mein Pro video mode hai: FPS 25; shutter 1/50; ISO under 800; white balance 3200K. Agar aapke phone mein OIS (optical stabilisation) hai: phone steady OIS only.\nLooking good: Phone eye level pe hai, isliye eye contact natural lagta hai.\nCan't tell from one photo: Frame ke bahar ki light, jaise side mein rakha lamp, photo mein nahi dikhti.\nI asked: Ceiling ya tube light ke alawa koi aur light hai jo aap hila sako? (Ek lamp / Ring light / Sirf tube ya ceiling light / Aur kuch nahi)",
+        "message_id" : null,
+        "user_message_id" : null
+      }
+    },
+    "park_sun_en_find_x8_ultra" : {
+      "what_i_see" : "I can see you're in a park, direct sunlight from above, a clean background, phone at eye level, framed full length.",
+      "steps" : [ {
+        "kind" : "move_you",
+        "text" : "Move into open shade, like a building's or tree's shadow with open sky in front of you, for soft, even light on your face. Stuck in the sun? Hold a white sheet, dupatta or thermocol board low in front of you to bounce light up onto your face, then tap your face to lock brightness and raise it a bit.",
+        "note" : "Harsh midday sun (sun high, your shadow short and right under you)",
+        "label" : "Harsh midday sun"
+      }, {
+        "kind" : "settings",
+        "text" : "Lens: 0.5x Ultrawide. Distance: 2m. Framing: Full body. FPS: 60. Shutter: 1/120 (outdoors in daylight). ISO: 100. White balance: 5600K. EV: 0. Stabilization: Super Steady / EIS On.",
+        "note" : "Outdoor Fitness",
+        "label" : "Outdoor fitness video",
+        "parts" : [ {
+          "label" : "Lens",
+          "value" : "0.5x Ultrawide",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Distance",
+          "value" : "2m",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Framing",
+          "value" : "Full body",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "FPS",
+          "value" : "60",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Shutter",
+          "value" : "1/120 (outdoors in daylight)",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "ISO",
+          "value" : "100",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "White balance",
+          "value" : "5600K",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "EV",
+          "value" : "0",
+          "needs_pro" : false,
+          "needs_ois" : false
+        }, {
+          "label" : "Stabilization",
+          "value" : "Super Steady / EIS On",
+          "needs_pro" : false,
+          "needs_ois" : false
+        } ]
+      } ],
+      "ok" : [ "The phone is at eye level, so it feels like natural eye contact.", "The background is clean and doesn't pull the eye away." ],
+      "cant_tell" : [ "A photo can't tell me how your audio sounds.", "A still photo can't show shake or movement while you film." ],
+      "ask" : null,
+      "fixes" : [ "Move into open shade, like a building's or tree's shadow with open sky in front of you, for soft, even light on your face. Stuck in the sun? Hold a white sheet, dupatta or thermocol board low in front of you to bounce light up onto your face, then tap your face to lock brightness and raise it a bit." ],
+      "settings" : [ "Lens: 0.5x Ultrawide. Distance: 2m. Framing: Full body. FPS: 60. Shutter: 1/120 (outdoors in daylight). ISO: 100. White balance: 5600K. EV: 0. Stabilization: Super Steady / EIS On." ],
+      "lang" : "en",
+      "retake" : false,
+      "fallback" : false,
+      "chat" : {
+        "text" : "[Photo check]\nShot: \"6-12s · Squats in the park\"\nPhoto check saw: I can see you're in a park, direct sunlight from above, a clean background, phone at eye level, framed full length.\nSteps:\n1) Harsh midday sun: Move into open shade, like a building's or tree's shadow with open sky in front of you, for soft, even light on your face. Stuck in the sun? Hold a white sheet, dupatta or thermocol board low in front of you to bounce light up onto your face, then tap your face to lock brightness and raise it a bit.\n2) Outdoor fitness video: Lens: 0.5x Ultrawide. Distance: 2m. Framing: Full body. FPS: 60. Shutter: 1/120 (outdoors in daylight). ISO: 100. White balance: 5600K. EV: 0. Stabilization: Super Steady / EIS On.\nLooking good: The phone is at eye level, so it feels like natural eye contact. The background is clean and doesn't pull the eye away.\nCan't tell from one photo: A photo can't tell me how your audio sounds. A still photo can't show shake or movement while you film.",
+        "message_id" : null,
+        "user_message_id" : null
+      }
+    },
+    "too_dark_en" : {
+      "what_i_see" : "It's too dark to judge anything here; retake the photo with more light on you.",
+      "steps" : [ ],
+      "ok" : [ ],
+      "cant_tell" : [ ],
+      "ask" : null,
+      "fixes" : [ ],
+      "settings" : [ ],
+      "lang" : "en",
+      "retake" : true,
+      "fallback" : false,
+      "chat" : {
+        "text" : "[Photo check]\nShot: \"0-3s · Close-up on your face\"\nCouldn't judge the photo: It's too dark to judge anything here; retake the photo with more light on you.\nAsked for a retake.",
+        "message_id" : null,
+        "user_message_id" : null
+      }
+    }
+  }
+}

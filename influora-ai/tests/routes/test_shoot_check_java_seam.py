@@ -75,18 +75,31 @@ def _method_body(source: str, signature: str) -> str:
     return body[: end if end != -1 else len(body)]
 
 
-def test_java_passes_the_frame_check_json_through_byte_for_byte():
+_JAVA_WRITER = _REPO_ROOT / "influora-api/src/main/java/com/influora/service/meera/PhotoCheckChatWriter.java"
+
+
+def test_java_never_maps_the_frame_check_json_to_a_record():
     # The photo-check response grew fields (lang, retake, a step's label and a settings step's
-    # parts, PROMPT_VERSION .25.4) with NO Java change, on the promise that Java never parses
-    # the body: the client returns the response bytes as they came, and the controller returns
-    # those bytes. If either side starts mapping the JSON to a record, the new fields would be
-    # dropped silently -- this fails first.
+    # parts, PROMPT_VERSION .25.4) with NO Java change, on the promise that Java never maps the
+    # body to a record: new fields would be dropped silently. Since the photo check moved into
+    # Meera's chat (2026-09-26), Spring reads a `"fallback": false` body as a JSON TREE to store the
+    # chat pair and add `chat`, and returns every other body byte for byte. Both stay key-agnostic.
     assert _JAVA_CONTROLLER.exists(), f"Java controller not found at {_JAVA_CONTROLLER}"
-    controller = _method_body(
-        _JAVA_CONTROLLER.read_text(encoding="utf-8").replace("\r\n", "\n"), "public ResponseEntity<?> checkFrame("
-    )
+    source = _JAVA_CONTROLLER.read_text(encoding="utf-8").replace("\r\n", "\n")
+    controller = _method_body(source, "public ResponseEntity<?> checkFrame(")
     assert "voiceAiClient.checkFrameForCreator(" in controller
-    assert ".body(result.jsonBytes())" in controller, "checkFrame no longer returns the AI's bytes as they came"
+    assert "passThrough(" in controller, "checkFrame no longer passes the bodies it does not keep through"
+    pass_through = _method_body(source, "private static ResponseEntity<?> passThrough(")
+    assert ".body(result.jsonBytes())" in pass_through, "passThrough no longer returns the AI's bytes as they came"
+
+    assert _JAVA_WRITER.exists(), f"Java writer not found at {_JAVA_WRITER}"
+    writer = _JAVA_WRITER.read_text(encoding="utf-8").replace("\r\n", "\n")
+    keep = _method_body(writer, "public static ObjectNode writableResult(")
+    assert "readTree(result.jsonBytes())" in keep and "deepCopy()" in keep, "the kept body is no longer a JSON tree copy"
+    assert "readValue" not in writer and "treeToValue" not in writer and "convertValue" not in writer, (
+        "PhotoCheckChatWriter maps the frame-check JSON to a type; new fields would be dropped"
+    )
+
     client = _method_body(_java().replace("\r\n", "\n"), "private FrameCheckResult checkFrame(")
     assert "new FrameCheckResult(true, response.body()," in client, "the client no longer returns the raw body"
     assert "objectMapper" not in client and "readValue" not in client and "readTree" not in client
