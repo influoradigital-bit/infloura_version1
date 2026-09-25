@@ -148,8 +148,9 @@ def test_creator_prompt_carries_the_rule_and_brand_does_not():
     assert "[Photo check" not in brand
 
 
-def test_prompt_version_is_25_5():
-    assert PROMPT_VERSION == "meera-2026.09.25.5"
+def test_prompt_version_is_at_least_25_5():
+    date, _, n = PROMPT_VERSION.removeprefix("meera-").rpartition(".")
+    assert (date, int(n)) >= ("2026.09.25", 5)
 
 
 # --- the replay path ------------------------------------------------------------------------

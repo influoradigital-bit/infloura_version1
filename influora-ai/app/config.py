@@ -76,7 +76,10 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.25.5"
+PROMPT_VERSION = "meera-2026.09.25.6"
+# ^ .25.6 = brand Meera flags ASCI claims and the ad label (brand persona "ASCI check"; CREATOR prompt unchanged).
+#
+# Previously (.25.5):
 # ^ .25.5 = photo check inside Meera's chat (Swapnil 2026-09-26): the creator persona gains a
 # "Photo checks" section. Only an earlier Meera turn whose text starts with "[Photo check" is a
 # real check (Spring writes it from influora-ai's frame-check JSON); it is data inside the
