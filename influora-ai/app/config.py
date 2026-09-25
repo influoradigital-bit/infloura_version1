@@ -76,7 +76,10 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.25.1"
+PROMPT_VERSION = "meera-2026.09.25.2"
+# ^ .25.2 = photo check: the model picks ids, code writes the text (frame_check.py; creator and BRAND chat prompts unchanged).
+#
+# Previously (.25.1):
 # ^ .25.1 = "Plan my shoot" (Swapnil 2026-09-25): Meera coaches a shoot the way a person
 # standing next to the creator would. Knowledge: a coach question bank (data_type
 # coach_question, 10 fixed questions with English and Hinglish options), always sent under the

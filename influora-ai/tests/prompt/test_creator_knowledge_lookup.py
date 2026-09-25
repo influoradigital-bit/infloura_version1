@@ -62,9 +62,11 @@ V8_TYPES: tuple[str, ...] = (
 
 # Frame-check system prompt size: 35,313 at v7 (measured on the lookup branch's base,
 # 2026-09-24); 37,472 since the grounded photo check of 2026-09-25 added the step/ask response
-# shape and the coach question ids. The lookup tool is chat-only: nothing it moved or added may
-# reach the frame check.
-FRAME_CHECK_CHARS_AT_COACH_BANK = 37_472
+# shape and the coach question ids; 38,529 since the picks-only photo check (.25.2) spelled out
+# the scene values and the ok / cant_tell ids; 38,643 since the review fixes named the coach
+# notes that are never a step and asked for a usable value only. The lookup tool is chat-only:
+# nothing it moved or added may reach the frame check.
+FRAME_CHECK_CHARS_AT_COACH_BANK = 38_643
 
 _COMBINATORS = ("anyOf", "oneOf", "allOf")
 

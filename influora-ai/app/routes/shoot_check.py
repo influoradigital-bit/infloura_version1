@@ -1,8 +1,10 @@
 """POST /ai/shoot-check/frame — Level 2 "frame check": one photo in, three
-fixes out (T-SHOOTCHECK-L2); since 2026-09-25 grounded steps, each citing a shooting-
-knowledge entry, plus at most one coach-bank question (app/prompt/frame_check.py):
-the model chooses, the server verifies the citation, the kind and every number; the
-question text is the bank's.
+fixes out (T-SHOOTCHECK-L2); since 2026-09-25 steps from shooting-knowledge entries plus
+at most one coach-bank question (app/prompt/frame_check.py). The AI picks, the code
+writes (PROMPT_VERSION .25.2): the model returns only ids and enum values (the scene,
+each step's kind / entry name / side, ok and cant_tell ids, a question id), and code
+writes every sentence from Influora's rows and fixed templates -- no string the model
+writes reaches the response.
 
 SIBLING of `app/routes/voice.py`, not a new pattern. Same gate order, same
 helpers, same "never a raw 5xx, always a deterministic fallback body" shape:
@@ -531,12 +533,13 @@ async def shoot_check_frame(request: Request, authorization: str | None = Header
         )
         return {**fallback_response(), "fallback": True}
 
-    # The model chooses; the server verifies. A step is kept only when it cites a shooting-
-    # knowledge entry whose type fits its kind (a phone entry only when it is this creator's
-    # own phone) and every number in it is in that entry's advice; the question text is the
-    # bank's, and a question this request already answers is dropped (app/prompt/frame_check.py).
-    # A what_i_see alone (an unusable photo) comes back as it is; nothing usable at all (no
-    # step, no question, no what_i_see) -> the honest fallback.
+    # The AI picks, the code writes (app/prompt/frame_check.py): only the model's ids and
+    # enum values are read. A step is kept only when it names a shooting-knowledge entry whose
+    # type fits its kind, and its text is written from that entry, fitted to this creator's
+    # saved phone; what_i_see, ok and cant_tell are fixed templates; the question text is the
+    # bank's, and a question this request already answers is dropped. An unusable photo (or a
+    # `usable` that is not exactly "yes") comes back as its one fixed line; a usable photo with
+    # nothing to act on (no step and no question) -> the honest fallback.
     reply = parse_frame_check_reply(
         result.text,
         answered_ids=answered_question_ids(answers, shot_context, phone_row),
@@ -547,7 +550,12 @@ async def shoot_check_frame(request: Request, authorization: str | None = Header
         log_event(
             logger, logging.WARNING, "shoot_check_frame_malformed_model_output",
             workspace_id=str(workspace_id), request_id=request_id,
-            fields={"steps_dropped": reply.steps_dropped},
+            fields={
+                "steps_dropped": reply.steps_dropped,
+                "usable": reply.usable,
+                "lang": reply.lang,
+                "scene_read": reply.scene_read,
+            },
         )
         _log_frame_check_metered(
             workspace_id=str(workspace_id), request_id=request_id, shot_label=shot_label, success=False
@@ -566,6 +574,9 @@ async def shoot_check_frame(request: Request, authorization: str | None = Header
             "settings_count": len(parsed["settings"]),
             "ok_count": len(parsed["ok"]),
             "cant_tell_count": len(parsed["cant_tell"]),
+            "usable": reply.usable,
+            "lang": reply.lang,
+            "scene_read": reply.scene_read,
         },
     )
     _log_frame_check_metered(

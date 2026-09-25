@@ -57,6 +57,7 @@ from app.auth.service_token import reset_jwks_source, set_jwks_source_for_testin
 from app.clients.spring import SpringInternalClient
 from app.config import get_settings
 from app.costs import spend_tracker
+from app.prompt.frame_check_render import OK_LINES
 from app.providers.claude import ClaudeTextResult
 
 FRAME_PATH = "/ai/shoot-check/frame"
@@ -207,13 +208,16 @@ def _claude_ok():
     claude.complete_with_image = AsyncMock(
         return_value=ClaudeTextResult(
             ok=True,
-            # Grounded reply shape (2026-09-25): an "ok"-only reply is no longer a usable check,
-            # so the fake cites one real knowledge entry.
+            # Picks-only reply shape (2026-09-25, PROMPT_VERSION .25.2): the model returns ids
+            # and enum values and code writes the text, so the fake picks a scene and one real
+            # knowledge entry.
             text=json.dumps({
-                "what_i_see": "A desk by a window.",
-                "steps": [{"kind": "move_you", "text": "Turn partway toward the window.",
-                           "note": "Creator is 30-45 deg to window"}],
-                "ok": ["Looks good."], "cant_tell": [], "ask": None,
+                "lang": "en",
+                "scene": {"usable": "yes", "place": "desk", "light": "window", "light_side": "your_left",
+                          "background": "clean", "phone_height": "eye_level", "framing": "chest_up",
+                          "others_in_frame": "no"},
+                "steps": [{"kind": "move_you", "note": "Creator is 30-45 deg to window", "side": "your_left"}],
+                "ok": ["background_clean"], "cant_tell": [], "ask": None,
             }),
             usage={"input_tokens": 500, "output_tokens": 60},
         )
@@ -247,7 +251,7 @@ async def test_consented_creator_frame_check_succeeds_and_engages_the_monthly_ca
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data.get("fallback") is not True, data
-    assert data["ok"] == ["Looks good."]
+    assert data["ok"] == [OK_LINES["background_clean"]["en"]]  # code-written, never the model's
 
     # (a) -- the creator cap ledger actually moved. Before this fix,
     # derive_audience saw no claim at all, audience stayed None, and
