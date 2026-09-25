@@ -20,7 +20,14 @@ response is written here:
     values as the row writes them); a row with no line, its OWN advice field. With a
     templated side lead for move_you and move_light ("Turn so the light is on your left.");
   - what is already working and what one photo cannot show (`render_lines`): fixed lines
-    per id (`OK_LINES`, `CANT_TELL_LINES`), English and Hinglish (Latin script).
+    per id (`OK_LINES`, `CANT_TELL_LINES`), English and Hinglish (Latin script);
+  - each step's topic label (`step_label`, 2026-09-25): a short creator-voice label per row
+    in the reply's language (`CREATOR_STEP_LABELS`, read from
+    `knowledge/creator_step_labels.jsonl`: "Window behind you" / "Window aapke peeche"), so
+    the app can say what a step is about without showing a knowledge row's own name;
+  - a settings row's parts as data (`render_step_parts`): the SAME fitted parts the step's
+    text is built from, [{label, value, needs_pro, needs_ois}] in the text's order, so the
+    app can show them as a list and the two cannot drift.
 
 Phone fit is deterministic: the advice is split into sentences (a settings row into its
 parts) and a sentence or part naming something the creator's phone lacks is removed
@@ -70,7 +77,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from app.prompt.content_knowledge import CREATOR_KNOWLEDGE_ROWS, NAME_FIELD
 
@@ -682,13 +689,104 @@ def _one_line(text: str) -> str:
 CREATOR_STEP_LINES: dict[tuple[str, str], dict[str, str]] = load_creator_step_lines()
 
 
-def _line_for(row: dict[str, Any]) -> dict[str, str] | None:
-    """The row's creator-voice line ({"en", "hi"}), or None."""
+def _row_key(row: dict[str, Any]) -> tuple[str, str] | None:
+    """(data_type, the row's own name, stripped), or None."""
     dt = row.get("data_type")
     name = row.get(NAME_FIELD.get(dt, "")) if isinstance(dt, str) else None
     if not isinstance(name, str):
         return None
-    return CREATOR_STEP_LINES.get((dt, name.strip()))
+    return dt, name.strip()  # type: ignore[return-value]
+
+
+def _line_for(row: dict[str, Any]) -> dict[str, str] | None:
+    """The row's creator-voice line ({"en", "hi"}), or None."""
+    key = _row_key(row)
+    return CREATOR_STEP_LINES.get(key) if key else None
+
+
+# --- step topic labels ---------------------------------------------------------------------------
+
+CREATOR_STEP_LABELS_PATH = Path(__file__).parent / "knowledge" / "creator_step_labels.jsonl"
+# A label is a short phrase the app shows under a step ("From the guide: Window behind you").
+LABEL_MAX_CHARS = 40
+_DIGIT_RE = re.compile(r"\d")
+
+
+class CreatorStepLabelsError(ValueError):
+    """The step labels file is malformed. Raised at import, never at request time."""
+
+
+def load_creator_step_labels(
+    path: Path = CREATOR_STEP_LABELS_PATH, rows: list[dict[str, Any]] | None = None
+) -> dict[tuple[str, str], dict[str, str]]:
+    """(data_type, row name) -> {"en", "hi"}: one short topic label per row that can be a step.
+
+    Each line of the file is {"data_type", "name", "en", "hi"} with `name` the row's own
+    name (`NAME_FIELD`), exactly. Raises `CreatorStepLabelsError` when the file cannot be
+    read or is empty, and on the first line that is not such an object, whose type is not a
+    step type (`STEP_TEXT_TYPES`), whose (data_type, name) does not name exactly ONE row of
+    `rows` (default: the knowledge rows), that repeats a key, or whose en or hi is empty,
+    over `LABEL_MAX_CHARS`, holds a digit, or ends in a full stop (a label is a phrase)."""
+    rows = CREATOR_KNOWLEDGE_ROWS if rows is None else rows
+    row_count: dict[tuple[str, str], int] = {}
+    for r in rows:
+        key = _row_key(r) if isinstance(r, dict) else None
+        if key is not None:
+            row_count[key] = row_count.get(key, 0) + 1
+    labels: dict[tuple[str, str], dict[str, str]] = {}
+    try:
+        raw_lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise CreatorStepLabelsError(f"{path.name}: cannot be read ({exc})") from exc
+    for lineno, raw in enumerate(raw_lines, start=1):
+        if not raw.strip():
+            continue
+        where = f"{path.name} line {lineno}"
+        try:
+            obj = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise CreatorStepLabelsError(f"{where}: invalid JSON ({exc.msg})") from exc
+        if not isinstance(obj, dict) or set(obj) != {"data_type", "name", *LANGS}:
+            raise CreatorStepLabelsError(f"{where}: not a {{data_type, name, en, hi}} object")
+        dt, name = obj["data_type"], obj["name"]
+        if not isinstance(dt, str) or not isinstance(name, str):
+            raise CreatorStepLabelsError(f"{where}: data_type and name must be text")
+        key = (dt, name.strip())
+        if dt not in STEP_TEXT_TYPES:
+            raise CreatorStepLabelsError(f"{where}: {dt!r} is not a type a step is written for")
+        found = row_count.get(key, 0)
+        if found != 1:
+            raise CreatorStepLabelsError(f"{where}: {key} names {found} rows, not exactly one")
+        if key in labels:
+            raise CreatorStepLabelsError(f"{where}: {key} has a label already")
+        for lang in LANGS:
+            text = obj[lang]
+            if not isinstance(text, str) or not text.strip():
+                raise CreatorStepLabelsError(f"{where}: {key} {lang} is empty")
+            text = _one_line(text)
+            if len(text) > LABEL_MAX_CHARS:
+                raise CreatorStepLabelsError(
+                    f"{where}: {key} {lang} is {len(text)} chars, over {LABEL_MAX_CHARS}"
+                )
+            if _DIGIT_RE.search(text):
+                raise CreatorStepLabelsError(f"{where}: {key} {lang} has a digit: {text!r}")
+            if text.endswith("."):
+                raise CreatorStepLabelsError(f"{where}: {key} {lang} ends in a full stop")
+        labels[key] = {lang: _one_line(obj[lang]) for lang in LANGS}
+    if not labels:
+        raise CreatorStepLabelsError(f"{path.name}: no labels")
+    return labels
+
+
+CREATOR_STEP_LABELS: dict[tuple[str, str], dict[str, str]] = load_creator_step_labels()
+
+
+def step_label(row: dict[str, Any], lang: str) -> str | None:
+    """The row's topic label in `lang` ("en" or "hi"; anything else is "en"), or None when
+    the labels file has none for it (the caller shows its own note instead)."""
+    key = _row_key(row) if isinstance(row, dict) else None
+    labels = CREATOR_STEP_LABELS.get(key) if key else None
+    return labels[_lang(lang)] if labels else None
 
 # The side lead for kinds where the side matters; no number in any of them.
 _SIDE_LEADS: dict[str, dict[str, dict[str, str]]] = {
@@ -977,16 +1075,28 @@ def _assemble(lead: str, plain: list[str], conditional: dict[str, list[str]], la
     then OIS), within `MAX_STEP_CHARS`. The first sentence is always kept whole; later ones
     only when they fit. The side lead is a hint: it is left off when it would push the first
     sentence over."""
+    return _assemble_kept(lead, plain, conditional, lang)[0]
+
+
+def _assemble_kept(
+    lead: str, plain: list[str], conditional: dict[str, list[str]], lang: str
+) -> tuple[str | None, int, dict[str, int]]:
+    """`_assemble`, also saying how much of each list the text holds: (text, how many of
+    `plain` from the front, {feature: how many of its items from the front}). A settings
+    step's parts are cut to exactly these counts, so they are the parts the text shows."""
     first = _end(plain[0]) if plain else None
     if first is not None and len(lead + first) > MAX_STEP_CHARS:
         lead = ""
     text = lead
     body = False
+    plain_kept = 0
+    items_kept: dict[str, int] = {}
     for sentence in plain:
         candidate = text + ("" if not body else " ") + _end(sentence)
         if body and len(candidate) > MAX_STEP_CHARS:
             break
         text, body = candidate, True
+        plain_kept += 1
     for feature in _CONDITIONAL_ORDER:
         prefix = _CONDITIONAL_PREFIX[feature][lang]
         items: list[str] = []
@@ -1000,7 +1110,8 @@ def _assemble(lead: str, plain: list[str], conditional: dict[str, list[str]], la
         if items:
             text = text + (" " if body else "") + prefix + "; ".join(items) + "."
             body = True
-    return text if body else None
+            items_kept[feature] = len(items)
+    return (text if body else None), plain_kept, items_kept
 
 
 def _coach_facing(row: dict[str, Any]) -> bool:
@@ -1065,9 +1176,12 @@ def _lens_value(value: str, phone_row: dict[str, Any] | None) -> tuple[str, str 
 
 def _render_settings(
     row: dict[str, Any], phone_row: dict[str, Any] | None, lang: str
-) -> tuple[list[str], dict[str, list[str]]]:
-    plain: list[str] = []
-    conditional: dict[str, list[str]] = {}
+) -> tuple[list[tuple[str, str]], dict[str, list[tuple[str, str]]]]:
+    """A settings row's parts fitted to the phone -> ([(label, "Label: value")] given as is,
+    {feature: [(label, "Label value")] for that feature's conditional sentence}), labels in
+    `lang`, in `_SETTINGS_PARTS` order."""
+    plain: list[tuple[str, str]] = []
+    conditional: dict[str, list[tuple[str, str]]] = {}
     lacking: set[str] = set()
     for field, label in _SETTINGS_PARTS[row["data_type"]]:
         if lang == "hi":
@@ -1080,9 +1194,21 @@ def _render_settings(
             if fell_back:
                 lacking.add(fell_back)  # "Distance: 2.5m on the telephoto" no longer applies
         kept, more = _fit(f"{label}: {value}", phone_row, settings=True, lacking=frozenset(lacking))
-        plain.extend(kept)
-        _add(conditional, more, lambda item, label=label: _settings_item(item, label))
+        plain.extend((label, text) for text in kept)
+        _add(conditional, more, lambda item, label=label: (label, _settings_item(item, label)))
     return plain, conditional
+
+
+def _settings_part(label: str, text: str, prefix: str, feature: str | None) -> dict[str, Any]:
+    """One settings part as data: its label and the value the text shows after it ("Lens: 1x
+    Main" -> "1x Main"; a conditional "Shutter Auto, or 1/50" -> "Auto, or 1/50")."""
+    value = text[len(prefix):] if text.startswith(prefix) else text
+    return {
+        "label": label,
+        "value": value,
+        "needs_pro": feature == "manual_video",
+        "needs_ois": feature == "ois",
+    }
 
 
 def _side_lead(kind: str, row: dict[str, Any], side: Any, lang: str) -> str:
@@ -1094,6 +1220,15 @@ def _side_lead(kind: str, row: dict[str, Any], side: Any, lang: str) -> str:
     if not fits:
         return ""
     return _SIDE_LEADS.get(kind, {}).get(_norm_enum(side) or "", {}).get(lang, "")
+
+
+class RenderedStep(NamedTuple):
+    """A step as `render_step_parts` writes it: its text, and -- for a settings row only --
+    the parts that text is built from ([{label, value, needs_pro, needs_ois}], in the text's
+    order); None for every other row."""
+
+    text: str
+    parts: list[dict[str, Any]] | None
 
 
 def render_step(
@@ -1110,6 +1245,22 @@ def render_step(
     is a coach-facing standing rule, the row has no advice (the "good background" row has no
     fix; a camera height other than eye level; a light-angle or portrait-pattern row with no
     line), or nothing fits the phone. `side` opens the step only for a row in `_SIDE_ROWS`."""
+    rendered = render_step_parts(kind, row, phone_row, lang, side)
+    return rendered.text if rendered is not None else None
+
+
+def render_step_parts(
+    kind: str,
+    row: dict[str, Any],
+    phone_row: dict[str, Any] | None,
+    lang: str,
+    side: str = "none",
+) -> RenderedStep | None:
+    """`render_step`, with a settings row's parts as data. The parts are the same fitted
+    parts the text is assembled from, cut to exactly what the text holds (`_assemble_kept`):
+    the plain parts first ("Lens: 1x Main" -> {"label": "Lens", "value": "1x Main"}), then
+    those in the Pro video mode sentence (needs_pro), then those in the OIS sentence
+    (needs_ois). Labels are in `lang`; values as the row writes them."""
     if kind not in STEP_KINDS or not isinstance(row, dict):
         return None
     if row.get("data_type") not in STEP_TEXT_TYPES or _coach_facing(row):
@@ -1117,40 +1268,60 @@ def render_step(
     lang = _lang(lang)
     lead = _side_lead(kind, row, side, lang)
     if row["data_type"] in _SETTINGS_PARTS:
-        plain, conditional = _render_settings(row, phone_row, lang)
-    else:
-        line = _line_for(row)
-        if line is not None:
-            advice = line[lang]
-        elif row["data_type"] in _LINE_ONLY_TYPES:
+        labelled_plain, labelled_conditional = _render_settings(row, phone_row, lang)
+        plain = [text for _, text in labelled_plain]
+        conditional = {
+            feature: [text for _, text in items] for feature, items in labelled_conditional.items()
+        }
+        text, plain_kept, items_kept = _assemble_kept(lead, plain, conditional, lang)
+        if text is None:
             return None
-        else:
-            advice = _sentence_advice(row)
-        plain, conditional = _render_sentences(advice, phone_row)
-    return _assemble(lead, plain, conditional, lang)
+        parts = [_settings_part(label, t, label + ": ", None) for label, t in labelled_plain[:plain_kept]]
+        for feature in _CONDITIONAL_ORDER:
+            for label, item in labelled_conditional.get(feature, [])[: items_kept.get(feature, 0)]:
+                parts.append(_settings_part(label, item.rstrip(". "), label + " ", feature))
+        return RenderedStep(text, parts)
+    line = _line_for(row)
+    if line is not None:
+        advice = line[lang]
+    elif row["data_type"] in _LINE_ONLY_TYPES:
+        return None
+    else:
+        advice = _sentence_advice(row)
+    plain, conditional = _render_sentences(advice, phone_row)
+    text = _assemble(lead, plain, conditional, lang)
+    return RenderedStep(text, None) if text is not None else None
 
 
 __all__ = [
     "CANT_TELL_LINES",
+    "CREATOR_STEP_LABELS",
+    "CREATOR_STEP_LABELS_PATH",
     "CREATOR_STEP_LINES",
     "CREATOR_STEP_LINES_PATH",
+    "CreatorStepLabelsError",
     "CreatorStepLinesError",
+    "LABEL_MAX_CHARS",
     "LANGS",
     "LINE_MAX_CHARS",
     "MAX_STEP_CHARS",
     "OIS_PREFIX",
     "OK_LINES",
     "PRO_MODE_PREFIX",
+    "RenderedStep",
     "SCENE_VALUES",
     "STEP_KINDS",
     "STEP_TEXT_TYPES",
     "USABLE_UNCLEAR",
+    "load_creator_step_labels",
     "load_creator_step_lines",
     "normalize_lang",
     "normalize_scene",
     "phone_features_named",
     "render_lines",
     "render_step",
+    "render_step_parts",
     "render_what_i_see",
     "step_fits_phone",
+    "step_label",
 ]

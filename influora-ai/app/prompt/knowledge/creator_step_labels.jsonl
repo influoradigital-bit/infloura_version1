@@ -1,0 +1,96 @@
+{"data_type": "flicker_rule", "name": "India", "en": "Flicker under home lights", "hi": "Ghar ki lights ka flicker"}
+{"data_type": "camera_technical_setting", "name": "Talking Head (Window light)", "en": "Talking head by a window", "hi": "Window ke paas talking head"}
+{"data_type": "camera_technical_setting", "name": "Talking Head (Cluttered background)", "en": "Talking head, busy background", "hi": "Talking head, bhara background"}
+{"data_type": "camera_technical_setting", "name": "Walking Street Vlog", "en": "Walking street vlog", "hi": "Street pe walking vlog"}
+{"data_type": "camera_technical_setting", "name": "Cinematic B-Roll", "en": "Cinematic b-roll", "hi": "Cinematic b-roll shots"}
+{"data_type": "camera_technical_setting", "name": "Night Street (Neon)", "en": "Neon street at night", "hi": "Raat mein neon street"}
+{"data_type": "camera_technical_setting", "name": "Product Review (Desk)", "en": "Product review at a desk", "hi": "Desk pe product review"}
+{"data_type": "camera_technical_setting", "name": "Outdoor Fitness", "en": "Outdoor fitness video", "hi": "Bahar fitness video"}
+{"data_type": "camera_technical_setting", "name": "Food close-up (restaurant or home)", "en": "Food close-up", "hi": "Khaane ka close-up"}
+{"data_type": "lighting_rule", "name": "Strong natural daylight (terrace/street), when the sun is low or at an angle, not overhead", "en": "Strong sun at an angle", "hi": "Tez dhoop, tirchha suraj"}
+{"data_type": "lighting_rule", "name": "Soft natural window light", "en": "Soft window light", "hi": "Window ki soft light"}
+{"data_type": "lighting_rule", "name": "Mixed indoor LED (warm bulb + cool tube light — common in Indian apartments)", "en": "Warm bulb and tube light", "hi": "Warm bulb aur tube light"}
+{"data_type": "lighting_rule", "name": "Backlit subject (bright shop or sunset behind them)", "en": "Bright shop or sunset behind you", "hi": "Peeche bright dukaan ya sunset"}
+{"data_type": "background_rule", "name": "What makes a bad background, and the fix", "en": "Fixing a busy background", "hi": "Busy background theek karo"}
+{"data_type": "subject_positioning_rule", "name": "Talking-head (educational/vlog)", "en": "Talking head framing", "hi": "Talking head ki framing"}
+{"data_type": "subject_positioning_rule", "name": "Product demonstration (tech/cosmetics)", "en": "Product demo framing", "hi": "Product demo ki framing"}
+{"data_type": "failure_case", "name": "Black, silhouetted face", "en": "Too dark against the light", "hi": "Light ke against bahut dark"}
+{"data_type": "failure_case", "name": "Choppy, laggy video in a dim room", "en": "Choppy video in a dim room", "hi": "Kam light mein choppy video"}
+{"data_type": "failure_case", "name": "Distorted facial features (huge nose, tiny ears)", "en": "Phone too close", "hi": "Phone bahut paas"}
+{"data_type": "failure_case", "name": "Digital crop jitter / warping edges while walking", "en": "Wobbly edges while walking", "hi": "Chalte waqt hilte edges"}
+{"data_type": "night_video_setting", "name": "Streetlight (weak/orange)", "en": "Orange streetlight at night", "hi": "Raat mein orange streetlight"}
+{"data_type": "night_video_setting", "name": "Bedroom (warm LED)", "en": "Bedroom at night", "hi": "Raat mein bedroom"}
+{"data_type": "night_video_setting", "name": "Night market (bright neon)", "en": "Neon night market", "hi": "Neon wala night market"}
+{"data_type": "night_video_setting", "name": "Restaurant (dim ambient)", "en": "Dim restaurant", "hi": "Kam light wala restaurant"}
+{"data_type": "permanent_rule", "name": "On a phone with Pro/manual video, lock white balance to a Kelvin value for talking-head videos (about 5600K for daylight, 3200K for warm bulbs) -- auto white balance can shift skin tone mid-video as hands or a screen change colour. On an auto-only phone, use one light source so auto white balance has nothing to chase.", "en": "Locked white balance", "hi": "White balance lock karo"}
+{"data_type": "permanent_rule", "name": "In video, stay on the phone's optical lenses (the 0.5x ultrawide, the 1x, and the 2x/3x/3.5x telephoto if the phone has them) and never zoom digitally past them -- move the phone closer instead; digital zoom throws away detail.", "en": "Real lenses, no digital zoom", "hi": "Asli lens, digital zoom nahi"}
+{"data_type": "permanent_rule", "name": "Always wipe the camera lens with a microfiber cloth before recording — micro-scratches and finger oil cause severe highlight halation, worsened by humidity and dust common in Indian outdoor environments.", "en": "Clean lens first", "hi": "Pehle lens saaf karo"}
+{"data_type": "permanent_rule", "name": "Keep ISO as low as you can; if you see grain, add light rather than raising ISO (roughly above 800 on mid-range phones, 1600 on 1-inch sensors).", "en": "Low ISO, more light", "hi": "Kam ISO, zyada light"}
+{"data_type": "lighting_rule", "name": "Harsh midday sun (sun high, your shadow short and right under you)", "en": "Harsh midday sun", "hi": "Dopahar ki tez dhoop"}
+{"data_type": "lighting_rule", "name": "Golden hour (about the first hour after sunrise and the last hour before sunset)", "en": "Golden hour", "hi": "Golden hour ki light"}
+{"data_type": "lighting_rule", "name": "Cloudy or overcast day", "en": "Cloudy day light", "hi": "Baadal wale din ki light"}
+{"data_type": "lighting_rule", "name": "Shade under trees", "en": "Shade under trees", "hi": "Pedon ke neeche shade"}
+{"data_type": "camera_technical_setting", "name": "Talking Head (Outdoors, daylight)", "en": "Talking head outdoors", "hi": "Bahar talking head"}
+{"data_type": "lighting_angle_rule", "name": "Near camera axis, 0-15 deg", "en": "Main light in front", "hi": "Main light saamne"}
+{"data_type": "lighting_angle_rule", "name": "Slight side, ~15-30 deg", "en": "Main light slightly aside", "hi": "Main light thodi side mein"}
+{"data_type": "lighting_angle_rule", "name": "Three-quarter side, ~30-60 deg", "en": "Main light angled aside", "hi": "Main light tirchhi side mein"}
+{"data_type": "lighting_angle_rule", "name": "Side, near 90 deg", "en": "Main light at your side", "hi": "Main light bilkul side mein"}
+{"data_type": "lighting_angle_rule", "name": "Behind, ~120-180 deg (backlight)", "en": "Light behind you", "hi": "Light aapke peeche"}
+{"data_type": "lighting_angle_rule", "name": "Directly overhead", "en": "Light straight above", "hi": "Light seedha upar se"}
+{"data_type": "lighting_angle_rule", "name": "Below face", "en": "Light from below", "hi": "Neeche se light"}
+{"data_type": "window_lighting_rule", "name": "Creator faces window; phone between creator and window", "en": "Facing the window", "hi": "Window ke saamne"}
+{"data_type": "window_lighting_rule", "name": "Creator is 30-45 deg to window", "en": "Window at an angle", "hi": "Window tirchhi side mein"}
+{"data_type": "window_lighting_rule", "name": "Creator is 90 deg to window", "en": "Side-on to the window", "hi": "Window se side-on"}
+{"data_type": "window_lighting_rule", "name": "Window behind creator toward phone", "en": "Window behind you", "hi": "Window aapke peeche"}
+{"data_type": "window_lighting_rule", "name": "Window beside creator", "en": "Window beside you", "hi": "Window aapke bagal mein"}
+{"data_type": "window_lighting_rule", "name": "Window above creator", "en": "Window above you", "hi": "Window aapke upar"}
+{"data_type": "window_lighting_rule", "name": "Multiple windows", "en": "Several windows", "hi": "Kai windows"}
+{"data_type": "indian_home_lighting_rule", "name": "Window/balcony daylight", "en": "Window or balcony daylight", "hi": "Window ya balcony ki daylight"}
+{"data_type": "indian_home_lighting_rule", "name": "Ceiling LED/tube/fan light", "en": "Ceiling light only", "hi": "Sirf ceiling light"}
+{"data_type": "indian_home_lighting_rule", "name": "Warm bulb/table/floor lamp", "en": "Warm bulb or lamp", "hi": "Warm bulb ya lamp"}
+{"data_type": "indian_home_lighting_rule", "name": "Ring light", "en": "Ring light", "hi": "Ring light ka use"}
+{"data_type": "indian_home_lighting_rule", "name": "TV/display as light source", "en": "TV or screen light", "hi": "TV ya screen ki light"}
+{"data_type": "indian_home_lighting_rule", "name": "Kitchen/corridor mixed lights", "en": "Kitchen or corridor lights", "hi": "Kitchen ya corridor ki lights"}
+{"data_type": "camera_height_rule", "name": "Eye-level", "en": "Eye-level phone", "hi": "Phone eye-level pe"}
+{"data_type": "background_repair_rule", "name": "Messy room/clutter", "en": "Messy room behind you", "hi": "Peeche bikhra room"}
+{"data_type": "background_repair_rule", "name": "Blank wall", "en": "Blank wall behind you", "hi": "Peeche khaali wall"}
+{"data_type": "background_repair_rule", "name": "Bright window in background", "en": "Bright window in the shot", "hi": "Frame mein bright window"}
+{"data_type": "background_repair_rule", "name": "Mirror/glass reflection", "en": "Mirror or glass reflection", "hi": "Mirror ya glass ka reflection"}
+{"data_type": "background_repair_rule", "name": "Bright object merging with head", "en": "Bright object right behind", "hi": "Theek peeche bright cheez"}
+{"data_type": "background_repair_rule", "name": "Subject blends into background", "en": "Blending into the background", "hi": "Background mein mil jaana"}
+{"data_type": "portrait_lighting_pattern", "name": "Rembrandt-style", "en": "Rembrandt-style light", "hi": "Rembrandt-style light"}
+{"data_type": "portrait_lighting_pattern", "name": "Split", "en": "Split light look", "hi": "Split light wala look"}
+{"data_type": "portrait_lighting_pattern", "name": "Backlight/rim", "en": "Rim light from behind", "hi": "Peeche se rim light"}
+{"data_type": "indian_creator_scene_checklist", "name": "Bedroom", "en": "Bedroom setup", "hi": "Bedroom ka setup"}
+{"data_type": "indian_creator_scene_checklist", "name": "Living room", "en": "Living room setup", "hi": "Living room ka setup"}
+{"data_type": "indian_creator_scene_checklist", "name": "Desk/office", "en": "Desk or office setup", "hi": "Desk ya office ka setup"}
+{"data_type": "indian_creator_scene_checklist", "name": "Kitchen", "en": "Kitchen setup", "hi": "Kitchen ka setup"}
+{"data_type": "indian_creator_scene_checklist", "name": "Balcony door", "en": "By the balcony door", "hi": "Balcony door ke paas"}
+{"data_type": "indian_creator_scene_checklist", "name": "Street/campus/market", "en": "Street, campus or market", "hi": "Street, campus ya market"}
+{"data_type": "indian_creator_scene_checklist", "name": "Rooftop/beach", "en": "Rooftop or beach", "hi": "Rooftop ya beach"}
+{"data_type": "indian_creator_scene_checklist", "name": "Night market", "en": "Night market setup", "hi": "Night market ka setup"}
+{"data_type": "lighting_fix_order", "name": "You are squinting, or direct sun is throwing hard, uncomfortable shadows on your face", "en": "Hard sun shadows", "hi": "Dhoop ke hard shadows"}
+{"data_type": "lighting_fix_order", "name": "Your face is dark against a bright window or sky", "en": "Bright window or sky behind", "hi": "Peeche bright window ya sky"}
+{"data_type": "lighting_fix_order", "name": "The background behind you is distracting", "en": "Distracting background", "hi": "Dhyan bhatkata background"}
+{"data_type": "lighting_fix_order", "name": "The main light is directly overhead (ceiling light or high sun)", "en": "Ceiling light or high sun", "hi": "Ceiling light ya upar ka suraj"}
+{"data_type": "lighting_fix_order", "name": "Close-up shot on a very wide camera held close to your face", "en": "Wide lens held too close", "hi": "Wide lens bahut paas"}
+{"data_type": "lighting_fix_order", "name": "The light is too hard, or too soft and flat", "en": "Light too hard or too flat", "hi": "Light bahut hard ya flat"}
+{"data_type": "lighting_fix_order", "name": "Lights of different colours are falling on your face", "en": "Mixed light colours", "hi": "Alag rang ki lights"}
+{"data_type": "lighting_fix_order", "name": "Wide shot that shows the whole room or location", "en": "Wide shot of the whole room", "hi": "Poore room ka wide shot"}
+{"data_type": "lighting_fix_order", "name": "You are moving on camera in low light", "en": "Moving in low light", "hi": "Kam light mein movement"}
+{"data_type": "lighting_look", "name": "Serious / educational", "en": "Serious teaching look", "hi": "Serious teaching wala look"}
+{"data_type": "lighting_look", "name": "Documentary / expert / founder", "en": "Documentary look", "hi": "Documentary wala look"}
+{"data_type": "lighting_look", "name": "Friendly / natural", "en": "Friendly natural look", "hi": "Friendly natural look"}
+{"data_type": "lighting_look", "name": "High-key", "en": "Bright high-key look", "hi": "Bright high-key look"}
+{"data_type": "lighting_look", "name": "Low-key / dramatic", "en": "Dark dramatic look", "hi": "Dark dramatic look"}
+{"data_type": "lighting_look", "name": "Silhouette", "en": "Silhouette look", "hi": "Silhouette wala look"}
+{"data_type": "mixed_light_rule", "name": "Window daylight + warm room lamp", "en": "Window plus warm lamp", "hi": "Window aur warm lamp"}
+{"data_type": "mixed_light_rule", "name": "Cool ceiling LED + warm bulb", "en": "Ceiling LED plus warm bulb", "hi": "Ceiling LED aur warm bulb"}
+{"data_type": "mixed_light_rule", "name": "Two daylight windows", "en": "Pick the brighter window", "hi": "Zyada bright window chuno"}
+{"data_type": "mixed_light_rule", "name": "Phone auto white balance shifts during the take", "en": "Colour shifting mid-video", "hi": "Video mein badalta colour"}
+{"data_type": "mixed_light_rule", "name": "Sunset into blue hour", "en": "Sunset into blue hour", "hi": "Sunset se blue hour tak"}
+{"data_type": "sunset_to_night_step", "name": "1. Low sun", "en": "Low evening sun", "hi": "Shaam ka neecha suraj"}
+{"data_type": "sunset_to_night_step", "name": "2. Sun near the horizon", "en": "Sun near the horizon", "hi": "Suraj horizon ke paas"}
+{"data_type": "sunset_to_night_step", "name": "3. Falling daylight", "en": "Fading daylight", "hi": "Dhalti daylight"}
+{"data_type": "sunset_to_night_step", "name": "4. Blue hour", "en": "Blue hour outdoors", "hi": "Bahar blue hour"}
+{"data_type": "sunset_to_night_step", "name": "5. Dark", "en": "After dark outdoors", "hi": "Bahar raat ka andhera"}

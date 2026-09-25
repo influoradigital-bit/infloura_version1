@@ -15,9 +15,11 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Live by default; the demo-mode test flips this to read the offline sample.
+const apiLive = vi.hoisted(() => ({ value: true }));
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
-  return { ...actual, isApiLive: () => true };
+  return { ...actual, isApiLive: () => apiLive.value };
 });
 
 import {
@@ -97,7 +99,17 @@ describe('checkFrame route', () => {
     const result = await meeraApi.checkFrame(new Blob(['x']), undefined, 'creator');
     expect(result).toEqual({
       kind: 'ok',
-      result: { fixes: ['Step right'], settings: [], ok: [], whatISee: null, steps: [], cantTell: [], ask: null },
+      result: {
+        fixes: ['Step right'],
+        settings: [],
+        ok: [],
+        whatISee: null,
+        steps: [],
+        cantTell: [],
+        ask: null,
+        lang: null,
+        retake: false,
+      },
     });
   });
 
@@ -227,10 +239,21 @@ describe('checkFrame — coach response and request (2026-09-25)', () => {
       kind: 'ok',
       result: {
         whatISee: 'You at a desk, window to your left, right side of your face in shadow',
+        // No `label` from this server: each step's label falls back to its note.
         steps: [
-          { kind: 'move_you', text: 'Turn about 30-45 degrees towards the window', note: 'Soft natural window light' },
-          { kind: 'move_phone', text: 'Raise the phone to eye height', note: 'Eye level' },
-          { kind: 'settings', text: 'Lock focus and exposure on your face', note: 'Talking Head (Window light)' },
+          {
+            kind: 'move_you',
+            text: 'Turn about 30-45 degrees towards the window',
+            note: 'Soft natural window light',
+            label: 'Soft natural window light',
+          },
+          { kind: 'move_phone', text: 'Raise the phone to eye height', note: 'Eye level', label: 'Eye level' },
+          {
+            kind: 'settings',
+            text: 'Lock focus and exposure on your face',
+            note: 'Talking Head (Window light)',
+            label: 'Talking Head (Window light)',
+          },
         ],
         cantTell: ['Whether there is a lamp in the room'],
         ask: {
@@ -245,6 +268,8 @@ describe('checkFrame — coach response and request (2026-09-25)', () => {
         fixes: ['Turn about 30-45 degrees towards the window', 'Raise the phone to eye height'],
         settings: ['Lock focus and exposure on your face'],
         ok: ['Background is tidy'],
+        lang: null,
+        retake: false,
       },
     });
   });
@@ -299,6 +324,8 @@ describe('checkFrame — coach response and request (2026-09-25)', () => {
         steps: [],
         cantTell: [],
         ask: null,
+        lang: null,
+        retake: false,
       },
     });
   });
@@ -359,5 +386,241 @@ describe('checkFrame — coach response and request (2026-09-25)', () => {
       { id: 'can_move', option: 0 },
     ]);
     expect(serializeCoachAnswers([{ id: 'x'.repeat(700), option: 0 }])).toBeNull();
+  });
+});
+
+/**
+ * The coach layout fields (2026-09-25, contract in influora-ai `app/prompt/frame_check.py`):
+ * top-level `lang` and `retake`, a creator-facing `label` on every step, and `parts` on a step from
+ * a phone-settings entry. All additive: the Java proxy passes the JSON through unchanged, and an
+ * older server that sends none of them must still parse.
+ */
+describe('checkFrame — lang, retake, step labels and settings parts', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  function respondWith(body: unknown): void {
+    fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+  }
+
+  async function parsed(body: unknown) {
+    respondWith(body);
+    const outcome = await meeraApi.checkFrame(new Blob(['x']), undefined, 'creator');
+    if (outcome.kind !== 'ok') throw new Error('expected ok, got ' + outcome.kind);
+    return outcome.result;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    apiLive.value = true;
+  });
+
+  const SETTINGS_STEP = {
+    kind: 'settings',
+    text: 'Lens: 1x Main. EV: +0.5. If your camera app has a Pro video mode: Shutter: 1/50.',
+    note: 'Talking Head (Window light)',
+    label: 'Talking head by a window',
+    parts: [
+      { label: 'Lens', value: '1x Main', needs_pro: false },
+      { label: 'EV', value: '+0.5', needs_pro: false },
+      { label: 'Shutter', value: '1/50', needs_pro: true },
+    ],
+  };
+
+  it('reads lang, retake, each step label, and a settings step parts (needs_pro -> needsPro)', async () => {
+    const result = await parsed({
+      lang: 'hi',
+      retake: false,
+      what_i_see: 'Aap desk pe ho',
+      steps: [SETTINGS_STEP, { kind: 'move_you', text: 'Window ki taraf ghoomo', note: 'Soft natural window light', label: 'Window ki soft light' }],
+      ok: ['Background saaf hai'],
+      cant_tell: [],
+      ask: null,
+      fixes: ['Window ki taraf ghoomo'],
+      settings: [SETTINGS_STEP.text],
+    });
+    expect(result.lang).toBe('hi');
+    expect(result.retake).toBe(false);
+    expect(result.steps).toEqual([
+      { kind: 'move_you', text: 'Window ki taraf ghoomo', note: 'Soft natural window light', label: 'Window ki soft light' },
+      {
+        kind: 'settings',
+        text: SETTINGS_STEP.text,
+        note: 'Talking Head (Window light)',
+        label: 'Talking head by a window',
+        parts: [
+          { label: 'Lens', value: '1x Main', needsPro: false },
+          { label: 'EV', value: '+0.5', needsPro: false },
+          { label: 'Shutter', value: '1/50', needsPro: true },
+        ],
+      },
+    ]);
+    // A step from any other row has no `parts` key at all.
+    expect('parts' in result.steps[0]).toBe(false);
+  });
+
+  it('keeps needs_ois as needsOis (only when exactly true, never on a Pro part)', async () => {
+    const result = await parsed({
+      what_i_see: 'Aap kitchen mein ho',
+      steps: [
+        {
+          kind: 'settings',
+          text: 'Lens: 1x Main.',
+          note: 'Food close-up (restaurant or home)',
+          label: 'Khaane ka close-up',
+          parts: [
+            { label: 'Lens', value: '1x Main', needs_pro: false, needs_ois: false },
+            { label: 'FPS', value: '25', needs_pro: true, needs_ois: true },
+            { label: 'Phone steady', value: 'OIS only', needs_pro: false, needs_ois: true },
+            { label: 'EV', value: '-0.3', needs_pro: false, needs_ois: 'yes' },
+          ],
+        },
+      ],
+      ok: ['fine'],
+    });
+    expect(result.steps[0].parts).toEqual([
+      { label: 'Lens', value: '1x Main', needsPro: false },
+      { label: 'FPS', value: '25', needsPro: true },
+      { label: 'Phone steady', value: 'OIS only', needsPro: false, needsOis: true },
+      { label: 'EV', value: '-0.3', needsPro: false },
+    ]);
+    expect(result.steps[0].parts?.filter((p) => 'needsOis' in p).map((p) => p.label)).toEqual(['Phone steady']);
+  });
+
+  it('never throws on malformed parts, and drops the whole list when any item is bad so the text shows', async () => {
+    const badItems: unknown[] = [
+      null,
+      'Lens: 1x Main',
+      ['Lens', '1x Main'],
+      { label: '', value: '1x Main', needs_pro: false },
+      { label: 'EV', value: 0.5, needs_pro: false },
+      { label: 'FPS' },
+    ];
+    for (const bad of badItems) {
+      const result = await parsed({
+        what_i_see: 'You at a desk',
+        steps: [
+          {
+            kind: 'settings',
+            text: 'Lens: 1x Main. ISO: 100-200.',
+            note: 'n',
+            label: 'L',
+            parts: [{ label: 'Lens', value: '1x Main', needs_pro: false }, bad, { label: 'ISO', value: '100-200', needs_pro: true }],
+          },
+        ],
+        ok: ['fine'],
+      });
+      // One dropped item would make the list shorter than the text, so the text is shown instead.
+      expect(result.steps[0].text).toBe('Lens: 1x Main. ISO: 100-200.');
+      expect('parts' in result.steps[0]).toBe(false);
+    }
+    const result = await parsed({
+      what_i_see: 'You at a desk',
+      steps: [
+        {
+          kind: 'settings',
+          text: 'Lens: 1x Main.',
+          note: 'n',
+          label: 'L',
+          parts: [
+            { label: ' Lens ', value: ' 1x Main ', needs_pro: 'yes' },
+            { label: 'ISO', value: '100-200', needs_pro: true },
+          ],
+        },
+        { kind: 'settings', text: 'Grid on.', note: 'n2', label: 'L2', parts: [{ nope: 1 }, 7] },
+        { kind: 'move_phone', text: 'Raise the phone', note: 'Eye-level', label: 42, parts: 'not a list' },
+      ],
+      ok: ['fine'],
+    });
+    expect(result.steps.find((s) => s.text === 'Lens: 1x Main.')?.parts).toEqual([
+      // needs_pro counts only when it is exactly true.
+      { label: 'Lens', value: '1x Main', needsPro: false },
+      { label: 'ISO', value: '100-200', needsPro: true },
+    ]);
+    expect(result.steps.find((s) => s.text === 'Lens: 1x Main.')?.parts?.some((p) => 'needsOis' in p)).toBe(false);
+    const allBad = result.steps.find((s) => s.text === 'Grid on.');
+    expect(allBad && 'parts' in allBad).toBe(false);
+    const phone = result.steps.find((s) => s.kind === 'move_phone');
+    // A label that is not text falls back to the note; parts that are not a list are ignored.
+    expect(phone?.label).toBe('Eye-level');
+    expect(phone && 'parts' in phone).toBe(false);
+  });
+
+  it('keeps parts only on a settings step: well-formed parts on another kind never hide its text', async () => {
+    const goodParts = [{ label: 'Lens', value: '1x Main', needs_pro: false }];
+    const result = await parsed({
+      what_i_see: 'You at a desk',
+      steps: [
+        { kind: 'move_you', text: 'Turn so the window is in front of you', note: 'n', label: 'Window behind you', parts: goodParts },
+        { kind: 'move_phone', text: 'Raise the phone', note: 'n', label: 'Eye-level phone', parts: goodParts },
+        { kind: 'move_light', text: 'Switch off the tube light', note: 'n', label: 'Mixed light colours', parts: goodParts },
+        { kind: 'settings', text: 'Lens: 1x Main.', note: 'n', label: 'L', parts: goodParts },
+      ],
+      ok: ['fine'],
+    });
+    for (const step of result.steps) {
+      if (step.kind === 'settings') expect(step.parts).toEqual([{ label: 'Lens', value: '1x Main', needsPro: false }]);
+      else expect('parts' in step).toBe(false);
+    }
+  });
+
+  it('reads any lang other than "en" or "hi" as not said (null)', async () => {
+    for (const lang of ['fr', 'HI', 7, null, undefined]) {
+      const result = await parsed({ lang, what_i_see: 'x', steps: [{ kind: 'move_you', text: 't', note: 'n' }] });
+      expect(result.lang).toBeNull();
+    }
+    expect((await parsed({ lang: 'en', what_i_see: 'x', ok: ['a'] })).lang).toBe('en');
+  });
+
+  it('believes an explicit retake, and infers one from an older server that gives only what_i_see', async () => {
+    const unusable = { what_i_see: "It's too dark to see you. Please retake the photo.", steps: [], ok: [], cant_tell: [], ask: null };
+    expect((await parsed({ ...unusable, retake: true })).retake).toBe(true);
+    // Older server: no retake field, only the one line.
+    expect((await parsed(unusable)).retake).toBe(true);
+    // A server that says false is believed even for that shape.
+    expect((await parsed({ ...unusable, retake: false })).retake).toBe(false);
+    // A normal older-server body with steps is not a retake; neither is one with no what_i_see.
+    expect((await parsed({ ...unusable, steps: [{ kind: 'move_you', text: 't', note: 'n' }] })).retake).toBe(false);
+    expect((await parsed({ fixes: ['Step right'], settings: [], ok: [] })).retake).toBe(false);
+    // A retake that is not a boolean is treated as not sent.
+    expect((await parsed({ ...unusable, steps: [{ kind: 'move_you', text: 't', note: 'n' }], retake: 'yes' })).retake).toBe(false);
+  });
+
+  it('demo mode returns a realistic sample in the new shape, and no question once one is answered', async () => {
+    apiLive.value = false;
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = await meeraApi.checkFrame(new Blob(['x']), undefined, 'creator');
+    if (first.kind !== 'ok') throw new Error('expected ok');
+    expect(fetchMock).not.toHaveBeenCalled();
+    const r = first.result;
+    expect(r.lang).toBe('en');
+    expect(r.retake).toBe(false);
+    expect(r.whatISee).toContain('bedroom');
+    expect(r.steps.map((s) => [s.kind, s.label])).toEqual([
+      ['move_you', 'Window behind you'],
+      ['move_phone', 'Eye-level phone'],
+      ['settings', 'Talking head by a window'],
+    ]);
+    expect(r.steps[1].text).toBe('Phone at eye-level: neutral point of view, reliable eye contact.');
+    expect(r.steps[2].parts).toEqual([
+      { label: 'Lens', value: '1x Main', needsPro: false },
+      { label: 'Distance', value: '0.8-1m', needsPro: false },
+      { label: 'Framing', value: 'Chest up', needsPro: false },
+      { label: 'EV', value: '+0.5', needsPro: false },
+      { label: 'Stabilization', value: 'Tripod (stabilization off)', needsPro: false },
+    ]);
+    expect(r.ok).toHaveLength(2);
+    expect(r.cantTell).toHaveLength(2);
+    expect(r.ask?.id).toBe('can_move');
+    expect(r.ask?.options.map((o) => o.en)).toEqual(['Yes, I can move', 'No, fixed spot']);
+
+    const answered = await meeraApi.checkFrame(new Blob(['x']), undefined, 'creator', {
+      answers: [{ id: 'can_move', option: 0 }],
+    });
+    expect(answered.kind === 'ok' && answered.result.ask).toBeNull();
   });
 });

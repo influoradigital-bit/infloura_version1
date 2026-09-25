@@ -22,7 +22,12 @@ knowledge rows and fixed templates; the model only picks ids and enum values. Wh
     in en and hi, no growth / person / third-person words, at most 300 chars); a step IS its
     row's line in the reply's language (a hi step holds none of the row's English); the file
     fails loud at import on a bad line; every sentence-style step row has a line or a listed
-    reason (`ROWS_WITHOUT_A_LINE`).
+    reason (`ROWS_WITHOUT_A_LINE`);
+(f) the step labels (`knowledge/creator_step_labels.jsonl`): every row that can be a step has
+    one, each a short plain phrase (no number, person or growth word, at most 40 chars) in
+    both languages, and the file fails loud at import on a bad line; a settings step's parts
+    (`render_step_parts`) are the same fitted parts its text is built from -- joining them
+    reproduces the text for every settings row, phone, language and side.
 """
 
 from __future__ import annotations
@@ -984,3 +989,177 @@ def test_phone_helpers_agree_with_frame_check(phone: dict[str, Any] | None) -> N
     for text in texts:
         assert render.phone_features_named(text) == frame_check.phone_features_named(text), text
         assert render.step_fits_phone(text, phone) == frame_check.step_fits_phone(text, phone), text
+
+
+# --- step topic labels (knowledge/creator_step_labels.jsonl, PROMPT_VERSION .25.4) -------------------
+
+
+def _step_label_rows() -> list[dict[str, Any]]:
+    """Every row that renders as a step for at least one kind and phone (either language)."""
+    return [
+        r for r in STEP_ROWS
+        if any(render_step(kind, r, phone, "en") for kind in _kinds_for(r) for phone in PHONES)
+    ]
+
+
+def test_every_row_that_can_be_a_step_has_a_label_and_nothing_else_does() -> None:
+    rows = _step_label_rows()
+    assert len(rows) > 80, len(rows)  # not vacuous
+    need = {_key(r) for r in rows}
+    assert set(render.CREATOR_STEP_LABELS) == need, (
+        sorted(need - set(render.CREATOR_STEP_LABELS)), sorted(set(render.CREATOR_STEP_LABELS) - need)
+    )
+
+
+def test_every_label_is_a_short_plain_phrase_in_both_languages() -> None:
+    third_person = re.compile(r"\b(?:creator|subject|talent)\b", re.IGNORECASE)
+    for key, labels in render.CREATOR_STEP_LABELS.items():
+        assert set(labels) == set(LANGS), key
+        for lang, label in labels.items():
+            where = (key, lang, label)
+            assert label and label == label.strip() and "  " not in label, where
+            assert len(label) <= render.LABEL_MAX_CHARS, where
+            assert not label.endswith("."), where
+            assert not re.search(r"\d", label), where
+            assert not _NUMBER_WORD_PINNED.search(label), where
+            assert not frame_check._NUMBER_WORD_RE.search(label), where
+            assert not _growth(label), where
+            assert not _about_the_person(label), where
+            assert not third_person.search(label), where
+        assert labels["hi"].isascii(), key  # Hinglish in Latin script
+
+
+def test_step_label_is_the_rows_label_in_the_reply_language() -> None:
+    window = _row("Window behind creator toward phone")
+    labels = render.CREATOR_STEP_LABELS[_key(window)]
+    assert render.step_label(window, "en") == labels["en"]
+    assert render.step_label(window, "hi") == labels["hi"]
+    assert render.step_label(window, "fr") == labels["en"]  # an unknown language reads as English
+    assert render.step_label({"data_type": "lighting_rule", "scenario": "No such row"}, "en") is None
+    assert render.step_label({"data_type": "phone_hardware", "model": "OPPO A78 5G"}, "en") is None
+    assert render.step_label({}, "en") is None
+
+
+def test_the_labels_file_resolves_and_fails_loud_on_a_bad_line(tmp_path) -> None:
+    good = {"data_type": "camera_height_rule", "name": "Eye-level", "en": "Eye-level phone",
+            "hi": "Phone aankhon ki seedh mein"}
+
+    def load(*objs: Any, rows: list[dict[str, Any]] | None = None) -> Any:
+        path = tmp_path / "labels.jsonl"
+        path.write_text("".join((o if isinstance(o, str) else json.dumps(o)) + "\n" for o in objs), encoding="utf-8")
+        return render.load_creator_step_labels(path, rows)
+
+    assert load(good) == {("camera_height_rule", "Eye-level"): {"en": good["en"], "hi": good["hi"]}}
+    assert render.load_creator_step_labels() == render.CREATOR_STEP_LABELS  # the shipped file resolves
+    # A settings row can have a label (its step does), unlike a creator-voice line.
+    settings = {**good, "data_type": "camera_technical_setting", "name": "Talking Head (Window light)"}
+    assert load(settings)
+    bad_lines = {
+        "unknown name": {**good, "name": "Eye level-ish"},
+        "unknown type": {**good, "data_type": "hook_template"},
+        "not a step type": {**good, "data_type": "phone_hardware", "name": "OPPO A78 5G"},
+        "empty hi": {**good, "hi": "  "},
+        "missing hi": {k: v for k, v in good.items() if k != "hi"},
+        "extra key": {**good, "note": "x"},
+        "long en": {**good, "en": "a" * (render.LABEL_MAX_CHARS + 1)},
+        "a digit": {**good, "en": "Phone at 1.5m"},
+        "a full stop": {**good, "en": "Eye-level phone."},
+        "not text": {**good, "en": 5},
+        "not an object": ["Eye-level"],
+    }
+    for label, obj in bad_lines.items():
+        with pytest.raises(render.CreatorStepLabelsError):
+            load(obj)
+        assert label
+    with pytest.raises(render.CreatorStepLabelsError):
+        load(good, good)  # a key twice
+    with pytest.raises(render.CreatorStepLabelsError):
+        load("{not json")
+    with pytest.raises(render.CreatorStepLabelsError):
+        load("")  # no labels
+    with pytest.raises(render.CreatorStepLabelsError):
+        render.load_creator_step_labels(tmp_path / "missing.jsonl")  # no file is loud, not empty
+    eye = _row("Eye-level")
+    with pytest.raises(render.CreatorStepLabelsError):
+        load(good, rows=[eye, dict(eye)])  # the name fits two rows
+    assert load({**good, "hi": "x" * render.LABEL_MAX_CHARS}, rows=[eye])  # the cap itself is fine
+
+
+# --- settings parts: the same fitted parts the text is built from ------------------------------------
+
+
+SETTINGS_ROWS: list[dict[str, Any]] = [
+    r for r in STEP_ROWS if r["data_type"] in ("camera_technical_setting", "night_video_setting")
+]
+
+
+def _text_from_parts(parts: list[dict[str, Any]], lang: str) -> str:
+    """How a list of settings parts reads as a step: each plain part "Label: value.", then ONE
+    Pro video mode sentence for the needs_pro parts and ONE OIS sentence for the needs_ois ones
+    (the parts' own order within each)."""
+    sentences = [render._end(f"{p['label']}: {p['value']}") for p in parts if not (p["needs_pro"] or p["needs_ois"])]
+    for flag, prefix in (("needs_pro", render.PRO_MODE_PREFIX), ("needs_ois", render.OIS_PREFIX)):
+        items = [render._lower_first(f"{p['label']} {p['value']}") for p in parts if p[flag]]
+        if items:
+            sentences.append(prefix[lang] + "; ".join(items) + ".")
+    return " ".join(sentences)
+
+
+def test_joining_the_parts_reproduces_the_text_for_every_settings_row_phone_and_language() -> None:
+    labels = {lang: {label if lang == "en" else render._SETTINGS_LABEL_HI.get(label, label)
+                     for parts in render._SETTINGS_PARTS.values() for _, label in parts} for lang in LANGS}
+    checked = pro = ois = 0
+    for row in SETTINGS_ROWS:
+        for kind in _kinds_for(row):
+            for phone in PHONES:
+                for lang in LANGS:
+                    for side in SIDES:
+                        rendered = render.render_step_parts(kind, row, phone, lang, side)
+                        text = render_step(kind, row, phone, lang, side)
+                        where = (_name(row), kind, _phone_label(phone), lang, side)
+                        if rendered is None:
+                            assert text is None, where
+                            continue
+                        assert rendered.text == text, where
+                        parts = rendered.parts
+                        assert parts, where
+                        assert _text_from_parts(parts, lang) == text, (where, parts, text)
+                        # The plain parts come first, then the Pro ones, then the OIS ones -- the
+                        # text's own order.
+                        rank = [2 if p["needs_ois"] else 1 if p["needs_pro"] else 0 for p in parts]
+                        assert rank == sorted(rank), where
+                        for p in parts:
+                            assert set(p) == {"label", "value", "needs_pro", "needs_ois"}, where
+                            assert p["label"] in labels[lang], (where, p)
+                            assert isinstance(p["value"], str) and p["value"].strip(), (where, p)
+                            assert not (p["needs_pro"] and p["needs_ois"]), (where, p)
+                            # A part the phone surely has is never put under a condition.
+                            if p["needs_pro"]:
+                                assert render._feature_state(phone, "manual_video") == "unknown", (where, p)
+                            if p["needs_ois"]:
+                                assert render._feature_state(phone, "ois") == "unknown", (where, p)
+                        pro += any(p["needs_pro"] for p in parts)
+                        ois += any(p["needs_ois"] for p in parts)
+                        checked += 1
+    assert checked > 300 and pro > 20 and ois > 5, (checked, pro, ois)  # every branch exercised
+
+
+def test_only_a_settings_row_has_parts() -> None:
+    for row in STEP_ROWS:
+        for kind in _kinds_for(row):
+            rendered = render.render_step_parts(kind, row, PRO, "en")
+            if rendered is None:
+                continue
+            assert (rendered.parts is not None) is (row in SETTINGS_ROWS), (_name(row), kind)
+
+
+def test_a_cut_settings_step_has_only_the_parts_its_text_kept(monkeypatch) -> None:
+    # The step cap cuts later parts off the text; the parts are cut with it, never beyond it.
+    row = _row("Talking Head (Window light)")
+    full = render.render_step_parts("settings", row, None, "en")
+    monkeypatch.setattr(render, "MAX_STEP_CHARS", 60)
+    cut = render.render_step_parts("settings", row, None, "en")
+    assert len(cut.text) <= 60 or len(cut.parts) == 1
+    assert 0 < len(cut.parts) < len(full.parts)
+    assert cut.parts == full.parts[: len(cut.parts)]
+    assert _text_from_parts(cut.parts, "en") == cut.text

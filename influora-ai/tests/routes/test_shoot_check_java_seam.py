@@ -64,6 +64,34 @@ def test_the_two_fields_the_route_cannot_work_without_are_sent():
     assert {"workspace_id", "image"} <= sent, sent
 
 
+_JAVA_CONTROLLER = _REPO_ROOT / "influora-api/src/main/java/com/influora/web/CreatorMeeraController.java"
+
+
+def _method_body(source: str, signature: str) -> str:
+    """The text of the method starting at `signature`, up to the end of that method."""
+    start = source.index(signature)
+    body = source[start:]
+    end = body.find("\n    }\n")
+    return body[: end if end != -1 else len(body)]
+
+
+def test_java_passes_the_frame_check_json_through_byte_for_byte():
+    # The photo-check response grew fields (lang, retake, a step's label and a settings step's
+    # parts, PROMPT_VERSION .25.4) with NO Java change, on the promise that Java never parses
+    # the body: the client returns the response bytes as they came, and the controller returns
+    # those bytes. If either side starts mapping the JSON to a record, the new fields would be
+    # dropped silently -- this fails first.
+    assert _JAVA_CONTROLLER.exists(), f"Java controller not found at {_JAVA_CONTROLLER}"
+    controller = _method_body(
+        _JAVA_CONTROLLER.read_text(encoding="utf-8").replace("\r\n", "\n"), "public ResponseEntity<?> checkFrame("
+    )
+    assert "voiceAiClient.checkFrameForCreator(" in controller
+    assert ".body(result.jsonBytes())" in controller, "checkFrame no longer returns the AI's bytes as they came"
+    client = _method_body(_java().replace("\r\n", "\n"), "private FrameCheckResult checkFrame(")
+    assert "new FrameCheckResult(true, response.body()," in client, "the client no longer returns the raw body"
+    assert "objectMapper" not in client and "readValue" not in client and "readTree" not in client
+
+
 def test_the_grounded_check_inputs_are_sent_and_read_by_their_exact_names():
     # Grounded photo check (2026-09-25, contract C): the planned set-up and the coach-question
     # answers. A misspelt part name on either side would bind to nothing and the check would

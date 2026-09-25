@@ -54,6 +54,7 @@ from app.prompt.frame_check_render import (
     normalize_scene,
     render_step,
     render_what_i_see,
+    step_label,
 )
 from app.providers.claude import ClaudeTextResult
 from app.routes import chat as chat_route
@@ -503,12 +504,21 @@ async def test_happy_path_returns_code_written_steps_and_the_legacy_lists():
     result = await _call("BRAND", BRAND_WS, claude=claude, spring=MagicMock())
 
     assert result["fallback"] is False
-    # The response shape is unchanged (Java passes the bytes through; the app reads these keys).
-    assert set(result) == {"what_i_see", "steps", "ok", "cant_tell", "ask", "fixes", "settings", "fallback"}
+    # Every older key is still here with its type (Java passes the bytes through; the app reads
+    # these keys); lang and retake are additive (PROMPT_VERSION .25.4).
+    assert set(result) == {
+        "what_i_see", "steps", "ok", "cant_tell", "ask", "fixes", "settings", "lang", "retake", "fallback",
+    }
+    assert result["lang"] == "en" and result["retake"] is False
     assert result["what_i_see"] == _what_i_see(SCENE) and result["what_i_see"]
     assert [s["kind"] for s in result["steps"]] == ["move_you", "move_phone", "settings"]
     # Each note is a readable label: the row's name, or "India 50Hz lights" for the flicker row.
     assert [s["note"] for s in result["steps"]] == [NOTE_LABELS[WINDOW_ENTRY], EYE_LEVEL_ENTRY, "India 50Hz lights"]
+    # Each step also has its topic label; none of these rows is a settings row, so no parts.
+    assert [set(s) for s in result["steps"]] == [{"kind", "text", "note", "label"}] * 3
+    assert [s["label"] for s in result["steps"]] == [
+        step_label(_row(name), "en") for name in (WINDOW_ENTRY, EYE_LEVEL_ENTRY, FLICKER_ENTRY)
+    ]
     assert result["fixes"] == [
         _rendered("move_you", WINDOW_ENTRY, side="your_left"), _rendered("move_phone", EYE_LEVEL_ENTRY)
     ]
@@ -533,6 +543,29 @@ async def test_a_hinglish_reply_uses_the_hinglish_templates():
     assert result["steps"][0]["text"] == _rendered("move_you", WINDOW_ENTRY, side="your_left", lang="hi")
     assert result["steps"][0]["text"].startswith("Aise baitho ki light aapke left side ho. ")
     assert result["ok"] == [OK_LINES["background_clean"]["hi"]]
+    # The body says its language, so the app can write its headings in Hinglish too, and the
+    # step's topic label is the Hinglish one.
+    assert result["lang"] == "hi" and result["retake"] is False
+    assert result["steps"][0]["label"] == step_label(_row(WINDOW_ENTRY), "hi")
+    assert result["steps"][0]["label"] != step_label(_row(WINDOW_ENTRY), "en")
+
+
+@pytest.mark.asyncio
+async def test_a_settings_row_step_carries_its_parts_through_the_route():
+    claude = _claude_ok(_reply([_step("settings", "Talking Head (Window light)")]))
+
+    result = await _call("BRAND", BRAND_WS, claude=claude, spring=MagicMock())
+
+    assert result["fallback"] is False
+    (step,) = result["steps"]
+    assert step["parts"] and step["parts"][0] == {
+        "label": "Lens", "value": "1x Main", "needs_pro": False, "needs_ois": False,
+    }
+    # No saved phone: the manual controls are flagged, and the text says the same condition.
+    assert any(p["needs_pro"] for p in step["parts"])
+    assert "If your camera app has a Pro video mode: " in step["text"]
+    assert result["settings"] == [step["text"]]  # the legacy list is unchanged
+    json.dumps(result)  # the parts are plain JSON
 
 
 @pytest.mark.asyncio
@@ -621,6 +654,7 @@ async def test_unparseable_garbage_falls_back_to_a_single_fix_not_500():
     # The fallback carries the full shape, so no client special-cases it.
     assert result["steps"] == [] and result["cant_tell"] == [] and result["ask"] is None
     assert result["what_i_see"] == ""
+    assert result["lang"] == "en" and result["retake"] is False
 
 
 @pytest.mark.asyncio
@@ -944,12 +978,15 @@ async def test_an_unusable_photo_comes_back_honestly_not_as_the_fallback():
     assert result["steps"] == [] and result["ask"] is None
     assert result["ok"] == [] and result["cant_tell"] == []
     assert result["fixes"] == [] and result["settings"] == []
+    # The app shows a retake prompt, not "Here's what I see".
+    assert result["retake"] is True and result["lang"] == "en"
 
     # Nothing usable at all (no scene, no step, no question): the fallback.
     claude = _claude_ok(_reply([], scene=None, what_i_see="Too dark -- use 2 lamps."))
     result = await _call("BRAND", BRAND_WS, claude=claude, spring=MagicMock())
     assert result["fallback"] is True
     assert len(result["fixes"]) == 1
+    assert result["retake"] is False and result["lang"] == "en"
 
 
 @pytest.mark.asyncio

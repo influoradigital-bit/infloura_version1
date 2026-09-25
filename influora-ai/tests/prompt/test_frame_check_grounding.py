@@ -26,6 +26,10 @@ replies (no provider call):
 - the question comes back in the bank's own words, or null for an unknown id or a question
   the request already answers (answers, shot_context keys, a matched phone);
 - the legacy fixes / settings lists are derived from the rendered steps;
+- the coach-layout fields (PROMPT_VERSION .25.4) are additive and code-written: `lang` is the
+  parser's language, `retake` is true only for an unusable or unclear photo (false on the
+  fallback), every step's `label` is its row's label in the reply language (else its note),
+  and only a settings row's step has `parts` -- the canary never reaches any of them;
 - a usable photo with no step and no question -> None (a scene line alone is not an
   answer), and the route's fallback keeps the full shape;
 - the request's shot_context is wrapped as untrusted, the shot_label is one line, and the
@@ -58,6 +62,7 @@ from app.prompt.content_knowledge import (
     load_knowledge,
 )
 from app.prompt import frame_check
+from app.prompt import frame_check_render as render
 from app.prompt.frame_check import (
     ANSWERS_MAX_CHARS,
     NOTE_LABELS,
@@ -95,9 +100,12 @@ from app.prompt.frame_check_render import (
     STEP_TEXT_TYPES,
     USABLE_UNCLEAR,
     WHAT_I_SEE_UNUSABLE,
+    RenderedStep,
     normalize_scene,
     render_step,
+    render_step_parts,
     render_what_i_see,
+    step_label,
 )
 from app.providers.claude import ClaudeProvider
 
@@ -113,6 +121,8 @@ WINDOW_TALKING_HEAD = "Talking Head (Window light)"  # camera_technical_setting:
 CLUTTER_TALKING_HEAD = "Talking Head (Cluttered background)"  # camera_technical_setting: "3x Telephoto"
 LOW_KEY = "Low-key / dramatic"  # lighting_look: a movable main light from the side
 WINDOW_LABEL = NOTE_LABELS[WINDOW]  # the note the app shows for WINDOW
+# The rows whose steps carry `parts` (the response contract): nothing else ever does.
+SETTINGS_ROW_TYPES = frozenset({"camera_technical_setting", "night_video_setting"})
 
 # The creator's phone decides which parts of a row they get.
 PRO = resolve_phone("OPPO Find X8 Ultra")  # telephoto, ultrawide and manual video
@@ -215,7 +225,11 @@ def _canary_reply(tag: str = CANARY) -> str:
             _step("settings", FLICKER, text=f"{tag} 25fps"),
             _step("move_light", f"{SOFT_WINDOW} {tag}", text=tag),  # a real name + the canary
             {"kind": "move_you", "note": tag, "text": tag},
+            # A settings row, with the canary in every slot the response now has for a step.
+            _step("settings", WINDOW_TALKING_HEAD, text=f"{tag} ISO 100", label=tag,
+                  parts=[{"label": tag, "value": tag, "needs_pro": True}]),
         ],
+        "retake": tag,
         "ok": ["background_clean", f"{tag} looks great", {"id": tag}, "framing_fits"],
         "cant_tell": ["audio", tag, f"audio {tag}"],
         "ask": {"id": "other_light", "text": tag, "question_en": tag, "options": [tag]},
@@ -235,11 +249,19 @@ def test_the_canary_never_reaches_the_response(phone, lang):
     assert body["steps"], phone
     assert CANARY not in json.dumps(body)
     assert CANARY.lower() not in json.dumps(body).lower()
-    # The texts are exactly the renderer's, never the model's.
+    # The fields added for the coach layout carry only code-written values too.
+    assert body["lang"] == lang and body["retake"] is False
+    assert any("parts" in step for step in body["steps"]), phone  # the settings row's step
+    # The texts are exactly the renderer's, never the model's; labels and parts are the row's.
     for step in body["steps"]:
         row = _row_for_note(step["note"])
-        assert step["text"] == render_step(step["kind"], row, PHONES[phone], lang,
-                                           "your_left" if row is _row(WINDOW) else "none")
+        side = "your_left" if row is _row(WINDOW) else "none"
+        rendered = render_step_parts(step["kind"], row, PHONES[phone], lang, side)
+        assert step["text"] == render_step(step["kind"], row, PHONES[phone], lang, side) == rendered.text
+        assert step["label"] == (step_label(row, lang) or display_note(row))
+        assert step.get("parts") == rendered.parts
+        for value in [step["label"], *(v for p in step.get("parts") or [] for v in (p["label"], p["value"]))]:
+            assert CANARY.lower() not in value.lower()
 
 
 def _row_for_note(note: str) -> dict:
@@ -259,7 +281,7 @@ def test_every_enum_set_to_the_canary_gives_nothing_the_model_wrote():
     assert reply.usable == USABLE_UNCLEAR and reply.steps_dropped == 1
     assert reply.body == {
         "what_i_see": WHAT_I_SEE_UNUSABLE[USABLE_UNCLEAR]["en"], "steps": [], "ok": [],
-        "cant_tell": [], "ask": None, "fixes": [], "settings": [],
+        "cant_tell": [], "ask": None, "fixes": [], "settings": [], "lang": "en", "retake": True,
     }
     assert CANARY not in json.dumps(fallback_response())
 
@@ -335,7 +357,15 @@ def test_every_rendered_step_passes_the_defense_checks_and_is_what_the_parser_re
                         assert step_numbers_grounded(text, [r]), (name, kind, lang, side, text)
                         if out is None:  # a name shared with another row (the alias rule)
                             continue
-                        assert out["steps"] == [{"kind": kind, "text": text, "note": display_note(r)}]
+                        expected = {"kind": kind, "text": text, "note": display_note(r),
+                                    "label": step_label(r, lang) or display_note(r)}
+                        parts = render_step_parts(kind, r, phone, lang, side).parts
+                        # parts only on a step from a settings row, never on any other.
+                        assert (parts is not None) is (r["data_type"] in SETTINGS_ROW_TYPES), name
+                        if parts is not None:
+                            expected["parts"] = parts
+                        assert out["steps"] == [expected]
+                        assert out["lang"] == lang and out["retake"] is False
                         kept += 1
     assert kept > 500, kept  # not vacuous: most rows render for most phones
 
@@ -583,9 +613,14 @@ def test_with_no_phone_known_manual_parts_come_only_as_one_conditional_sentence(
     )
 
 
+def _renders(text: str | None):
+    """A stand-in for `render_step_parts` that always writes `text` (None: nothing fits)."""
+    return lambda *a, **k: None if text is None else RenderedStep(text, None)
+
+
 def test_a_step_with_nothing_left_for_the_phone_is_dropped(monkeypatch):
     # The renderer returns None when nothing fits the phone: the step is dropped, not blanked.
-    monkeypatch.setattr(frame_check, "render_step", lambda *a, **k: None)
+    monkeypatch.setattr(frame_check, "render_step_parts", _renders(None))
     reply = parse_frame_check_reply(_reply([_step("move_you", WINDOW)]))
     assert reply.body is None and reply.steps_dropped == 1
 
@@ -593,15 +628,15 @@ def test_a_step_with_nothing_left_for_the_phone_is_dropped(monkeypatch):
 def test_the_defense_checks_drop_a_rendered_step_that_would_fail(monkeypatch):
     # Should never happen (see the every-row test); if the renderer ever wrote a number the row
     # does not state, or a lens the phone lacks, the step is still dropped.
-    monkeypatch.setattr(frame_check, "render_step", lambda *a, **k: "Sit 2.7m away.")
+    monkeypatch.setattr(frame_check, "render_step_parts", _renders("Sit 2.7m away."))
     assert _parse([_step("move_you", WINDOW)]) is None
-    monkeypatch.setattr(frame_check, "render_step", lambda *a, **k: "Switch to the 3x telephoto.")
+    monkeypatch.setattr(frame_check, "render_step_parts", _renders("Switch to the 3x telephoto."))
     assert _parse([_step("move_phone", CLUTTER_TALKING_HEAD)], phone_row=A78) is None
     assert _parse([_step("move_phone", CLUTTER_TALKING_HEAD)], phone_row=PRO) is not None
     # A telephoto at another factor is not this lens (3.5x, 2x): still dropped.
     assert _parse([_step("move_phone", CLUTTER_TALKING_HEAD)], phone_row=RENO) is None
     assert _parse([_step("move_phone", CLUTTER_TALKING_HEAD)], phone_row=FLIP) is None
-    monkeypatch.setattr(frame_check, "render_step", lambda *a, **k: "Rely on OIS only.")
+    monkeypatch.setattr(frame_check, "render_step_parts", _renders("Rely on OIS only."))
     assert _parse([_step("settings", CLUTTER_TALKING_HEAD)], phone_row=A78) is None
 
 
@@ -709,7 +744,7 @@ def test_an_unusable_photo_is_only_its_fixed_line(usable, lang):
     assert expected
     assert reply.body == {
         "what_i_see": expected, "steps": [], "ok": [], "cant_tell": [], "ask": None,
-        "fixes": [], "settings": [],
+        "fixes": [], "settings": [], "lang": lang, "retake": True,
     }
     assert reply.steps_dropped == 2 and reply.usable == usable
     assert FALLBACK_FIX not in reply.body["fixes"]
@@ -727,8 +762,14 @@ def test_a_usable_that_is_not_exactly_yes_is_never_read_as_yes(usable):
     assert reply.usable == USABLE_UNCLEAR
     assert reply.body == {
         "what_i_see": WHAT_I_SEE_UNUSABLE[USABLE_UNCLEAR]["en"], "steps": [], "ok": [],
-        "cant_tell": [], "ask": None, "fixes": [], "settings": [],
+        "cant_tell": [], "ask": None, "fixes": [], "settings": [], "lang": "en", "retake": True,
     }
+    # An unclear verdict in a Hinglish reply is a Hinglish retake.
+    reply = parse_frame_check_reply(
+        _reply([_step("move_you", "Harsh midday sun")], scene={**SCENE, "usable": usable}, lang="hi")
+    )
+    assert reply.body["lang"] == "hi" and reply.body["retake"] is True
+    assert reply.body["what_i_see"] == WHAT_I_SEE_UNUSABLE[USABLE_UNCLEAR]["hi"]
 
 
 @pytest.mark.parametrize(
@@ -759,6 +800,113 @@ def test_a_top_level_usable_counts_when_the_scene_has_none():
 def test_a_deeply_nested_reply_is_the_fallback_not_a_500():
     for raw in ("[" * 3000 + "]" * 3000, '{"steps":' + "[" * 3000 + "]" * 3000 + "}"):
         assert parse_frame_check_reply(raw).body is None
+
+
+# --- the coach-layout fields: lang, retake, step labels, settings parts (PROMPT_VERSION .25.4) --
+
+
+# Every key the response had before 2026-09-25 .25.4, with its type: the new fields are
+# additive, and an older app reading these keys sees exactly what it saw before.
+_OLD_KEYS = {"what_i_see": str, "steps": list, "ok": list, "cant_tell": list, "fixes": list, "settings": list}
+
+
+def _assert_old_keys_unchanged(body: dict) -> None:
+    for key, kind in _OLD_KEYS.items():
+        assert isinstance(body[key], kind), key
+    assert body["ask"] is None or isinstance(body["ask"], dict)
+    for step in body["steps"]:
+        assert isinstance(step["kind"], str) and isinstance(step["text"], str) and isinstance(step["note"], str)
+
+
+@pytest.mark.parametrize("lang", ["en", "hi"])
+def test_a_normal_body_says_its_language_and_is_not_a_retake(lang):
+    out = _parse([_step("move_you", WINDOW), _step("settings", WINDOW_TALKING_HEAD)], scene=SCENE, lang=lang,
+                 phone_row=A78, ok=["framing_fits"])
+    assert out["lang"] == lang and out["retake"] is False
+    _assert_old_keys_unchanged(out)
+    # A question alone (no step) is still a normal answer, not a retake.
+    out = _parse([], scene=SCENE, ask={"id": "other_light"}, lang=lang)
+    assert out["lang"] == lang and out["retake"] is False and out["steps"] == []
+
+
+def test_lang_in_the_body_is_the_parsers_not_the_models_spelling():
+    for raw, expected in (("HI", "hi"), (" hi ", "hi"), ("hindi", "en"), (None, "en"), (7, "en"), ("en", "en")):
+        out = parse_frame_check_response(json.dumps({"lang": raw, "steps": [_step("move_you", WINDOW)]}))
+        assert out["lang"] == expected, raw
+
+
+@pytest.mark.parametrize("usable", ["too_dark", "lens_covered", "blank", "too_blurry", "no"])
+def test_an_unusable_or_unclear_photo_is_a_retake(usable):
+    for lang in LANGS:
+        body = parse_frame_check_reply(_reply([_step("move_you", WINDOW)], scene={**SCENE, "usable": usable},
+                                              lang=lang)).body
+        assert body["retake"] is True and body["lang"] == lang
+        assert body["what_i_see"] and body["steps"] == [] and body["ok"] == [] and body["ask"] is None
+        _assert_old_keys_unchanged(body)
+
+
+def test_the_fallback_body_is_english_and_not_a_retake():
+    body = fallback_response()
+    assert body["lang"] == "en" and body["retake"] is False
+    assert body["fixes"] == [FALLBACK_FIX]
+    _assert_old_keys_unchanged(body)
+    assert fallback_response() is not body  # a fresh dict: a caller's edit never leaks
+
+
+@pytest.mark.parametrize("lang", ["en", "hi"])
+def test_every_step_has_a_label_in_the_reply_language(lang):
+    # Every row that can be a step, under every kind that may cite it: the label is the row's
+    # own label in the reply's language (the labels file), never another language's.
+    checked = 0
+    for r in _step_rows():
+        name = r[NAME_FIELD[r["data_type"]]]
+        for kind in _kinds_for(r["data_type"]):
+            out = _parse([_step(kind, name)], phone_row=PRO, lang=lang)
+            if out is None:
+                continue
+            (step,) = out["steps"]
+            assert step["label"] == step_label(r, lang) == render.CREATOR_STEP_LABELS[
+                (r["data_type"], name.strip())][lang], (name, kind)
+            assert step["note"] == display_note(r)  # the old key stays for older apps
+            checked += 1
+    assert checked > 80, checked
+
+
+def test_a_step_with_no_label_falls_back_to_its_note(monkeypatch):
+    monkeypatch.setattr(frame_check, "step_label", lambda row, lang: None)
+    out = _parse([_step("move_you", WINDOW)], lang="hi")
+    assert out["steps"][0]["label"] == out["steps"][0]["note"] == WINDOW_LABEL
+
+
+def test_parts_are_only_on_a_settings_row_step_and_are_exactly_its_text():
+    out = _parse([_step("move_you", WINDOW), _step("move_phone", EYE_LEVEL), _step("settings", FLICKER),
+                  _step("settings", WINDOW_TALKING_HEAD)], phone_row=A78)
+    by_note = {s["note"]: s for s in out["steps"]}
+    assert "parts" not in by_note[WINDOW_LABEL] and "parts" not in by_note[EYE_LEVEL]
+    assert "parts" not in by_note["India 50Hz lights"]  # a flicker rule is a settings KIND, not a settings row
+    talking = by_note[WINDOW_TALKING_HEAD]
+    assert talking["text"] == (
+        "Lens: 1x Main. Distance: 0.8-1m. Framing: Chest up. EV: +0.5. "
+        "Stabilization: Tripod (stabilization off)."
+    )
+    assert talking["parts"] == [
+        {"label": "Lens", "value": "1x Main", "needs_pro": False, "needs_ois": False},
+        {"label": "Distance", "value": "0.8-1m", "needs_pro": False, "needs_ois": False},
+        {"label": "Framing", "value": "Chest up", "needs_pro": False, "needs_ois": False},
+        {"label": "EV", "value": "+0.5", "needs_pro": False, "needs_ois": False},
+        {"label": "Stabilization", "value": "Tripod (stabilization off)", "needs_pro": False, "needs_ois": False},
+    ]
+    # A settings row cited as a move_phone step is still a settings row: it has parts.
+    out = _parse([_step("move_phone", CLUTTER_TALKING_HEAD)], phone_row=PRO)
+    assert out["steps"][0]["parts"] and out["steps"][0]["kind"] == "move_phone"
+    # With no phone known, the manual controls ride in the Pro video mode sentence -- and in
+    # the parts, flagged needs_pro, in the same order.
+    out = _parse([_step("settings", WINDOW_TALKING_HEAD)], lang="hi")
+    step = out["steps"][0]
+    pro = [p for p in step["parts"] if p["needs_pro"]]
+    assert pro and "Agar aapke camera app mein Pro video mode hai: " in step["text"]
+    assert step["parts"] == sorted(step["parts"], key=lambda p: (p["needs_pro"], p["needs_ois"]))
+    assert {p["label"] for p in step["parts"]} & {"Doori", "Frame", "Phone steady"}  # Hinglish labels
 
 
 def test_the_unusable_lines_differ_from_a_usable_scene():

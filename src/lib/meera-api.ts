@@ -188,6 +188,16 @@ export interface MeeraShootCheckFrameResult {
   cantTell: string[];
   /** One coach-bank question whose answer would change the steps, or `null`. */
   ask: MeeraShootCheckAsk | null;
+  /** The language the server wrote the reply in ('hi' is Hinglish in Latin script). The panel
+   *  shows every heading, chip and caption in this language, so a Hinglish reply never sits under
+   *  English headings. `null` from an older server that does not say; the panel then uses the
+   *  creator's own language setting. */
+  lang: 'en' | 'hi' | null;
+  /** `true` when the photo could not be judged (too dark, lens covered, blank, too blurry,
+   *  unclear): `whatISee` is then the one "please retake it" line and there are no steps. From an
+   *  older server that does not send it, inferred from that same shape (a `whatISee` line and
+   *  nothing else). */
+  retake: boolean;
 }
 
 export type MeeraShootCheckStepKind = 'move_you' | 'move_phone' | 'move_light' | 'settings';
@@ -199,8 +209,27 @@ export const SHOOT_CHECK_STEP_ORDER: readonly MeeraShootCheckStepKind[] = ['move
 export interface MeeraShootCheckStep {
   kind: MeeraShootCheckStepKind;
   text: string;
-  /** Exact name of the Influora knowledge entry this step comes from. */
+  /** Exact name of the Influora knowledge entry this step comes from. Kept for older clients; the
+   *  panel shows `label` instead. */
   note: string;
+  /** A short topic label for the step in the reply's language ("Window behind you"), shown as
+   *  "From the guide: ...". Falls back to `note` when an older server sends none. */
+  label: string;
+  /** Only on a step from a phone-settings entry: the same settings `text` lists, one per part, in
+   *  the same order, so the panel can show them as a label/value list. `needsPro` marks the parts
+   *  that `text` puts under "If your camera app has a Pro video mode:", `needsOis` those under
+   *  "If your phone has optical stabilisation (OIS):" (sent when no saved phone says it has OIS).
+   *  Absent on every other step and from an older server; the panel then shows `text`. */
+  parts?: MeeraShootCheckStepPart[];
+}
+
+export interface MeeraShootCheckStepPart {
+  label: string;
+  value: string;
+  needsPro: boolean;
+  /** `true` only for a part that holds just if the phone has optical stabilisation (never together
+   *  with `needsPro`); absent otherwise. The panel must not show such a part as plain fact. */
+  needsOis?: boolean;
 }
 
 /** A coach question from the bank (`coach_question` rows in influora-ai's knowledge), already
@@ -297,21 +326,57 @@ function parseShootCheckSteps(value: unknown): MeeraShootCheckStep[] {
   const steps: Array<{ step: MeeraShootCheckStep; order: number; i: number }> = [];
   value.forEach((raw: unknown, i) => {
     if (!raw || typeof raw !== 'object') return;
-    const { kind, text, note } = raw as { kind?: unknown; text?: unknown; note?: unknown };
+    const { kind, text, note, label, parts } = raw as {
+      kind?: unknown;
+      text?: unknown;
+      note?: unknown;
+      label?: unknown;
+      parts?: unknown;
+    };
     const order = typeof kind === 'string' ? (SHOOT_CHECK_STEP_ORDER as readonly string[]).indexOf(kind) : -1;
     if (order === -1) return;
     if (typeof text !== 'string' || !text.trim()) return;
-    steps.push({
-      step: { kind: SHOOT_CHECK_STEP_ORDER[order], text: text.trim(), note: typeof note === 'string' ? note.trim() : '' },
-      order,
-      i,
-    });
+    const cleanNote = typeof note === 'string' ? note.trim() : '';
+    const step: MeeraShootCheckStep = {
+      kind: SHOOT_CHECK_STEP_ORDER[order],
+      text: text.trim(),
+      note: cleanNote,
+      label: typeof label === 'string' && label.trim() ? label.trim() : cleanNote,
+    };
+    // Only a settings step carries `parts`; on any other kind they would hide the step's text.
+    const parsedParts = step.kind === 'settings' ? parseShootCheckStepParts(parts) : [];
+    if (parsedParts.length > 0) step.parts = parsedParts;
+    steps.push({ step, order, i });
   });
   // Stable sort by the server's own order, in case an older or different server did not sort.
   return steps
     .sort((a, b) => a.order - b.order || a.i - b.i)
     .map(({ step }) => step)
     .slice(0, 5);
+}
+
+/** A settings step's `parts`: `needs_pro` and `needs_ois` count only when exactly `true` (a Pro
+ *  part is never also an OIS part). If ANY item lacks a text label and value the whole list is
+ *  dropped (never thrown on), so a partly broken list can never show less than the step's text.
+ *  An empty result means "show the text". */
+function parseShootCheckStepParts(value: unknown): MeeraShootCheckStepPart[] {
+  if (!Array.isArray(value)) return [];
+  const parts: MeeraShootCheckStepPart[] = [];
+  for (const raw of value as unknown[]) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+    const {
+      label,
+      value: partValue,
+      needs_pro,
+      needs_ois,
+    } = raw as { label?: unknown; value?: unknown; needs_pro?: unknown; needs_ois?: unknown };
+    if (typeof label !== 'string' || !label.trim()) return [];
+    if (typeof partValue !== 'string' || !partValue.trim()) return [];
+    const part: MeeraShootCheckStepPart = { label: label.trim(), value: partValue.trim(), needsPro: needs_pro === true };
+    if (needs_ois === true && !part.needsPro) part.needsOis = true;
+    parts.push(part);
+  }
+  return parts;
 }
 
 function parseShootCheckAsk(value: unknown): MeeraShootCheckAsk | null {
@@ -351,14 +416,27 @@ export function parseShootCheckFrameBody(body: Record<string, unknown>): MeeraSh
     return max === undefined ? list : list.slice(0, max);
   };
   const whatISee = typeof body.what_i_see === 'string' && body.what_i_see.trim() ? body.what_i_see.trim() : null;
+  const ok = asStringArray(body.ok);
+  const steps = parseShootCheckSteps(body.steps);
+  const cantTell = asStringArray(body.cant_tell, 3);
+  const ask = parseShootCheckAsk(body.ask);
+  const lang = body.lang === 'hi' || body.lang === 'en' ? body.lang : null;
+  // A server that says `retake` is believed; an older one that does not is read by the shape it
+  // gives an unusable photo: the one what_i_see line and nothing else.
+  const retake =
+    typeof body.retake === 'boolean'
+      ? body.retake
+      : whatISee !== null && steps.length === 0 && ok.length === 0 && cantTell.length === 0 && ask === null;
   return {
     fixes: asStringArray(body.fixes),
     settings: asStringArray(body.settings),
-    ok: asStringArray(body.ok),
+    ok,
     whatISee,
-    steps: parseShootCheckSteps(body.steps),
-    cantTell: asStringArray(body.cant_tell, 3),
-    ask: parseShootCheckAsk(body.ask),
+    steps,
+    cantTell,
+    ask,
+    lang,
+    retake,
   };
 }
 
@@ -1491,34 +1569,58 @@ export const meeraApi = {
     if (!isApiLive()) {
       await delay(600);
       const answered = answersJson !== null;
+      // A realistic sample in the current shape: a bedroom talking head with the window behind the
+      // creator, checked for an OPPO A78 (no Pro video mode, so no Pro-only settings parts).
+      const demoSteps: MeeraShootCheckStep[] = [
+        {
+          kind: 'move_you',
+          text: 'Turn so the window is at your side, not behind you, or close the curtain and put your own light on your face.',
+          note: 'Window behind creator toward phone',
+          label: 'Window behind you',
+        },
+        {
+          kind: 'move_phone',
+          text: 'Phone at eye-level: neutral point of view, reliable eye contact.',
+          note: 'Eye-level',
+          label: 'Eye-level phone',
+        },
+        {
+          kind: 'settings',
+          text: 'Lens: 1x Main. Distance: 0.8-1m. Framing: Chest up. EV: +0.5. Stabilization: Tripod (stabilization off).',
+          note: 'Talking Head (Window light)',
+          label: 'Talking head by a window',
+          parts: [
+            { label: 'Lens', value: '1x Main', needsPro: false },
+            { label: 'Distance', value: '0.8-1m', needsPro: false },
+            { label: 'Framing', value: 'Chest up', needsPro: false },
+            { label: 'EV', value: '+0.5', needsPro: false },
+            { label: 'Stabilization', value: 'Tripod (stabilization off)', needsPro: false },
+          ],
+        },
+      ];
       return {
         kind: 'ok',
         result: {
-          fixes: ['Turn about 30-45 degrees towards the window, so it lights one side of your face'],
-          settings: [],
-          ok: ['Lighting looks even'],
-          whatISee: 'You at a desk, window to your left, face a little dark on the right side',
-          steps: [
-            {
-              kind: 'move_you',
-              text: 'Turn about 30-45 degrees towards the window, so it lights one side of your face',
-              note: 'Soft natural window light',
-            },
-          ],
-          cantTell: ['Whether there is a lamp in the room'],
+          fixes: demoSteps.filter((s) => s.kind !== 'settings').map((s) => s.text),
+          settings: demoSteps.filter((s) => s.kind === 'settings').map((s) => s.text),
+          ok: ['Chest-up framing suits a talking head', 'The background behind you is tidy'],
+          whatISee:
+            "I can see you're in a bedroom, window light from behind you, a bright window behind you, phone below your eyes, framed chest up.",
+          steps: demoSteps,
+          cantTell: ['Whether the room is quiet enough to record', 'Whether you have a lamp you can move'],
           ask: answered
             ? null
             : {
-                id: 'other_light',
-                questionEn: 'Apart from the ceiling or tube light, do you have any other light you can move?',
-                questionHi: 'Ceiling ya tube light ke alawa koi aur light hai jo aap hila sako?',
+                id: 'can_move',
+                questionEn: 'Can you move to a different spot for this shot?',
+                questionHi: 'Kya aap is shot ke liye jagah badal sakte ho?',
                 options: [
-                  { en: 'A lamp', hi: 'Ek lamp' },
-                  { en: 'A ring light', hi: 'Ring light' },
-                  { en: 'Only the tube or ceiling light', hi: 'Sirf tube ya ceiling light' },
-                  { en: 'Nothing else', hi: 'Aur kuch nahi' },
+                  { en: 'Yes, I can move', hi: 'Haan, jagah badal sakte hain' },
+                  { en: 'No, fixed spot', hi: 'Nahi, jagah fixed hai' },
                 ],
               },
+          lang: 'en',
+          retake: false,
         },
       };
     }

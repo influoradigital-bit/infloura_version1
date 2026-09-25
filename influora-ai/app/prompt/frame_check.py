@@ -59,7 +59,9 @@ ignored. `parse_frame_check_reply` then
   - keeps one step per row, sorts creator, phone, light, settings and caps at `MAX_STEPS`;
   - returns each step's note as a readable, neutral label (`display_note`: a row whose name
     describes a face or speaks of "the creator" gets its own label, "Phone too close to your
-    face" -- never the raw "Distorted facial features (huge nose, tiny ears)");
+    face" -- never the raw "Distorted facial features (huge nose, tiny ears)"), and its
+    topic `label` in the reply's language (`step_label`, else the note); a settings row's
+    step also gets its `parts` (`render_step_parts`);
   - writes ok and cant_tell from fixed lines by id (`render_lines`: unknown ids dropped,
     repeats dropped, at most three each);
   - replaces `ask` with the bank's own wording (`COACH_QUESTIONS`), or null for an unknown
@@ -70,8 +72,21 @@ ignored. `parse_frame_check_reply` then
     but nothing to act on survives: no step and no question (a scene line alone is not an
     answer).
 
-The response shape is unchanged: {what_i_see, steps: [{kind, text, note}], ok, cant_tell,
-ask, fixes, settings} (Java passes the bytes through and the app reads these keys).
+The response: {what_i_see, steps: [{kind, text, note, label, parts?}], ok, cant_tell, ask,
+fixes, settings, lang, retake}. Java passes the bytes through unchanged
+(`CreatorMeeraController#checkFrame` returns `result.jsonBytes()`), so the fields added on
+2026-09-25 (PROMPT_VERSION .25.4, for a result that reads like a coach presenting) are
+additive and every older key keeps its type:
+  - `lang`: "en" or "hi", the reply language every line was written in (fallback: "en");
+  - `retake`: true when the photo was not usable or not judged (the body is only its fixed
+    what_i_see line), else false (fallback: false);
+  - a step's `label`: a short topic label in the reply language ("Window behind you" /
+    "Window aapke peeche", `step_label`), else its `note`; `note` stays for older clients;
+  - a step from a settings row (camera_technical_setting, night_video_setting) also has
+    `parts`: [{label, value, needs_pro, needs_ois}], exactly the fitted parts its `text`
+    shows, in the same order, labels in the reply language; needs_pro marks the parts the
+    text puts under "If your camera app has a Pro video mode:", needs_ois those under "If
+    your phone has optical stabilisation (OIS):". No other step has `parts`.
 
 Known limits (2026-09-25): a settings step's values stay English in a Hinglish ("hi")
 reply (its labels and every other step are Hinglish);
@@ -133,8 +148,10 @@ from app.prompt.frame_check_render import (  # noqa: F401 - phone helpers re-exp
     phone_features_named,
     render_lines,
     render_step,
+    render_step_parts,
     render_what_i_see,
     step_fits_phone,
+    step_label,
 )
 from app.prompt.untrusted import wrap_untrusted
 from app.prompt.validators import _CODE_FENCE_RE
@@ -885,18 +902,20 @@ def _rows_for_kind(rows: list[dict[str, Any]], kind: str) -> list[dict[str, Any]
 
 def validate_steps(
     raw: Any, phone_row: dict[str, Any] | None = None, lang: str = "en"
-) -> tuple[list[dict[str, str]], int]:
+) -> tuple[list[dict[str, Any]], int]:
     """The model's step picks -> (steps written by code, sorted creator, phone, light,
     settings and capped at `MAX_STEPS`; how many picks were dropped).
 
     Only `kind`, `note` and `side` are read. A pick is kept when its note names a row whose
     type fits its kind and that the renderer can write; its text is `render_step` of that
     row, fitted to the creator's phone (`phone_row`), and its note is `display_note` of the
-    same row. Defense in depth: a rendered text that fails `step_fits_phone` or
-    `step_numbers_grounded` is dropped too. One step per row."""
+    same row. Its label is the row's topic label in `lang` (`step_label`), else that note.
+    A step from a settings row also carries `parts`: the fitted parts its text is built from
+    (`render_step_parts`); no other step has the key. Defense in depth: a rendered text that
+    fails `step_fits_phone` or `step_numbers_grounded` is dropped too. One step per row."""
     if not isinstance(raw, list):
         return [], 0
-    kept: list[dict[str, str]] = []
+    kept: list[dict[str, Any]] = []
     dropped = 0
     seen: set[int] = set()
     for item in raw[:_MAX_STEPS_READ]:
@@ -911,23 +930,30 @@ def validate_steps(
             continue
         side = _pick(item.get("side"))
         side = side if side in STEP_SIDES else "none"
-        found: tuple[dict[str, Any], str] | None = None
+        found: tuple[dict[str, Any], str, list[dict[str, Any]] | None] | None = None
         for row in _rows_for_kind(rows, kind):
-            text = render_step(kind, row, phone_row, lang, side)
-            if not text:
+            rendered = render_step_parts(kind, row, phone_row, lang, side)
+            if rendered is None or not rendered.text:
                 continue
+            text = rendered.text
             if not step_fits_phone(text, phone_row) or not step_numbers_grounded(text, [row]):
                 continue
-            found = (row, text)
+            found = (row, text, rendered.parts)
             break
         if found is None:
             dropped += 1
             continue
-        row, text = found
+        row, text, parts = found
         if id(row) in seen:
             continue  # one step per row: a repeat is not a new step
         seen.add(id(row))
-        kept.append({"kind": kind, "text": text, "note": display_note(row)})
+        note = display_note(row)
+        step: dict[str, Any] = {
+            "kind": kind, "text": text, "note": note, "label": step_label(row, lang) or note,
+        }
+        if parts is not None:
+            step["parts"] = parts
+        kept.append(step)
     kept.sort(key=lambda s: _KIND_ORDER[s["kind"]])  # stable: the model's order within a kind
     return kept[:MAX_STEPS], dropped
 
@@ -1011,7 +1037,7 @@ def parse_frame_check_reply(
             return FrameCheckParse(None, 0, dropped, usable, lang, scene is not None)
         body = {
             "what_i_see": what_i_see, "steps": [], "ok": [], "cant_tell": [], "ask": None,
-            "fixes": [], "settings": [],
+            "fixes": [], "settings": [], "lang": lang, "retake": True,
         }
         return FrameCheckParse(body, 0, dropped, usable, lang, True)
 
@@ -1031,6 +1057,8 @@ def parse_frame_check_reply(
         "ask": ask,
         "fixes": [s["text"] for s in steps if s["kind"] != "settings"][:MAX_ITEMS_PER_LIST],
         "settings": [s["text"] for s in steps if s["kind"] == "settings"][:MAX_ITEMS_PER_LIST],
+        "lang": lang,
+        "retake": False,
     }
     return FrameCheckParse(body, len(steps), dropped, usable, lang, scene is not None)
 
@@ -1048,8 +1076,8 @@ def parse_frame_check_response(
 def fallback_response() -> dict[str, Any]:
     """The deterministic non-500 fallback body -- used when nothing to act on survives (no
     step and no question for a usable photo), on a provider failure, or on any gate block.
-    Always the full response shape (empty new fields, the one honest fix) so no client
-    special-cases a degraded turn."""
+    Always the full response shape (empty new fields, the one honest fix, lang "en", retake
+    false) so no client special-cases a degraded turn."""
     return {
         "what_i_see": "",
         "steps": [],
@@ -1058,4 +1086,6 @@ def fallback_response() -> dict[str, Any]:
         "ask": None,
         "fixes": [FALLBACK_FIX],
         "settings": [],
+        "lang": "en",
+        "retake": False,
     }
