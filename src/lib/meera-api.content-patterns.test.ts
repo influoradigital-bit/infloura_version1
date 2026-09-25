@@ -54,6 +54,22 @@ describe('isGetMyContentPatternsPayload', () => {
     }
   });
 
+  /**
+   * Meera intelligence v1, slice 2 — missing-key decision: `followed_recommendations` is
+   * REQUIRED, the same as the other four lists, not treated as an optional/legacy field. A
+   * payload from a backend or AI-service build that predates this slice (and so omits the key
+   * entirely) fails the guard rather than being let through as if it were the not-connected/
+   * not-enough-data shape below (which still sends `[]`, never omits the key). See the guard's
+   * doc comment in meera-api.ts for why this is the safer of the two choices: the renderer
+   * currently returns `null` unconditionally for this tool, so failing closed here costs nothing
+   * today and prevents a future renderer from reading `undefined` as if it were `[]`.
+   */
+  it('rejects a payload missing followed_recommendations (older payload, safer to fail closed)', () => {
+    expect(
+      isGetMyContentPatternsPayload(without(realFixture(), 'followed_recommendations')),
+    ).toBe(false);
+  });
+
   it('rejects a payload missing the available or enough_data booleans', () => {
     expect(isGetMyContentPatternsPayload(without(realFixture(), 'available'))).toBe(false);
     expect(isGetMyContentPatternsPayload(without(realFixture(), 'enough_data'))).toBe(false);
@@ -62,6 +78,15 @@ describe('isGetMyContentPatternsPayload', () => {
   it('rejects a list field that arrived as something other than an array', () => {
     expect(
       isGetMyContentPatternsPayload({ ...realFixture(), what_works: 'not-an-array' }),
+    ).toBe(false);
+  });
+
+  it('rejects followed_recommendations that arrived as something other than an array', () => {
+    expect(
+      isGetMyContentPatternsPayload({
+        ...realFixture(),
+        followed_recommendations: 'not-an-array',
+      }),
     ).toBe(false);
   });
 
@@ -86,6 +111,7 @@ describe('isGetMyContentPatternsPayload', () => {
         best_posts: [],
         weak_posts: [],
         what_works: [],
+        followed_recommendations: [],
       }),
     ).toBe(true);
   });

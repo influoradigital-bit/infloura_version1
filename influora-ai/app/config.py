@@ -76,7 +76,18 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.25.2"
+PROMPT_VERSION = "meera-2026.09.25.4"
+# ^ .25.4 = Meera intelligence v1, slice 2 (recommendation -> outcome record, 2026-09-25). The
+# creator persona's "Their own results" block gains the "Your own recommendations" rule (count
+# only the ones they posted, say how many it rests on, a recommendation they did not post is
+# never their failure), get_my_content_patterns' model copy carries `followed_recommendations`
+# (trusted, evidence.post_ids dropped), and content_knowledge.py gains CREATOR_KNOWLEDGE_VERSION
+# (a hash of the rendered knowledge, stamped on each recorded recommendation). The creator
+# write-back now carries metadata.recommendations from app/recommendations/record.py
+# (deterministic parsers, no model call). .25.3 is already used, uncommitted, on
+# feat/camera-knowledge-phone (C:/ph), so this branch skips to .25.4. BRAND prompt unchanged.
+#
+# Previously (.25.2):
 # ^ .25.2 = Meera intelligence v1, slice 1 + goal memory (2026-09-25). A new Spring-backed read tool,
 # get_my_content_patterns (the creator's own settled-post baseline, best/weak posts and what beats
 # their usual, every claim with its sample size; the model copy drops evidence.post_ids), its

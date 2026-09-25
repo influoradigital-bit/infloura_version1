@@ -25,6 +25,7 @@ import com.influora.service.IdempotencyService;
 import com.influora.service.credits.ChargeResult;
 import com.influora.service.credits.CreatorCreditService;
 import com.influora.service.credits.ReleaseScope;
+import com.influora.service.creatorcopilot.CreatorRecommendationService;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -150,6 +151,7 @@ public class MeeraSessionService {
     private final CreatorAgentConversationService creatorAgentConversationService;
     private final CreatorAgentPreferencesService creatorAgentPreferencesService;
     private final CreatorCreditService creatorCreditService;
+    private final CreatorRecommendationService creatorRecommendationService;
 
     /**
      * T-CREATOR-CREDITS-V2 fix (review findings #10/#13, K-15) — {@link #doPersistAssistantWriteback}
@@ -180,7 +182,8 @@ public class MeeraSessionService {
             CreatorAgentConversationService creatorAgentConversationService,
             CreatorAgentPreferencesService creatorAgentPreferencesService,
             CreatorCreditService creatorCreditService,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            CreatorRecommendationService creatorRecommendationService) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.workspaceRepository = workspaceRepository;
@@ -194,6 +197,7 @@ public class MeeraSessionService {
         this.creatorAgentPreferencesService = creatorAgentPreferencesService;
         this.creatorCreditService = creatorCreditService;
         this.writebackTransactionTemplate = new TransactionTemplate(transactionManager);
+        this.creatorRecommendationService = creatorRecommendationService;
     }
 
     /** Reuses the workspace's ACTIVE conversation, or opens a new one. Tenant-scoped. */
@@ -681,6 +685,28 @@ public class MeeraSessionService {
                     "Idempotency-Key is required to persist an assistant write-back",
                     HttpStatus.BAD_REQUEST);
         }
+        AiMessage persisted = persistOnce(workspaceId, conversationId, content, metadata, idempotencyKey, userType);
+        if (userType == UserType.CREATOR) {
+            // Meera intelligence v1, slice 2 (spec 8.3): record metadata.recommendations. Reached
+            // only once the write-back transaction above has committed (or, on a replay, was
+            // already committed), and never throws: CreatorRecommendationService validates in
+            // memory and defers the insert through AfterCommit to its own REQUIRES_NEW writer,
+            // which can no longer wait on this turn's account lock. Keyed on the turn's
+            // server-minted messageId (idempotencyKey), so a replay records nothing twice and can
+            // fill in rows a failed first attempt missed. workspaceId is the creator's USER id.
+            creatorRecommendationService.recordFromWriteback(
+                    workspaceId, conversationId, idempotencyKey, metadata, Instant.now());
+        }
+        return persisted;
+    }
+
+    private AiMessage persistOnce(
+            String workspaceId,
+            String conversationId,
+            String content,
+            Map<String, Object> metadata,
+            String idempotencyKey,
+            UserType userType) {
         try {
             return idempotencyService.executeOnce(
                     idempotencyKey,

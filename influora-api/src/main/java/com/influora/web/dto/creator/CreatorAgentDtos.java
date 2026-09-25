@@ -240,8 +240,40 @@ public final class CreatorAgentDtos {
             @JsonProperty("content") String content,
             @JsonProperty("timestamp") Instant timestamp) {}
 
+    /**
+     * Meera intelligence v1, slice 2 (DPDP export, Kabir M-1): one thing Meera told the creator to
+     * post in this conversation, and, once decided, what happened. Internal keys (row id, profile
+     * and user ids, source_ref, version, the account id) are left out; everything she was told and
+     * every outcome number stored about her post is in.
+     */
+    public record ConversationExportRecommendation(
+            @JsonProperty("source") String source,
+            @JsonProperty("recommended_for") java.time.LocalDate recommendedFor,
+            @JsonProperty("match_until") java.time.LocalDate matchUntil,
+            @JsonProperty("post_type") String postType,
+            @JsonProperty("window_label") String windowLabel,
+            @JsonProperty("window_from") java.time.LocalTime windowFrom,
+            @JsonProperty("window_to") java.time.LocalTime windowTo,
+            @JsonProperty("structure_name") String structureName,
+            @JsonProperty("hook_template") String hookTemplate,
+            @JsonProperty("topic") String topic,
+            @JsonProperty("festival") String festival,
+            @JsonProperty("status") String status,
+            @JsonProperty("matched_media_id") String matchedMediaId,
+            @JsonProperty("matched_type") Boolean matchedType,
+            @JsonProperty("matched_window") Boolean matchedWindow,
+            @JsonProperty("reach") Long reach,
+            @JsonProperty("engagement") Long engagement,
+            @JsonProperty("baseline_median_reach") Long baselineMedianReach,
+            @JsonProperty("baseline_sample_size") Integer baselineSampleSize,
+            @JsonProperty("reach_vs_baseline_pct") Integer reachVsBaselinePct,
+            @JsonProperty("settled_at") Instant settledAt,
+            @JsonProperty("created_at") Instant createdAt) {}
+
     public record ConversationExportResponse(
             @JsonProperty("conversation_id") String conversationId,
             @JsonProperty("started_at") Instant startedAt,
-            @JsonProperty("messages") List<ConversationExportMessage> messages) {}
+            @JsonProperty("messages") List<ConversationExportMessage> messages,
+            /** Slice 2 (DPDP): the plan and script recommendations recorded from this conversation. */
+            @JsonProperty("recommendations") List<ConversationExportRecommendation> recommendations) {}
 }

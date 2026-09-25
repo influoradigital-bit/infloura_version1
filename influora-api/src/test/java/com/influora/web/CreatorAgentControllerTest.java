@@ -218,7 +218,7 @@ class CreatorAgentControllerTest {
     void exportConversationPassesPrincipalUserIdAndConversationId() {
         String conversationId = "conv-1";
         ConversationExportResponse response =
-                new ConversationExportResponse(conversationId, Instant.now(), List.of());
+                new ConversationExportResponse(conversationId, Instant.now(), List.of(), List.of());
         when(conversationService.exportConversation(USER_ID, conversationId)).thenReturn(response);
 
         ResponseEntity<ApiResponse<ConversationExportResponse>> result =

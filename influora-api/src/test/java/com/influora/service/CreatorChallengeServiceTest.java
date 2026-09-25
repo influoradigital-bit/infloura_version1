@@ -70,6 +70,7 @@ class CreatorChallengeServiceTest {
     @Mock private MediaMetricsRepository mediaMetricsRepository;
     @Mock private CreatorPostingPatternService postingPatternService;
     @Mock private MetaConnectionService metaConnectionService;
+    @Mock private com.influora.service.creatorcopilot.CreatorRecommendationService recommendationService;
 
     private CreatorChallengeService service;
     private CreatorProfile profile;
@@ -82,7 +83,8 @@ class CreatorChallengeServiceTest {
                         dayRepository,
                         mediaMetricsRepository,
                         postingPatternService,
-                        metaConnectionService);
+                        metaConnectionService,
+                        recommendationService);
         profile = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Test Creator");
         when(mediaMetricsRepository.findNewestSnapshotPerPostSince(anyString(), any()))
                 .thenReturn(List.of());

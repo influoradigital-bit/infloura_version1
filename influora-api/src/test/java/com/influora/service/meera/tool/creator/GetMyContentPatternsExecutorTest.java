@@ -12,18 +12,21 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.influora.domain.enums.ChallengeDayType;
+import com.influora.domain.enums.CreatorRecommendationSource;
 import com.influora.domain.enums.EvidenceType;
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.BaselineStat;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.BeatsOn;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.Evidence;
+import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.FollowedStat;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.GroupStat;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.Metric;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.PatternKind;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.PostStat;
 import com.influora.service.creatorcopilot.CreatorIntelligenceService;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
+import com.influora.web.dto.meera.CreatorToolDtos.FollowedGroup;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyContentPatternsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.PostReading;
 import com.influora.web.dto.meera.CreatorToolDtos.WorkingPattern;
@@ -92,7 +95,12 @@ class GetMyContentPatternsExecutorTest {
                 List.of(
                         new GroupStat(
                                 PatternKind.POST_TYPE, "Reels and videos", 8, 17608.0, 1.42, 0.069, 1.11,
-                                List.of(BeatsOn.REACH), ev(ids.subList(0, 8), null))));
+                                List.of(BeatsOn.REACH), ev(ids.subList(0, 8), null))),
+                List.of(
+                        new FollowedStat(
+                                CreatorRecommendationSource.PLAN_MY_WEEK, 6, 4, 17.5, ev(List.of("p4", "p5", "p6"), null)),
+                        new FollowedStat(
+                                CreatorRecommendationSource.CHALLENGE, 3, 1, null, ev(List.of(), null))));
     }
 
     @Test
@@ -148,11 +156,38 @@ class GetMyContentPatternsExecutorTest {
     }
 
     @Test
+    @DisplayName(
+            "slice 2: followed_recommendations renders per source, the median as a signed whole"
+                    + " percentage, null below the 3-post floor, and evidence = the posts it rests on")
+    void rendersFollowedRecommendations() {
+        GetMyContentPatternsResult r = GetMyContentPatternsExecutor.render(profile(), EN_IN);
+
+        assertEquals(2, r.followedRecommendations().size());
+        FollowedGroup plan = r.followedRecommendations().get(0);
+        assertEquals("PLAN_MY_WEEK", plan.source());
+        assertEquals(6, plan.recommended());
+        assertEquals(4, plan.followed());
+        assertEquals("+18%", plan.medianReachVsUsual(), "17.5 rounds half-up");
+        assertEquals("CREATOR_POST_DATA", plan.evidence().type());
+        assertEquals(3, plan.evidence().sampleSize());
+        assertEquals(List.of("p4", "p5", "p6"), plan.evidence().postIds());
+
+        FollowedGroup challenge = r.followedRecommendations().get(1);
+        assertEquals("CHALLENGE", challenge.source());
+        assertNull(challenge.medianReachVsUsual(), "below the floor there is no median");
+        assertEquals(0, challenge.evidence().sampleSize());
+
+        assertEquals("-4%", GetMyContentPatternsExecutor.signedPercent(-4.0, EN_IN));
+        assertEquals("+0%", GetMyContentPatternsExecutor.signedPercent(0.0, EN_IN));
+        assertEquals("-3%", GetMyContentPatternsExecutor.signedPercent(-2.5, EN_IN), "half-up away from zero");
+    }
+
+    @Test
     @DisplayName("the thin-data note names how many settled posts there are and how many are needed")
     void thinDataNote() {
         CreatorIntelligenceProfile thin =
                 new CreatorIntelligenceProfile(
-                        true, null, false, 4, 1, 4, 10, 90, null, List.of(), List.of(), List.of(), List.of());
+                        true, null, false, 4, 1, 4, 10, 90, null, List.of(), List.of(), List.of(), List.of(), List.of());
         GetMyContentPatternsResult r = GetMyContentPatternsExecutor.render(thin, EN_IN);
         assertFalse(r.enoughData());
         assertEquals("Not enough settled posts yet: 4 of the 10 needed from the last 90 days.", r.note());
@@ -167,7 +202,7 @@ class GetMyContentPatternsExecutorTest {
     void notConnected() {
         CreatorIntelligenceProfile none =
                 new CreatorIntelligenceProfile(
-                        false, "NOT_CONNECTED", false, 0, 0, 0, 10, 90, null, List.of(), List.of(), List.of(), List.of());
+                        false, "NOT_CONNECTED", false, 0, 0, 0, 10, 90, null, List.of(), List.of(), List.of(), List.of(), List.of());
         GetMyContentPatternsResult r = GetMyContentPatternsExecutor.render(none, EN_IN);
         assertFalse(r.available());
         assertEquals("NOT_CONNECTED", r.reason());
@@ -180,7 +215,7 @@ class GetMyContentPatternsExecutorTest {
     void capNote() {
         CreatorIntelligenceProfile capped =
                 new CreatorIntelligenceProfile(
-                        true, null, true, 180, 0, 150, 10, 90, null, List.of(), List.of(), List.of(), List.of());
+                        true, null, true, 180, 0, 150, 10, 90, null, List.of(), List.of(), List.of(), List.of(), List.of());
         assertEquals(
                 "Based on the 150 most recent of 180 settled posts from the last 90 days.",
                 GetMyContentPatternsExecutor.render(capped, EN_IN).note());

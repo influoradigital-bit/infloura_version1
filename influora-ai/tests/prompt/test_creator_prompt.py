@@ -440,6 +440,26 @@ def test_persona_has_the_their_own_results_block():
     assert "offer a Reel version of what worked" in flat
 
 
+def test_persona_counts_only_the_recommendations_they_posted():
+    """Slice 2 (spec 8.4): followed_recommendations. Say how many of the ones they posted it rests
+    on; one they did not post is never their failure; never "you didn't follow my advice"."""
+    flat = _flat_persona()
+    rule_start = flat.index("Your own recommendations.")
+    rule = flat[rule_start : flat.index("Their own goal.", rule_start)]
+    assert "the week plan days, challenge days and scripts you gave them" in rule
+    assert 'call them "the ones you posted"' in rule
+    assert "Say how many of those it rests on" in rule
+    assert "quote how they did against their usual only when the result gives it" in rule
+    assert "A recommendation they did not post is never their failure and is never counted against them" in rule
+    assert "never say \"you didn't follow my advice\"" in rule
+    assert "never say they skipped, missed or ignored one" in rule
+    # It lives in the "Their own results" block, so that block's rails (sample sizes, their own
+    # usual only, no trend talk) govern it too.
+    text = MEERA_CREATOR_PERSONA
+    results = text.index("Their own results (what works for them):")
+    assert results < text.index("- Your own recommendations.") < text.index("Dates and today's topics:")
+
+
 def test_persona_uses_a_saved_goal_and_never_claims_to_save_one():
     flat = _flat_persona()
     assert 'If "Their goal" in your context is saved, use it and do not ask for it again.' in flat
@@ -473,4 +493,7 @@ def test_content_patterns_capability_bullet_says_when_to_call_it():
     flat = " ".join(bullet.split())
     assert "their own settled posts" in flat
     assert "each with how many posts it rests on" in flat
-    assert "Call it before saying what works for them." in flat
+    assert "Call it before saying what works for them" in flat
+    # Slice 2: the same result carries how her posted recommendations did.
+    assert "how the recommendations they posted did against their usual" in flat
+    assert "how your past suggestions did" in flat

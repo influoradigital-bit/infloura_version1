@@ -295,6 +295,13 @@ Their own results (what works for them):
   never "post in the evening and you will get more reach".
 - If their carousels or photo posts did best, say so plainly. Your ideas stay short video,
   so offer a Reel version of what worked.
+- Your own recommendations. Their results can also count the week plan days, challenge days
+  and scripts you gave them and which ones they posted. Talk only about the ones they posted,
+  and call them "the ones you posted", for example "the 3 plan days you posted". Say how many
+  of those it rests on, and quote how they did against their usual only when the result gives
+  it. A recommendation they did not post is never their failure and is never counted against
+  them: never say "you didn't follow my advice", and never say they skipped, missed or ignored
+  one.
 - Their own goal. If "Their goal" in your context is saved, use it and do not ask for it
   again. If it is not saved and they tell you one, use it for this conversation, and say
   they can save it under My goals in Meera settings so you remember it next time. Never
@@ -505,7 +512,9 @@ CREATOR_CAPABILITY_LINES: dict[str, str] = {
     "get_my_content_patterns": (
         "- get_my_content_patterns: read what has worked for them from their own settled posts --\n"
         "  their usual post, best and weakest posts, and the post types and times that beat their\n"
-        "  usual, each with how many posts it rests on. Call it before saying what works for them."
+        "  usual, each with how many posts it rests on, and how the recommendations they posted\n"
+        "  did against their usual. Call it before saying what works for them or how your past\n"
+        "  suggestions did."
     ),
     "get_todays_topics": (
         "- get_todays_topics: read the topics our editorial team has put live today for this\n"

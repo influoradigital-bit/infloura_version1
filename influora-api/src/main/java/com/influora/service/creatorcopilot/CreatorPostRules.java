@@ -24,6 +24,14 @@ public final class CreatorPostRules {
     /** Instagram numbers still grow for ~2 days (CHALLENGE-SPEC.md Backend &sect;6). */
     public static final Duration SETTLING_PERIOD = Duration.ofHours(48);
 
+    /**
+     * Data refreshes every 6 h (MetricsPollingJob), so a day that ended less than this long ago
+     * and has not yet shown a post is "still checking", not yet "missed" (CHALLENGE-SPEC.md Backend
+     * &sect;3). Moved here from {@code CreatorChallengeService} (slice 2, spec 8.4) so the
+     * recommendation matcher reuses it instead of copying it; the challenge still reads it.
+     */
+    public static final Duration CHECKING_GRACE = Duration.ofHours(12);
+
     private CreatorPostRules() {}
 
     /**

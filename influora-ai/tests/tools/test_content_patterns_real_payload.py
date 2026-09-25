@@ -13,7 +13,8 @@ What is pinned:
   and carries NO `post_ids` anywhere (token control, spec 4.5);
 - nothing Spring sends today lands in an `<untrusted_...>` wrapper;
 - every @JsonProperty of GetMyContentPatternsResult / BaselineMetric / PostReading /
-  WorkingPattern / Evidence is on a Python allow-list, and no Python name is stale;
+  WorkingPattern / Evidence / FollowedGroup (slice 2) is on a Python allow-list, and no Python
+  name is stale;
 - an unclassified key, or a known key holding the wrong shape, is wrapped -- never trusted;
 - the BROWSER's copy (`LoopEvent.tool_result_data`, which app/routes/chat.py streams as the SSE
   `tool_result` event's `data`) is the full payload, post_ids included.
@@ -41,6 +42,7 @@ from app.tools.creator_schemas import (
 from app.tools.loop import (
     _TRUSTED_KEYS_CONTENT_BASELINE,
     _TRUSTED_KEYS_CONTENT_EVIDENCE,
+    _TRUSTED_KEYS_CONTENT_FOLLOWED,
     _TRUSTED_KEYS_CONTENT_PATTERN,
     _TRUSTED_KEYS_CONTENT_POST,
     _TRUSTED_KEYS_GET_MY_CONTENT_PATTERNS,
@@ -134,7 +136,8 @@ def test_model_copy_is_the_payload_minus_post_ids_and_nothing_else():
 
     sizes = [v for _, k, v in _walk(model) if k == "sample_size"]
     assert sizes == [v for _, k, v in _walk(payload) if k == "sample_size"]
-    assert len(sizes) == 4 + 3 + 3 + 4
+    # baseline 4 + best 3 + weak 3 + what_works 4 + followed_recommendations 3 (slice 2)
+    assert len(sizes) == 4 + 3 + 3 + 4 + 3
     assert [v for _, k, v in _walk(model) if k == "baseline_sample_size"] == [13] * 6
     labels = [w["label"] for w in model["what_works"]]
     assert "Reels and videos" in labels and "Carousels" in labels
@@ -143,6 +146,27 @@ def test_model_copy_is_the_payload_minus_post_ids_and_nothing_else():
     assert model["as_of"] == "20 Sept 2026"
     # the per-post id (singular) and permalink stay: Meera links a post, she never lists 150 ids
     assert model["best_posts"][0]["post_id"] == "18040000000000103"
+
+
+def test_followed_recommendations_reach_the_model_trusted_without_post_ids():
+    """Slice 2 (spec 8.4): the FollowedGroup list is server counts from her own posts. It rides
+    trusted (never wrapped), keeps every count and the pre-written percentage the persona tells
+    Meera to quote, and loses its matched `post_ids` like every other evidence block."""
+    payload = _payload()
+    originals = payload["followed_recommendations"]
+    assert originals, "fixture no longer carries followed groups"
+    assert any(g["evidence"].get("post_ids") for g in originals), "fixture carries no ids to strip"
+    copy_text = _model_copy_of_tool_result(GET_MY_CONTENT_PATTERNS, payload)
+    assert "<untrusted_" not in copy_text
+    groups = json.loads(copy_text)["followed_recommendations"]
+    assert [g["source"] for g in groups] == [g["source"] for g in originals]
+    for group, original in zip(groups, originals):
+        assert group["recommended"] == original["recommended"]
+        assert group["followed"] == original["followed"]
+        assert group.get("median_reach_vs_usual") == original.get("median_reach_vs_usual")
+        assert group["evidence"]["sample_size"] == original["evidence"]["sample_size"]
+        assert "post_ids" not in group["evidence"]
+    assert groups[0]["median_reach_vs_usual"] == "+87%"
 
 
 def test_model_copy_is_much_smaller_than_the_payload():
@@ -170,6 +194,7 @@ def test_model_copy_never_mutates_the_payload():
         ("PostReading", _TRUSTED_KEYS_CONTENT_POST),
         ("WorkingPattern", _TRUSTED_KEYS_CONTENT_PATTERN),
         ("Evidence", _TRUSTED_KEYS_CONTENT_EVIDENCE),
+        ("FollowedGroup", _TRUSTED_KEYS_CONTENT_FOLLOWED),
     ],
 )
 def test_every_java_field_is_classified_and_no_python_name_is_stale(record_name, python_keys):
@@ -209,6 +234,19 @@ def test_an_unknown_key_inside_a_list_element_wraps_that_whole_list():
     assert "post_ids" not in copy_text, "the wrapped list must be stripped of ids too"
 
 
+def test_an_unknown_key_inside_a_followed_group_wraps_that_whole_list():
+    payload = _payload()
+    payload["followed_recommendations"][0]["topic"] = "a creator-written topic"
+    copy_text = _model_copy_of_tool_result(GET_MY_CONTENT_PATTERNS, payload)
+    trusted_text, _, wrapped = copy_text.partition("\n")
+    trusted = json.loads(trusted_text)
+    assert "followed_recommendations" not in trusted
+    assert trusted["best_posts"] and trusted["what_works"]
+    assert wrapped.startswith("<untrusted_unclassified>")
+    assert "a creator-written topic" in wrapped
+    assert "post_ids" not in copy_text, "the wrapped list must be stripped of ids too"
+
+
 def test_an_unknown_key_inside_evidence_wraps_the_list():
     payload = _payload()
     payload["baseline"][0]["evidence"]["confidence"] = 0.93
@@ -227,6 +265,8 @@ def test_an_unknown_key_inside_evidence_wraps_the_list():
         lambda p: p["what_works"][0].__setitem__("label", ["not", "a", "string"]),
         lambda p: p["what_works"][0].__setitem__("beats_on", "REACH"),
         lambda p: p["baseline"][0]["evidence"].__setitem__("post_ids", "not-a-list"),
+        lambda p: p["followed_recommendations"][0].__setitem__("followed", {"n": 3}),
+        lambda p: p.__setitem__("followed_recommendations", {"not": "a list"}),
     ],
 )
 def test_a_known_key_with_the_wrong_shape_is_wrapped(mutate):

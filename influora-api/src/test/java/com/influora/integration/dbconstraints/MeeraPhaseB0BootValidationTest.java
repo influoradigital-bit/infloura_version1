@@ -230,4 +230,90 @@ class MeeraPhaseB0BootValidationTest extends AbstractIntegrationTest {
                     assertThat(row.get("IS_NULLABLE")).as("creator_agent_preferences.%s nullable", column).isEqualTo("YES");
                 });
     }
+
+    /**
+     * Meera intelligence v1, slice 2 (spec 8.2) -- V20260925150100 creates {@code
+     * creator_recommendations}. Reaching this method already proves ddl-auto=validate accepted
+     * {@code CreatorRecommendation} against the live table; this pins every MySQL type too (INT
+     * never TINYINT, BIGINT, BOOLEAN = tinyint(1), DATE, TIME, DATETIME(6)), the two unique keys that
+     * make replay and one-post-one-recommendation database guarantees, and the profile cascade the
+     * DPDP rule relies on for challenge rows.
+     */
+    @Test
+    @DisplayName(
+            "V20260925150100 applied: creator_recommendations column types match the entity, both"
+                    + " unique keys exist with the right columns, FK to creator_profiles is ON DELETE CASCADE")
+    void creatorRecommendationsMatchTheEntity() {
+        Integer applied =
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM flyway_schema_history WHERE version = ? AND success = true",
+                        Integer.class,
+                        "20260925150100");
+        assertThat(applied).as("migration V20260925150100 should have applied successfully").isEqualTo(1);
+
+        Map<String, String> expectedType = new java.util.LinkedHashMap<>();
+        expectedType.put("id", "varchar(26)");
+        expectedType.put("creator_user_id", "varchar(26)");
+        expectedType.put("creator_profile_id", "varchar(26)");
+        expectedType.put("source", "varchar(16)");
+        expectedType.put("source_ref", "varchar(64)");
+        expectedType.put("conversation_id", "varchar(26)");
+        expectedType.put("recommended_for", "date");
+        expectedType.put("match_until", "date");
+        expectedType.put("post_type", "varchar(12)");
+        expectedType.put("window_label", "varchar(24)");
+        expectedType.put("window_from", "time");
+        expectedType.put("window_to", "time");
+        expectedType.put("structure_name", "varchar(80)");
+        expectedType.put("hook_template", "varchar(80)");
+        expectedType.put("topic", "varchar(160)");
+        expectedType.put("festival", "varchar(80)");
+        expectedType.put("prompt_version", "varchar(32)");
+        expectedType.put("knowledge_version", "varchar(32)");
+        expectedType.put("status", "varchar(12)");
+        expectedType.put("matched_media_id", "varchar(50)");
+        expectedType.put("matched_type", "tinyint(1)");
+        expectedType.put("matched_window", "tinyint(1)");
+        expectedType.put("reach", "bigint");
+        expectedType.put("engagement", "bigint");
+        expectedType.put("baseline_median_reach", "bigint");
+        expectedType.put("baseline_sample_size", "int");
+        expectedType.put("reach_vs_baseline_pct", "int");
+        expectedType.put("settled_at", "datetime(6)");
+        expectedType.put("created_at", "datetime(6)");
+        List<Map<String, Object>> columns =
+                jdbcTemplate.queryForList(
+                        "SELECT column_name AS column_name, column_type AS column_type FROM information_schema.columns"
+                                + " WHERE table_schema = DATABASE() AND table_name = 'creator_recommendations'");
+        Map<String, String> actual = new java.util.HashMap<>();
+        for (Map<String, Object> c : columns) {
+            actual.put(
+                    String.valueOf(c.get("column_name")),
+                    String.valueOf(c.get("column_type")).toLowerCase(java.util.Locale.ROOT));
+        }
+        assertThat(actual).as("creator_recommendations columns and MySQL types").isEqualTo(Map.copyOf(expectedType));
+
+        for (Map.Entry<String, String> key :
+                Map.of(
+                                "uk_creator_rec_source", "creator_profile_id,source,source_ref",
+                                "uk_creator_rec_media", "creator_profile_id,matched_media_id")
+                        .entrySet()) {
+            String cols =
+                    jdbcTemplate.queryForObject(
+                            "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics"
+                                    + " WHERE table_schema = DATABASE() AND table_name = 'creator_recommendations'"
+                                    + " AND index_name = ? AND non_unique = 0",
+                            String.class,
+                            key.getKey());
+            assertThat(cols).as("unique key %s", key.getKey()).isEqualTo(key.getValue());
+        }
+
+        String deleteRule =
+                jdbcTemplate.queryForObject(
+                        "SELECT delete_rule FROM information_schema.referential_constraints"
+                                + " WHERE constraint_schema = DATABASE() AND constraint_name = 'fk_creator_rec_profile'"
+                                + " AND referenced_table_name = 'creator_profiles'",
+                        String.class);
+        assertThat(deleteRule).isEqualTo("CASCADE");
+    }
 }

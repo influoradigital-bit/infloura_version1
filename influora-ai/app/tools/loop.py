@@ -907,6 +907,7 @@ _TRUSTED_KEYS_GET_MY_CONTENT_PATTERNS = (
     "best_posts",
     "weak_posts",
     "what_works",
+    "followed_recommendations",
     "note",
 )
 _TRUSTED_KEYS_CONTENT_EVIDENCE = ("type", "sample_size", "post_ids", "baseline_sample_size")
@@ -934,12 +935,24 @@ _TRUSTED_KEYS_CONTENT_PATTERN = (
     "beats_on",
     "evidence",
 )
-# The four list containers of the result and the per-element allow-list each one is held to.
+# Slice 2 (spec 8.4): CreatorToolDtos.FollowedGroup -- how many recommendations of one source
+# (PLAN_MY_WEEK | CHALLENGE | SCRIPT_CARD) the creator was given and posted, and the median reach
+# of the ones she posted vs her usual. All server-computed counts and a pre-written percentage from
+# her own post readings; `evidence.post_ids` are the matched posts (dropped from the model copy).
+_TRUSTED_KEYS_CONTENT_FOLLOWED = (
+    "source",
+    "recommended",
+    "followed",
+    "median_reach_vs_usual",
+    "evidence",
+)
+# The list containers of the result and the per-element allow-list each one is held to.
 _CONTENT_PATTERNS_LISTS: dict[str, tuple[str, ...]] = {
     "baseline": _TRUSTED_KEYS_CONTENT_BASELINE,
     "best_posts": _TRUSTED_KEYS_CONTENT_POST,
     "weak_posts": _TRUSTED_KEYS_CONTENT_POST,
     "what_works": _TRUSTED_KEYS_CONTENT_PATTERN,
+    "followed_recommendations": _TRUSTED_KEYS_CONTENT_FOLLOWED,
 }
 # Spec 4.5 (token control): the model copy drops every `evidence.post_ids` -- up to 150 ids per
 # baseline metric -- and keeps `sample_size` / `baseline_sample_size`, which is what Meera quotes

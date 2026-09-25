@@ -22,6 +22,7 @@ import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.domain.enums.ChallengeDayType;
 import com.influora.domain.enums.EvidenceType;
 import com.influora.repository.CreatorProfileRepository;
+import com.influora.repository.CreatorRecommendationRepository;
 import com.influora.repository.MediaMetricsRepository;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.BaselineStat;
@@ -79,6 +80,7 @@ class CreatorIntelligenceServiceTest {
     @Mock private MediaMetricsRepository mediaMetricsRepository;
     @Mock private CreatorProfileRepository creatorProfileRepository;
     @Mock private MetaOAuthTokenRepository tokenRepository;
+    @Mock private CreatorRecommendationRepository recommendationRepository;
 
     private CreatorIntelligenceService service;
 
@@ -89,7 +91,11 @@ class CreatorIntelligenceServiceTest {
                         mediaMetricsRepository,
                         creatorProfileRepository,
                         new ConnectedInstagramAccount(tokenRepository),
-                        tokenRepository);
+                        tokenRepository,
+                        new CreatorRecommendationOutcomeService(
+                                recommendationRepository,
+                                mediaMetricsRepository,
+                                new CreatorRecommendationOutcomeWriter(recommendationRepository)));
         CreatorProfile profile = mock(CreatorProfile.class);
         lenient().when(profile.getId()).thenReturn(PROFILE_ID);
         lenient().when(creatorProfileRepository.findByUserId(CREATOR_USER_ID)).thenReturn(Optional.of(profile));

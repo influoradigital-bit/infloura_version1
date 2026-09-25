@@ -367,8 +367,24 @@ public final class CreatorToolDtos {
             @JsonProperty("evidence") Evidence evidence) {}
 
     /**
+     * Meera intelligence v1, slice 2 (spec 8.4) -- the recommendations of one source ({@code
+     * PLAN_MY_WEEK} | {@code CHALLENGE} | {@code SCRIPT_CARD}) whose outcome is decided, how many she
+     * followed (a post of the recommended type), and the median of those posts' reach against her
+     * usual as of each post ({@code "+18%"}), given only when at least 3 followed ones settled
+     * against a baseline of 10 or more posts. {@code evidence} lists exactly the posts the median
+     * rests on. A recommendation she did not follow is never a failure of hers.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record FollowedGroup(
+            @JsonProperty("source") String source,
+            @JsonProperty("recommended") int recommended,
+            @JsonProperty("followed") int followed,
+            @JsonProperty("median_reach_vs_usual") String medianReachVsUsual,
+            @JsonProperty("evidence") Evidence evidence) {}
+
+    /**
      * Meera intelligence v1 -- {@code get_my_content_patterns}'s result, rendered by {@code
-     * GetMyContentPatternsExecutor} from {@code CreatorIntelligenceProfile}. The four lists are
+     * GetMyContentPatternsExecutor} from {@code CreatorIntelligenceProfile}. The five lists are
      * always present ({@code []}, never null); only the nullable strings are dropped by NON_NULL.
      * {@code available=false, reason=NOT_CONNECTED} carries no post data at all.
      */
@@ -386,5 +402,6 @@ public final class CreatorToolDtos {
             @JsonProperty("best_posts") List<PostReading> bestPosts,
             @JsonProperty("weak_posts") List<PostReading> weakPosts,
             @JsonProperty("what_works") List<WorkingPattern> whatWorks,
+            @JsonProperty("followed_recommendations") List<FollowedGroup> followedRecommendations,
             @JsonProperty("note") String note) {}
 }

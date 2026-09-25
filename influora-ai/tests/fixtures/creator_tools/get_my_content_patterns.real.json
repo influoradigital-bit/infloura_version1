@@ -304,5 +304,44 @@
         ]
       }
     }
+  ],
+  "followed_recommendations" : [
+    {
+      "source" : "PLAN_MY_WEEK",
+      "recommended" : 5,
+      "followed" : 3,
+      "median_reach_vs_usual" : "+87%",
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 3,
+        "post_ids" : [
+          "18040000000000101",
+          "18040000000000102",
+          "18040000000000103"
+        ]
+      }
+    },
+    {
+      "source" : "CHALLENGE",
+      "recommended" : 1,
+      "followed" : 1,
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 1,
+        "post_ids" : [
+          "18040000000000301"
+        ]
+      }
+    },
+    {
+      "source" : "SCRIPT_CARD",
+      "recommended" : 1,
+      "followed" : 0,
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 0,
+        "post_ids" : [ ]
+      }
+    }
   ]
 }

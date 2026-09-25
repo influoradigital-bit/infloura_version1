@@ -12,6 +12,7 @@ import com.influora.repository.CreatorChallengeDayRepository;
 import com.influora.repository.CreatorChallengeRepository;
 import com.influora.repository.MediaMetricsRepository;
 import com.influora.service.creatorcopilot.CreatorPostRules;
+import com.influora.service.creatorcopilot.CreatorRecommendationService;
 import com.influora.service.creatorcopilot.CreatorPostingPatternService;
 import com.influora.service.creatorcopilot.CreatorPostingPatternService.PatternWindow;
 import com.influora.service.creatorcopilot.CreatorPostingPatternService.PostingPattern;
@@ -88,8 +89,9 @@ public class CreatorChallengeService {
     // with CreatorIntelligenceService.
 
     /** Data refreshes every 6h (MetricsPollingJob) -- a day less than this old that has not yet
-     * shown a post is "still checking", not yet "missed" (CHALLENGE-SPEC.md Backend &sect;3). */
-    static final Duration CHECKING_GRACE = Duration.ofHours(12);
+     * shown a post is "still checking", not yet "missed" (CHALLENGE-SPEC.md Backend &sect;3).
+     * Defined once in {@link CreatorPostRules#CHECKING_GRACE} (slice 2 reuses it). */
+    static final Duration CHECKING_GRACE = CreatorPostRules.CHECKING_GRACE;
 
     /** Never a change computed off a single settled post either week (CHALLENGE-SPEC.md &sect;6). */
     static final int MIN_SETTLED_TO_COMPARE = 2;
@@ -102,18 +104,21 @@ public class CreatorChallengeService {
     private final MediaMetricsRepository mediaMetricsRepository;
     private final CreatorPostingPatternService postingPatternService;
     private final MetaConnectionService metaConnectionService;
+    private final CreatorRecommendationService recommendationService;
 
     public CreatorChallengeService(
             CreatorChallengeRepository challengeRepository,
             CreatorChallengeDayRepository dayRepository,
             MediaMetricsRepository mediaMetricsRepository,
             CreatorPostingPatternService postingPatternService,
-            MetaConnectionService metaConnectionService) {
+            MetaConnectionService metaConnectionService,
+            CreatorRecommendationService recommendationService) {
         this.challengeRepository = challengeRepository;
         this.dayRepository = dayRepository;
         this.mediaMetricsRepository = mediaMetricsRepository;
         this.postingPatternService = postingPatternService;
         this.metaConnectionService = metaConnectionService;
+        this.recommendationService = recommendationService;
     }
 
     // ============================== Reads ==============================
@@ -209,7 +214,12 @@ public class CreatorChallengeService {
             throw new ApiException(
                     "CHALLENGE_ALREADY_ACTIVE", "A challenge is already active", HttpStatus.CONFLICT);
         }
-        dayRepository.saveAll(buildPlan(challenge.getId(), pattern, today));
+        List<CreatorChallengeDay> plan = buildPlan(challenge.getId(), pattern, today);
+        dayRepository.saveAll(plan);
+        // Meera intelligence v1, slice 2 (spec 8.3): one creator_recommendations row per non-REST
+        // day, in THIS transaction -- deterministic server data that stands or falls with the
+        // challenge it describes. source_ref = challengeId:dayIndex; a replay is a no-op.
+        recommendationService.recordChallengePlan(challenge, plan, now);
 
         return getState(profile, today, now);
     }

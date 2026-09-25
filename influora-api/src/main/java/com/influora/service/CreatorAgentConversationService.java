@@ -8,8 +8,10 @@ import com.influora.domain.entity.MeeraCreatorConversation;
 import com.influora.repository.AiConversationRepository;
 import com.influora.repository.AiMessageRepository;
 import com.influora.repository.CreatorProfileRepository;
+import com.influora.repository.CreatorRecommendationRepository;
 import com.influora.repository.MeeraCreatorConversationRepository;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationExportMessage;
+import com.influora.web.dto.creator.CreatorAgentDtos.ConversationExportRecommendation;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationExportResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationListResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationSummary;
@@ -46,16 +48,19 @@ public class CreatorAgentConversationService {
     private final CreatorProfileRepository creatorProfileRepository;
     private final AiConversationRepository aiConversationRepository;
     private final AiMessageRepository aiMessageRepository;
+    private final CreatorRecommendationRepository recommendationRepository;
 
     public CreatorAgentConversationService(
             MeeraCreatorConversationRepository conversationRepository,
             CreatorProfileRepository creatorProfileRepository,
             AiConversationRepository aiConversationRepository,
-            AiMessageRepository aiMessageRepository) {
+            AiMessageRepository aiMessageRepository,
+            CreatorRecommendationRepository recommendationRepository) {
         this.conversationRepository = conversationRepository;
         this.creatorProfileRepository = creatorProfileRepository;
         this.aiConversationRepository = aiConversationRepository;
         this.aiMessageRepository = aiMessageRepository;
+        this.recommendationRepository = recommendationRepository;
     }
 
     private CreatorProfile requireCreatorProfile(String userId) {
@@ -100,7 +105,42 @@ public class CreatorAgentConversationService {
                                                 m.getContent(),
                                                 m.getCreatedAt()))
                         .toList();
-        return new ConversationExportResponse(tracking.getConversationId(), conversation.getCreatedAt(), messages);
+        // Meera intelligence v1, slice 2 (DPDP, Kabir M-1): the plan and script recommendations
+        // recorded from this conversation's replies, with their outcomes, are part of it.
+        List<ConversationExportRecommendation> recommendations =
+                recommendationRepository
+                        .findByCreatorProfileIdAndConversationIdOrderByCreatedAtAscIdAsc(profile.getId(), conversationId)
+                        .stream()
+                        .map(CreatorAgentConversationService::exportRow)
+                        .toList();
+        return new ConversationExportResponse(
+                tracking.getConversationId(), conversation.getCreatedAt(), messages, recommendations);
+    }
+
+    private static ConversationExportRecommendation exportRow(com.influora.domain.entity.CreatorRecommendation r) {
+        return new ConversationExportRecommendation(
+                r.getSource().name(),
+                r.getRecommendedFor(),
+                r.getMatchUntil(),
+                r.getPostType().name(),
+                r.getWindowLabel(),
+                r.getWindowFrom(),
+                r.getWindowTo(),
+                r.getStructureName(),
+                r.getHookTemplate(),
+                r.getTopic(),
+                r.getFestival(),
+                r.getStatus().name(),
+                r.getMatchedMediaId(),
+                r.getMatchedType(),
+                r.getMatchedWindow(),
+                r.getReach(),
+                r.getEngagement(),
+                r.getBaselineMedianReach(),
+                r.getBaselineSampleSize(),
+                r.getReachVsBaselinePct(),
+                r.getSettledAt(),
+                r.getCreatedAt());
     }
 
     @Transactional
@@ -110,6 +150,13 @@ public class CreatorAgentConversationService {
 
         List<AiMessage> messages = aiMessageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId);
         aiMessageRepository.deleteAll(messages);
+        // Meera intelligence v1, slice 2 (spec 8.3, DPDP): the plan and script recommendations
+        // recorded from this conversation's replies go with it. fk_creator_rec_conversation (ON
+        // DELETE CASCADE to meera_creator_conversations.conversation_id) backs this up when the
+        // tracking row is deleted below, and makes a write-back insert that raced this delete fail
+        // instead of leaving an orphan (Kabir L-2). Challenge rows carry no conversation; they go
+        // with the account (AccountController#deleteAccount).
+        recommendationRepository.deleteByCreatorProfileIdAndConversationId(profile.getId(), conversationId);
         conversationRepository.delete(tracking);
         aiConversationRepository.findById(conversationId).ifPresent(aiConversationRepository::delete);
     }

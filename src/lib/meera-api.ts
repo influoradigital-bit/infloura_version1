@@ -700,11 +700,29 @@ export interface WorkingPattern {
 }
 
 /**
+ * `CreatorToolDtos.FollowedGroup` (Meera intelligence v1, slice 2 — spec §8.4) — one
+ * recommendation source (`PLAN_MY_WEEK` | `CHALLENGE` | `SCRIPT_CARD`) and how much of it the
+ * creator actually followed: how many recommendations came from that source, how many she
+ * followed (posted the recommended type), and the median reach-vs-usual of those followed posts
+ * once settled — given only when at least 3 followed ones settled against a baseline of 10 or
+ * more posts, omitted (not null) otherwise. `evidence` lists exactly the posts that median rests
+ * on. A recommendation she did not follow is never a failure of hers.
+ */
+export interface FollowedRecommendationGroup {
+  source: 'PLAN_MY_WEEK' | 'CHALLENGE' | 'SCRIPT_CARD';
+  recommended: number;
+  followed: number;
+  median_reach_vs_usual?: string;
+  evidence: Evidence;
+}
+
+/**
  * `CreatorToolDtos.GetMyContentPatternsResult` (spec §4.2) — `get_my_content_patterns` tool
  * result: the Creator Intelligence Profile, computed fresh on every call from the creator's own
  * settled posts only. `available=false` (Instagram not connected/expired) carries no post data;
  * `enough_data=false` (fewer than `min_posts_needed` settled posts) withholds baseline/best/weak/
- * what_works too. The four lists are always present ([] when empty, never omitted/null).
+ * what_works/followed_recommendations too. The five lists are always present ([] when empty,
+ * never omitted/null).
  */
 export interface GetMyContentPatternsPayload {
   available: boolean;
@@ -719,6 +737,7 @@ export interface GetMyContentPatternsPayload {
   best_posts: PostReading[];
   weak_posts: PostReading[];
   what_works: WorkingPattern[];
+  followed_recommendations: FollowedRecommendationGroup[];
   note?: string;
 }
 
@@ -808,11 +827,21 @@ export function isDraftReplyPayload(data: unknown): data is DraftReplyPayload {
 }
 
 /**
- * T22 — checks the two booleans and the four lists every `GetMyContentPatternsPayload` always
+ * T22 — checks the two booleans and the five lists every `GetMyContentPatternsPayload` always
  * carries (spec §4.2: the lists are `[]`, never omitted, even when `available`/`enough_data` is
  * false). Deliberately does not walk into `baseline`/`best_posts`/etc.'s own shape — as with every
  * other guard here, a malformed nested record is Meera's own wire contract to keep, not this
  * card's job to re-validate.
+ *
+ * `followed_recommendations` (Meera intelligence v1, slice 2) is required here, not optional,
+ * even though the renderer currently returns `null` unconditionally for this tool (no code reads
+ * the field yet). The Java result (`CreatorToolDtos.GetMyContentPatternsResult`, `@JsonInclude
+ * (NON_NULL)` at the class level) guarantees all five lists are always present, so a payload
+ * missing this one is not a valid "older" shape to tolerate — it is a signal that the response
+ * came from a backend/AI-service build that predates this slice, or is otherwise malformed. Fail
+ * closed: reject it here rather than let a future renderer built against this type dereference an
+ * absent array. Being strict costs nothing today (this tool always renders `null` regardless of
+ * the guard's answer) and avoids a silent `undefined` crash once a real renderer lands.
  */
 export function isGetMyContentPatternsPayload(
   data: unknown,
@@ -825,7 +854,8 @@ export function isGetMyContentPatternsPayload(
     Array.isArray(d.baseline) &&
     Array.isArray(d.best_posts) &&
     Array.isArray(d.weak_posts) &&
-    Array.isArray(d.what_works)
+    Array.isArray(d.what_works) &&
+    Array.isArray(d.followed_recommendations)
   );
 }
 

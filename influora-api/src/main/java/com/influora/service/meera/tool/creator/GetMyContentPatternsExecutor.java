@@ -4,6 +4,7 @@ import com.influora.common.Rendered;
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.BaselineStat;
+import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.FollowedStat;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.GroupStat;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.Metric;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.PostStat;
@@ -11,6 +12,7 @@ import com.influora.service.creatorcopilot.CreatorIntelligenceService;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import com.influora.web.dto.meera.CreatorToolDtos.BaselineMetric;
 import com.influora.web.dto.meera.CreatorToolDtos.Evidence;
+import com.influora.web.dto.meera.CreatorToolDtos.FollowedGroup;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyContentPatternsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.PostReading;
 import com.influora.web.dto.meera.CreatorToolDtos.WorkingPattern;
@@ -96,6 +98,7 @@ public class GetMyContentPatternsExecutor {
                 profile.bestPosts().stream().map(p -> toPostReading(p, locale)).toList(),
                 profile.weakPosts().stream().map(p -> toPostReading(p, locale)).toList(),
                 profile.whatWorks().stream().map(g -> toWorkingPattern(g, locale)).toList(),
+                profile.followedRecommendations().stream().map(f -> toFollowedGroup(f, locale)).toList(),
                 noteFor(profile));
     }
 
@@ -157,6 +160,15 @@ public class GetMyContentPatternsExecutor {
                 toEvidence(group.evidence()));
     }
 
+    private static FollowedGroup toFollowedGroup(FollowedStat stat, Locale locale) {
+        return new FollowedGroup(
+                stat.source().name(),
+                stat.recommended(),
+                stat.followed(),
+                stat.medianReachVsUsualPct() == null ? null : signedPercent(stat.medianReachVsUsualPct(), locale),
+                toEvidence(stat.evidence()));
+    }
+
     private static Evidence toEvidence(CreatorIntelligenceProfile.Evidence evidence) {
         return new Evidence(
                 evidence.type().name(),
@@ -187,6 +199,16 @@ public class GetMyContentPatternsExecutor {
         BigDecimal pct = BigDecimal.valueOf(ratio).subtract(BigDecimal.ONE).multiply(HUNDRED).setScale(0, RoundingMode.HALF_UP);
         String sign = pct.signum() < 0 ? "-" : "+";
         return sign + Rendered.money(pct.abs(), locale) + "%";
+    }
+
+    /**
+     * A percentage that is already a percentage (not a ratio), signed and whole, half-up: {@code
+     * 17.5 -> "+18%"}, {@code -4.0 -> "-4%"}, {@code 0 -> "+0%"}.
+     */
+    static String signedPercent(double pct, Locale locale) {
+        BigDecimal whole = BigDecimal.valueOf(pct).setScale(0, RoundingMode.HALF_UP);
+        String sign = whole.signum() < 0 ? "-" : "+";
+        return sign + Rendered.money(whole.abs(), locale) + "%";
     }
 
     private static Locale localeFor(PreferencesResponse prefs) {

@@ -7,6 +7,7 @@ import com.influora.repository.UserRepository;
 import com.influora.security.AuthCookieService;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.AuthService;
+import com.influora.service.creatorcopilot.CreatorRecommendationWriter;
 import com.influora.web.dto.user.UserDtos.ChangePasswordRequest;
 import com.influora.web.dto.user.UserDtos.ChangePasswordResponse;
 import com.influora.web.dto.user.UserDtos.DeleteAccountResponse;
@@ -61,14 +62,17 @@ public class AccountController {
     private final UserRepository userRepository;
     private final AuthService authService;
     private final AuthCookieService authCookieService;
+    private final CreatorRecommendationWriter creatorRecommendations;
 
     public AccountController(
             UserRepository userRepository,
             AuthService authService,
-            AuthCookieService authCookieService) {
+            AuthCookieService authCookieService,
+            CreatorRecommendationWriter creatorRecommendations) {
         this.userRepository = userRepository;
         this.authService = authService;
         this.authCookieService = authCookieService;
+        this.creatorRecommendations = creatorRecommendations;
     }
 
     /**
@@ -87,6 +91,15 @@ public class AccountController {
                                 () ->
                                         new ApiException(
                                                 "USER_NOT_FOUND", "User not found", HttpStatus.NOT_FOUND));
+
+        // DPDP (Meera intelligence slice 2, Kabir M-1): what Meera told a creator to post and how
+        // each post did against her usual is her personal data, and nothing else removes it -- the
+        // soft delete below keeps the users row and never touches creator_profiles, so the
+        // creator_recommendations FK cascade does not fire. Deleted BEFORE the soft delete, so a
+        // failure here fails the request while the account is still usable and the creator can
+        // retry, rather than leaving the rows behind a deleted account nobody can act for. A
+        // no-op for a user without a creator profile.
+        creatorRecommendations.deleteAllForCreator(principal.getUserId());
 
         user.softDelete();
         userRepository.save(user);

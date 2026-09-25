@@ -39,6 +39,7 @@ import com.influora.service.meera.BrandContextAssembler;
 import com.influora.service.meera.MeeraSessionService;
 import com.influora.service.meera.OnBehalfTokenService;
 import com.influora.service.meera.StreamTokenService;
+import com.influora.service.creatorcopilot.CreatorRecommendationService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -145,7 +146,8 @@ class CreatorTurnReleaseRoutingTest {
                         mock(CreatorAgentConversationService.class),
                         mock(CreatorAgentPreferencesService.class),
                         creatorCreditService,
-                        mock(PlatformTransactionManager.class));
+                        mock(PlatformTransactionManager.class),
+                        mock(CreatorRecommendationService.class));
     }
 
     private CreatorCreditGrant seedGrant(int credits) {

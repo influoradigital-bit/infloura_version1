@@ -1,6 +1,7 @@
 package com.influora.service.creatorcopilot;
 
 import com.influora.domain.enums.ChallengeDayType;
+import com.influora.domain.enums.CreatorRecommendationSource;
 import com.influora.domain.enums.EvidenceType;
 import java.time.Instant;
 import java.util.List;
@@ -26,6 +27,9 @@ import java.util.List;
  *     posting; they are in no median, list or group
  * @param postsUsed how many of {@code settledPosts} the claims were computed from (the cap)
  * @param asOf the newest reading time across the posts used, or null when withheld
+ * @param followedRecommendations slice 2 (spec 8.4): per source, how many decided
+ *     recommendations she followed and how those posts did against her usual as of each post;
+ *     empty when there are none or she is not connected
  */
 public record CreatorIntelligenceProfile(
         boolean available,
@@ -40,7 +44,8 @@ public record CreatorIntelligenceProfile(
         List<BaselineStat> baseline,
         List<PostStat> bestPosts,
         List<PostStat> weakPosts,
-        List<GroupStat> whatWorks) {
+        List<GroupStat> whatWorks,
+        List<FollowedStat> followedRecommendations) {
 
     /** The four baseline metrics. Engagement rate is interactions per REACH. */
     public enum Metric {
@@ -110,5 +115,22 @@ public record CreatorIntelligenceProfile(
             Double medianEngagementRate,
             Double engagementLift,
             List<BeatsOn> beatsOn,
+            Evidence evidence) {}
+
+    /**
+     * Slice 2 (spec 8.4) -- the recommendations of one source whose outcome is decided, how many
+     * she followed (a post of the recommended type filled it), and, only when at least 3 followed
+     * ones settled against a baseline of 10 or more posts, the median of their reach against her
+     * usual as of each post. A recommendation she did not follow is never counted as a failure.
+     *
+     * @param medianReachVsUsualPct median of the settled rows' {@code reach_vs_baseline_pct}, or
+     *     null below the 3-post floor
+     * @param evidence the posts the median rests on (the followed rows settled with a percentage)
+     */
+    public record FollowedStat(
+            CreatorRecommendationSource source,
+            int recommended,
+            int followed,
+            Double medianReachVsUsualPct,
             Evidence evidence) {}
 }

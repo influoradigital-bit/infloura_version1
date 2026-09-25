@@ -1,0 +1,233 @@
+{
+  "_source": "Copied from src/lib/meera-result-cards.test.ts (parseMeeraScript cases); 'expected' is that test's own verdict: card = parsed, none = undefined. Shared with the Python port app/recommendations/script_card.py (spec 8.3.1).",
+  "cases": [
+    {
+      "name": "valid_3_beats",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "six_beats_with_follow_up",
+      "text": "Idea: Six quick shots for a longer reel\nPlan: for your regular audience; excitement; saves; 60s, vertical 9:16; listicle; direct-promise hook\nAction: on camera the whole time, hands only for the product shots\nScript:\n0-10s. Shot: Open on your face - say the hook line. Say: \"Five things I wish I knew sooner\". On screen: 5 THINGS\n10-20s. Shot: Cut to the product on the table - place it down. Say: \"Number one\". On screen: TIP 1\n20-30s. Shot: Hands only - show it in use. Say: \"Number two\". On screen: TIP 2\n30-40s. Shot: Cut back to your face - react. Say: \"Number three\". On screen: TIP 3\n40-50s. Shot: Close up on the result. Say: \"Number four\". On screen: TIP 4\n50-60s. Shot: End on your face - the CTA. Say: \"Save this for later\". On screen: SAVE THIS\nCaption: Which tip did you not know? Save this for later.\nBefore you shoot: 1) Clear the table 2) Charge your phone 3) Have the product ready\nWhy this works: Listicle structure, direct-promise hook template\nWhich language should the voice-over be in — Hindi or English?",
+      "expected": "card"
+    },
+    {
+      "name": "crlf",
+      "text": "Idea: 3 saffron mistakes to avoid\r\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\r\nAction: hold up the saffron box and speak to camera\r\nSuccess looks like: reel gets watched to the end and shared to a friend\r\nScript:\r\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\r\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\r\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\r\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\r\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\r\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "blank_padding",
+      "text": "\n\nIdea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template\n\n",
+      "expected": "card"
+    },
+    {
+      "name": "spaced_keys_mixed_case",
+      "text": "idea : 3 saffron mistakes to avoid\nPLAN:   for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nbefore   you shoot : 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "beat_in_straight_quotes",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n\"0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\"\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "beat_in_curly_quotes",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n“0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE”\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "curly_say_quotes",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: “Is your saffron even real?”. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "hindi_values",
+      "text": "Idea: केसर खरीदने से पहले ये 3 गलतियाँ न करें\nPlan: नए ग्राहकों के लिए; जिज्ञासा; फॉलोअर्स; 15s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: डिब्बा हाथ में लेकर कैमरे से बात करें\nScript:\n0-5s. Shot: Close-up on your face - डिब्बा दिखाएं. Say: \"क्या यह असली केसर है?\". On screen: असली या नकली\n5-10s. Shot: Overhead on your hands - पानी में टेस्ट करें. Say: \"पानी में देखिए\". On screen: पानी वाला टेस्ट\n10-15s. Shot: Close-up on the certificate - सर्टिफिकेट दिखाएं. Say: \"यह असली प्रमाण पत्र है\". On screen: प्रमाणित\nCaption: क्या आपने असली पहचान लिया? बायो में लिंक देखें।\nBefore you shoot: 1) फोन चार्ज करें 2) काउंटर साफ करें 3) सर्टिफिकेट पास रखें\nWhy this works: समस्या-समाधान संरचना, जिज्ञासा हुक",
+      "expected": "card"
+    },
+    {
+      "name": "no_success_line",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "stress_pause_markers",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "closing_question",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template\nWhich language do you want the voice-over in?",
+      "expected": "card"
+    },
+    {
+      "name": "nested_quote_in_say",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"My nani said \"check the colour\" first\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "old_phase_c_shape",
+      "text": "SCRIPT\nTitle: 3 saffron mistakes to avoid\nLength: 30s\nHook: Stop buying saffron until you watch this\n0-10s: Show the box, ask \"is your saffron real?\"\n10-20s: Do the warm-water color test on camera\n20-30s: Show the certificate and say why it matters\nCTA: Link in bio for real Kashmiri saffron",
+      "expected": "none"
+    },
+    {
+      "name": "missing_action",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "missing_caption",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "script_line_has_value",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript: here it is\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "malformed_beat",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0 to 10s: Show the box\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "stress_without_pause",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "beats_leave_a_gap",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n12-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "beats_do_not_start_at_0",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n2-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "only_two_beats",
+      "text": "Idea: Too short a script\nPlan: for a small audience; urgency; saves; 15s, vertical 9:16; listicle; direct-promise hook\nAction: hold the product up\nScript:\n0-8s. Shot: Close-up on your face - hold up the product. Say: \"Watch this\". On screen: WATCH\n8-15s. Shot: Close-up on the product - show it in use. Say: \"That is it\". On screen: DONE\nCaption: Save this for later.\nBefore you shoot: 1) Charge your phone 2) Clear the table 3) Keep the product ready\nWhy this works: Direct-promise hook template",
+      "expected": "none"
+    },
+    {
+      "name": "before_you_shoot_two_items",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "missing_why",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach",
+      "expected": "none"
+    },
+    {
+      "name": "plain_chat",
+      "text": "Sure, here is what I think about your last post...",
+      "expected": "none"
+    },
+    {
+      "name": "empty",
+      "text": "",
+      "expected": "none"
+    },
+    {
+      "name": "text_before_idea",
+      "text": "Here's your script:\nIdea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "text_after_closing_question",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template\nWhich language do you want the voice-over in?\nHope this helps!",
+      "expected": "none"
+    }
+  ],
+  "_edge_source": "edge_cases: JavaScript-vs-Python text semantics (trim set, '.' and line terminators, ASCII-only case folding and digits, markdown stripping). 'expected' is what the REAL parseMeeraScript returned when src/lib/meera-result-cards.ts was bundled with esbuild and run under node 22 on 2026-09-25.",
+  "edge_cases": [
+    {
+      "name": "bold_labels",
+      "text": "**Idea:** 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\n**Caption:** Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "divider_and_heading",
+      "text": "## Idea: 3 saffron mistakes to avoid\n---\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "bom_prefix",
+      "text": "﻿Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "nbsp_trim",
+      "text": " Idea: 3 saffron mistakes to avoid \nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "nel_trim",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "fs_char_trim",
+      "text": "\u001cIdea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "long_s_label",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. ſhot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. ſhot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. ſhot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "ls_in_beat",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "cr_in_beat",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL\rvs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "devanagari_digits",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n०-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none"
+    },
+    {
+      "name": "trailing_ws_on_beat",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE   \n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "em_space_after_colon",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "tab_in_key",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore\tyou shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "ideographic_space_blank_line",
+      "text": "　\nIdea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "vertical_tab_blank_line",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template\n\u000b",
+      "expected": "card"
+    },
+    {
+      "name": "unicode_nbsp_in_label_key",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card"
+    },
+    {
+      "name": "zero_width_blank",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template\n​",
+      "expected": "card"
+    }
+  ]
+}

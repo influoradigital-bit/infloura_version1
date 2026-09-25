@@ -1,6 +1,7 @@
 package com.influora.web.dto.meera;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
 import java.util.List;
@@ -189,6 +190,45 @@ public final class MeeraToolDtos {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record MessageWritebackResult(String messageId) {}
+
+    /**
+     * Meera intelligence v1, slice 2 (spec 8.3) -- one item of a CREATOR write-back's optional
+     * {@code metadata.recommendations} list (at most 7), sent by influora-ai alongside {@code
+     * metadata.prompt_version} and {@code metadata.knowledge_version}. influora-ai builds it with
+     * deterministic parsers from Meera's final text (the 7-line plan, the script card's Plan line);
+     * no model tool writes it. The checked-in example is {@code
+     * influora-ai/tests/fixtures/creator_tools/writeback_recommendations.sample.json}, which {@code
+     * WritebackRecommendationsFixtureTest} deserialises with the application's ObjectMapper.
+     *
+     * <p>Every field is a plain string or number on purpose: the server validates each item on its
+     * own ({@code CreatorRecommendationService}) and DROPS an item with an unknown {@code source}
+     * or {@code post_type}, a bad date or time, or a missing {@code line_index}, without failing
+     * the write-back or the other items. Enum-typed fields would make Jackson reject the whole
+     * list for one bad value.
+     *
+     * @param source {@code PLAN_MY_WEEK} | {@code SCRIPT_CARD} (CHALLENGE rows are server-made)
+     * @param lineIndex the item's position in the reply, 0-based; {@code source_ref} is the turn's
+     *     {@code messageId + ":" + line_index}
+     * @param recommendedFor {@code YYYY-MM-DD} (IST) for a plan line; null for a script card
+     * @param postType {@code REEL} | {@code CAROUSEL} | {@code POST}
+     * @param windowLabel e.g. {@code "weekday evening"}, or null
+     * @param windowFrom {@code HH:mm} IST, or null
+     * @param windowTo {@code HH:mm} IST, or null
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+    public record WritebackRecommendation(
+            @JsonProperty("source") String source,
+            @JsonProperty("line_index") Integer lineIndex,
+            @JsonProperty("recommended_for") String recommendedFor,
+            @JsonProperty("post_type") String postType,
+            @JsonProperty("window_label") String windowLabel,
+            @JsonProperty("window_from") String windowFrom,
+            @JsonProperty("window_to") String windowTo,
+            @JsonProperty("structure_name") String structureName,
+            @JsonProperty("hook_template") String hookTemplate,
+            @JsonProperty("topic") String topic,
+            @JsonProperty("festival") String festival) {}
 
     /**
      * Body for {@code POST /internal/meera/turns/release} — the Wave 2 round 2 refund route

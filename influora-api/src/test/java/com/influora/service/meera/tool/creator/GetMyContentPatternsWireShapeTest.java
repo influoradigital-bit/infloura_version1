@@ -11,14 +11,20 @@ import com.fasterxml.jackson.core.util.DefaultIndenter;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.influora.domain.entity.CreatorProfile;
+import com.influora.domain.entity.CreatorRecommendation;
 import com.influora.domain.entity.MediaMetric;
 import com.influora.domain.entity.MetaOAuthToken;
+import com.influora.domain.enums.ChallengeDayType;
+import com.influora.domain.enums.CreatorRecommendationSource;
+import com.influora.domain.enums.CreatorRecommendationStatus;
 import com.influora.repository.CreatorProfileRepository;
+import com.influora.repository.CreatorRecommendationRepository;
 import com.influora.repository.MediaMetricsRepository;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.creatorcopilot.ConnectedInstagramAccount;
 import com.influora.service.creatorcopilot.CreatorIntelligenceService;
+import com.influora.service.creatorcopilot.CreatorRecommendationOutcomeService;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyContentPatternsResult;
 import java.io.IOException;
@@ -29,8 +35,11 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -120,7 +129,140 @@ class GetMyContentPatternsWireShapeTest {
         // Unsettled: posted 20 h ago; and a 10-day-old post whose newest reading is 6 h after posting.
         rows.add(post("18040000000000501", "REELS", ist(24, 22, 0), Duration.ofHours(19), 300, 600, 20L));
         rows.add(post("18040000000000502", "IMAGE", ist(15, 21, 0), Duration.ofHours(6), 200, 350, 9L));
+        // Slice 2: June posts, before the profile's 90-day window (27 Jun) so the profile ignores
+        // them, but inside each September post's own 90-day "as of the post" baseline window.
+        int[] juneDays = {12, 14, 15, 16, 18, 19, 20, 22, 23, 25};
+        for (int i = 0; i < juneDays.length; i++) {
+            Instant postedAt = LocalDate.of(2026, 6, juneDays[i]).atTime(19, 0).atZone(IST).toInstant();
+            rows.add(post(String.format("180400000000000%02d", i + 1), "IMAGE", postedAt, threeDays, 1800 + 100L * i, 2500, 90L));
+        }
         return rows;
+    }
+
+    private static final String CONVERSATION = "01HWIRESHAPECONVERSATION";
+    private static final String MESSAGE = "01HWIRESHAPEMESSAGE00000A";
+    private static final String CHALLENGE = "01HWIRESHAPECHALLENGE000A";
+
+    private static CreatorRecommendation rec(
+            CreatorRecommendationSource source,
+            String ref,
+            LocalDate day,
+            LocalDate matchUntil,
+            ChallengeDayType type,
+            String label,
+            LocalTime from,
+            LocalTime to,
+            Instant createdAt) {
+        return CreatorRecommendation.open(
+                "01HWIREREC" + source.name().charAt(0) + ref.substring(ref.length() - 1),
+                USER,
+                PROFILE_ID,
+                source,
+                ref,
+                source == CreatorRecommendationSource.CHALLENGE ? null : CONVERSATION,
+                day,
+                matchUntil,
+                type,
+                label,
+                from,
+                to,
+                null,
+                null,
+                null,
+                null,
+                "meera-2026.09.25.15",
+                null,
+                createdAt);
+    }
+
+    /**
+     * Slice 2 recommendations, all OPEN, evaluated for real by {@link
+     * CreatorRecommendationOutcomeService} at {@link #NOW}: five decided plan lines (three
+     * followed and settled, one filled by a photo when a carousel was planned, one missed) plus
+     * one still ahead; one challenge day followed; one script card filled by a photo.
+     */
+    private static List<CreatorRecommendation> recommendations() {
+        Instant planned = LocalDate.of(2026, 8, 31).atTime(20, 0).atZone(IST).toInstant();
+        LocalTime morning = LocalTime.of(5, 0);
+        LocalTime noon = LocalTime.of(12, 0);
+        List<CreatorRecommendation> recs = new ArrayList<>();
+        CreatorRecommendationSource plan = CreatorRecommendationSource.PLAN_MY_WEEK;
+        recs.add(rec(plan, MESSAGE + ":0", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2), ChallengeDayType.REEL, "weekday morning", morning, noon, planned));
+        recs.add(rec(plan, MESSAGE + ":1", LocalDate.of(2026, 9, 2), LocalDate.of(2026, 9, 3), ChallengeDayType.CAROUSEL, "weekday evening", null, null, planned));
+        recs.add(rec(plan, MESSAGE + ":2", LocalDate.of(2026, 9, 3), LocalDate.of(2026, 9, 4), ChallengeDayType.REEL, "weekday evening", null, null, planned));
+        recs.add(rec(plan, MESSAGE + ":3", LocalDate.of(2026, 9, 4), LocalDate.of(2026, 9, 5), ChallengeDayType.POST, null, null, null, planned));
+        recs.add(rec(plan, MESSAGE + ":4", LocalDate.of(2026, 9, 8), LocalDate.of(2026, 9, 9), ChallengeDayType.REEL, "weekday morning", morning, noon, planned));
+        recs.add(rec(plan, MESSAGE + ":5", LocalDate.of(2026, 9, 26), LocalDate.of(2026, 9, 27), ChallengeDayType.REEL, null, null, null, planned));
+        recs.add(
+                rec(
+                        CreatorRecommendationSource.CHALLENGE,
+                        CHALLENGE + ":0",
+                        LocalDate.of(2026, 9, 5),
+                        LocalDate.of(2026, 9, 6),
+                        ChallengeDayType.CAROUSEL,
+                        "evening",
+                        LocalTime.of(17, 0),
+                        LocalTime.of(22, 0),
+                        ist(5, 6, 0)));
+        recs.add(
+                rec(
+                        CreatorRecommendationSource.SCRIPT_CARD,
+                        MESSAGE + ":6",
+                        null,
+                        LocalDate.of(2026, 9, 21),
+                        ChallengeDayType.REEL,
+                        null,
+                        null,
+                        null,
+                        ist(14, 10, 0)));
+        return recs;
+    }
+
+    /** An in-memory {@link CreatorRecommendationRepository} over {@code store}: rows mutate in place. */
+    static CreatorRecommendationRepository recommendationRepository(List<CreatorRecommendation> store) {
+        CreatorRecommendationRepository repo = mock(CreatorRecommendationRepository.class);
+        Comparator<CreatorRecommendation> order =
+                Comparator.comparing(CreatorRecommendation::getCreatedAt).thenComparing(CreatorRecommendation::getId);
+        when(repo.findByCreatorProfileIdAndStatusInOrderByCreatedAtAscIdAsc(any(), any()))
+                .thenAnswer(
+                        inv -> {
+                            Collection<CreatorRecommendationStatus> statuses = inv.getArgument(1);
+                            return store.stream()
+                                    .filter(r -> r.getCreatorProfileId().equals(inv.getArgument(0)))
+                                    .filter(r -> statuses.contains(r.getStatus()))
+                                    .sorted(order)
+                                    .toList();
+                        });
+        when(repo.findClaimedMediaIds(any()))
+                .thenAnswer(
+                        inv ->
+                                store.stream()
+                                        .filter(r -> r.getCreatorProfileId().equals(inv.getArgument(0)))
+                                        .map(CreatorRecommendation::getMatchedMediaId)
+                                        .filter(java.util.Objects::nonNull)
+                                        .toList());
+        when(repo.findByCreatorProfileIdAndCreatedAtGreaterThanEqualOrderByCreatedAtAscIdAsc(any(), any()))
+                .thenAnswer(
+                        inv -> {
+                            Instant since = inv.getArgument(1);
+                            return store.stream()
+                                    .filter(r -> r.getCreatorProfileId().equals(inv.getArgument(0)))
+                                    .filter(r -> !r.getCreatedAt().isBefore(since))
+                                    .sorted(order)
+                                    .toList();
+                        });
+        when(repo.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+        // The per-row outcome writer re-reads each row by id and saves it: rows mutate in place.
+        when(repo.findById(any()))
+                .thenAnswer(inv -> store.stream().filter(r -> r.getId().equals(inv.getArgument(0))).findFirst());
+        when(repo.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        return repo;
+    }
+
+    static CreatorRecommendationOutcomeService outcomeService(
+            CreatorRecommendationRepository repo, MediaMetricsRepository media) {
+        return new CreatorRecommendationOutcomeService(
+                repo, media, new com.influora.service.creatorcopilot.CreatorRecommendationOutcomeWriter(repo));
     }
 
     private GetMyContentPatternsResult realResult() {
@@ -151,7 +293,12 @@ class GetMyContentPatternsWireShapeTest {
                                 true, "v1", false, null, false, 0, false));
 
         CreatorIntelligenceService service =
-                new CreatorIntelligenceService(media, profiles, new ConnectedInstagramAccount(tokens), tokens);
+                new CreatorIntelligenceService(
+                        media,
+                        profiles,
+                        new ConnectedInstagramAccount(tokens),
+                        tokens,
+                        outcomeService(recommendationRepository(recommendations()), media));
         return new GetMyContentPatternsExecutor(service, preferences).executeAt(USER, NOW);
     }
 
@@ -173,6 +320,9 @@ class GetMyContentPatternsWireShapeTest {
         assertTrue(result.whatWorks().stream().anyMatch(w -> w.kind().equals("POST_TYPE")));
         assertTrue(result.whatWorks().stream().anyMatch(w -> w.kind().equals("POSTING_WINDOW")));
         assertEquals(2, result.unsettledPosts());
+        // Slice 2 non-vacuity: at least one group carries a median, and one is below the floor.
+        assertTrue(result.followedRecommendations().stream().anyMatch(g -> g.medianReachVsUsual() != null));
+        assertTrue(result.followedRecommendations().stream().anyMatch(g -> g.medianReachVsUsual() == null));
 
         String fresh = serialise(result);
         if (Boolean.getBoolean("updateContentPatternsFixture")) {

@@ -11,6 +11,7 @@ import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.BaselineStat;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.BeatsOn;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.Evidence;
+import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.FollowedStat;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.GroupStat;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.Metric;
 import com.influora.service.creatorcopilot.CreatorIntelligenceProfile.PatternKind;
@@ -27,9 +28,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Meera intelligence v1 (spec &sect;3) -- the Creator Intelligence Profile, worked out fresh on
@@ -56,6 +58,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class CreatorIntelligenceService {
 
+    private static final Logger log = LoggerFactory.getLogger(CreatorIntelligenceService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     /** {@link CreatorIntelligenceProfile#reason()} when there is no live Instagram connection. */
@@ -86,16 +89,19 @@ public class CreatorIntelligenceService {
     private final CreatorProfileRepository creatorProfileRepository;
     private final ConnectedInstagramAccount connectedAccount;
     private final MetaOAuthTokenRepository metaOAuthTokenRepository;
+    private final CreatorRecommendationOutcomeService recommendationOutcomes;
 
     public CreatorIntelligenceService(
             MediaMetricsRepository mediaMetricsRepository,
             CreatorProfileRepository creatorProfileRepository,
             ConnectedInstagramAccount connectedAccount,
-            MetaOAuthTokenRepository metaOAuthTokenRepository) {
+            MetaOAuthTokenRepository metaOAuthTokenRepository,
+            CreatorRecommendationOutcomeService recommendationOutcomes) {
         this.mediaMetricsRepository = mediaMetricsRepository;
         this.creatorProfileRepository = creatorProfileRepository;
         this.connectedAccount = connectedAccount;
         this.metaOAuthTokenRepository = metaOAuthTokenRepository;
+        this.recommendationOutcomes = recommendationOutcomes;
     }
 
     /** One settled post with a real reach, reduced to the numbers the claims need. */
@@ -119,8 +125,16 @@ public class CreatorIntelligenceService {
     /**
      * The creator-facing read: the profile of {@code creatorUserId} (from the verified JWT only) as
      * of {@code now}.
+     *
+     * <p><b>Deliberately not {@code @Transactional}</b> (it was {@code readOnly = true} in slice 1).
+     * Slice 2 writes recommendation outcomes lazily on this read, through {@link
+     * CreatorRecommendationOutcomeService#evaluate}: a separate bean, which writes each row in its
+     * own {@code REQUIRES_NEW} transaction through {@code CreatorRecommendationOutcomeWriter}'s
+     * proxy, so every write COMMITS before the reads below run and they see the outcomes. Nested
+     * inside a read-only transaction here, those commits would land after the outer REPEATABLE
+     * READ snapshot was fixed, so this read would not see them. Every read below is a plain
+     * non-locking read in its own short transaction.
      */
-    @Transactional(readOnly = true)
     public CreatorIntelligenceProfile profile(String creatorUserId, Instant now) {
         CreatorProfile profile = resolveProfile(creatorUserId);
 
@@ -142,8 +156,29 @@ public class CreatorIntelligenceService {
         // account: for an account-switcher they could be the old account's posts, shown to Meera
         // as "your best posts" (Kabir M-1). Leaving them out may show thin data for a while; that
         // is honest, mixing two accounts is not.
+        boolean accountSwitcher = metaOAuthTokenRepository.countDistinctCreatorIgAccounts(profile.getId()) > 1;
+
+        // Slice 2: match, miss, settle and close her recommendations first, each row in its own
+        // committed transaction, under the same account rule. A failure here never fails the read:
+        // evaluate() catches each row's write failure itself (an optimistic-lock loss surfaces as
+        // Spring's ObjectOptimisticLockingFailureException, a unique-key race as
+        // DataIntegrityViolationException), and this catch covers the rest (the loads). Every
+        // Spring data-access and JPA exception is a RuntimeException. The outcomes stay as stored
+        // and are tried again on the next read.
+        try {
+            recommendationOutcomes.evaluate(profile.getId(), igAccountId.get(), accountSwitcher, now);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "recommendation outcomes not evaluated for creatorProfileId={} (profile read unaffected): {}",
+                    profile.getId(),
+                    e.toString());
+        }
+        // For an account-switcher, only rows decided on the account connected now (Kabir L-3).
+        List<FollowedStat> followed =
+                recommendationOutcomes.followed(profile.getId(), windowStart, igAccountId.get(), accountSwitcher);
+
         List<MediaMetric> rows =
-                metaOAuthTokenRepository.countDistinctCreatorIgAccounts(profile.getId()) > 1
+                accountSwitcher
                         ? mediaMetricsRepository.findNewestSnapshotPerPostSinceForAccountTaggedOnly(
                                 profile.getId(), windowStart, igAccountId.get())
                         : mediaMetricsRepository.findNewestSnapshotPerPostSinceForAccount(
@@ -195,7 +230,8 @@ public class CreatorIntelligenceService {
                     List.of(),
                     List.of(),
                     List.of(),
-                    List.of());
+                    List.of(),
+                    followed);
         }
 
         List<BaselineStat> baseline = buildBaseline(used);
@@ -250,7 +286,8 @@ public class CreatorIntelligenceService {
                 baseline,
                 List.copyOf(best),
                 List.copyOf(weak),
-                capped);
+                capped,
+                followed);
     }
 
     private CreatorProfile resolveProfile(String creatorUserId) {
@@ -290,6 +327,7 @@ public class CreatorIntelligenceService {
                 List.of(),
                 List.of(),
                 List.of(),
+                List.of(),
                 List.of());
     }
 
@@ -298,7 +336,7 @@ public class CreatorIntelligenceService {
      * CreatorPostRules#SETTLING_PERIOD} after it was posted. Reading time, not now: see the class
      * javadoc.
      */
-    private static boolean isSettled(MediaMetric row) {
+    static boolean isSettled(MediaMetric row) {
         return row.getTime() != null
                 && Duration.between(row.getPostedAt(), row.getTime()).compareTo(CreatorPostRules.SETTLING_PERIOD) >= 0;
     }
@@ -310,7 +348,7 @@ public class CreatorIntelligenceService {
      * returns as two rows. On a tie the row with the greater id (the later ULID) wins, so the
      * choice does not depend on the order rows arrive in.
      */
-    private static List<MediaMetric> dedupeToNewestReadingPerPost(List<MediaMetric> rows) {
+    static List<MediaMetric> dedupeToNewestReadingPerPost(List<MediaMetric> rows) {
         Map<String, MediaMetric> newest = new LinkedHashMap<>();
         for (MediaMetric row : rows) {
             if (row.getMediaId() == null) {

@@ -3,6 +3,7 @@ package com.influora.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.influora.domain.entity.CreatorProfile;
@@ -10,6 +11,7 @@ import com.influora.domain.entity.MeeraCreatorConversation;
 import com.influora.repository.AiConversationRepository;
 import com.influora.repository.AiMessageRepository;
 import com.influora.repository.CreatorProfileRepository;
+import com.influora.repository.CreatorRecommendationRepository;
 import com.influora.repository.MeeraCreatorConversationRepository;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationSummary;
 import java.time.Instant;
@@ -41,6 +43,7 @@ class CreatorAgentConversationServiceTest {
     @Mock private CreatorProfileRepository creatorProfileRepository;
     @Mock private AiConversationRepository aiConversationRepository;
     @Mock private AiMessageRepository aiMessageRepository;
+    @Mock private CreatorRecommendationRepository recommendationRepository;
 
     private CreatorAgentConversationService service;
 
@@ -48,7 +51,11 @@ class CreatorAgentConversationServiceTest {
     void setUp() {
         service =
                 new CreatorAgentConversationService(
-                        conversationRepository, creatorProfileRepository, aiConversationRepository, aiMessageRepository);
+                        conversationRepository,
+                        creatorProfileRepository,
+                        aiConversationRepository,
+                        aiMessageRepository,
+                        recommendationRepository);
 
         CreatorProfile profile = mock(CreatorProfile.class);
         when(profile.getId()).thenReturn(CREATOR_PROFILE_ID);
@@ -112,5 +119,23 @@ class CreatorAgentConversationServiceTest {
 
         assertEquals(1, existing.getMessageCount());
         assertEquals(CONVERSATION_ID, existing.getConversationId());
+    }
+
+    @Test
+    @DisplayName(
+            "DPDP (intelligence v1 slice 2): deleting a conversation also deletes the plan/script"
+                    + " recommendations recorded from it, scoped to the creator's OWN profile")
+    void deleteConversationDeletesItsRecommendationRows() {
+        MeeraCreatorConversation tracking =
+                MeeraCreatorConversation.start("row-1", CREATOR_PROFILE_ID, CONVERSATION_ID, Instant.now());
+        when(conversationRepository.findByConversationIdAndCreatorId(CONVERSATION_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(tracking));
+        when(aiMessageRepository.findByConversationIdOrderByCreatedAtAsc(CONVERSATION_ID)).thenReturn(List.of());
+        when(aiConversationRepository.findById(CONVERSATION_ID)).thenReturn(Optional.empty());
+
+        service.deleteConversation(CREATOR_USER_ID, CONVERSATION_ID);
+
+        verify(recommendationRepository).deleteByCreatorProfileIdAndConversationId(CREATOR_PROFILE_ID, CONVERSATION_ID);
+        verify(conversationRepository).delete(tracking);
     }
 }

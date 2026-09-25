@@ -713,7 +713,7 @@ class CreatorMeeraToolControllerTest {
 
     private static GetMyContentPatternsResult notConnectedPatternsResult() {
         return new GetMyContentPatternsResult(
-                false, "NOT_CONNECTED", false, 0, 0, 10, 90, null, List.of(), List.of(), List.of(), List.of(), null);
+                false, "NOT_CONNECTED", false, 0, 0, 10, 90, null, List.of(), List.of(), List.of(), List.of(), List.of(), null);
     }
 
     @Test

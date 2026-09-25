@@ -1,0 +1,94 @@
+{
+  "conversationId": "01J8Z3K2QW7N5V4X6Y8T9R0PAB",
+  "role": "ASSISTANT",
+  "content": "Here is your week, built on your own posts.\n1. Fri 25 Sep - Reel - weekday evening (6-9 pm) - Before/after - \"Stop scrolling if you...\" - Navratri outfit ideas\n2. Sat 26 Sep - Carousel - weekend morning - 3 mistakes - Navratri colour guide\n3. Sun 27 Sep - Rest\n4. Mon 28 Sep - Reel - weekday evening - Day in my life\n5. Tue 29 Sep - Photo post - weekday afternoon\n6. Wed 30 Sep - Reel - weekday night - Myth vs fact - Skincare myths\n\nScript\nPlan: Reel - Before/after - Navratri look in 30 seconds",
+  "metadata": {
+    "prompt_version": "meera-2026.09.25.15",
+    "knowledge_version": "ck-2026.09.25.1",
+    "request_id": "req-01J8Z3K2QW7N5V4X6Y8T9R0PAC",
+    "token_usage": {
+      "input_tokens": 5120,
+      "output_tokens": 412
+    },
+    "recommendations": [
+      {
+        "source": "PLAN_MY_WEEK",
+        "line_index": 0,
+        "recommended_for": "2026-09-25",
+        "post_type": "REEL",
+        "window_label": "weekday evening",
+        "window_from": "18:00",
+        "window_to": "21:00",
+        "structure_name": "Before/after",
+        "hook_template": "Stop scrolling if you...",
+        "topic": "Navratri outfit ideas",
+        "festival": "Navratri"
+      },
+      {
+        "source": "PLAN_MY_WEEK",
+        "line_index": 1,
+        "recommended_for": "2026-09-26",
+        "post_type": "CAROUSEL",
+        "window_label": "weekend morning",
+        "window_from": null,
+        "window_to": null,
+        "structure_name": "3 mistakes",
+        "hook_template": null,
+        "topic": "Navratri colour guide",
+        "festival": "Navratri"
+      },
+      {
+        "source": "PLAN_MY_WEEK",
+        "line_index": 3,
+        "recommended_for": "2026-09-28",
+        "post_type": "REEL",
+        "window_label": "weekday evening",
+        "window_from": null,
+        "window_to": null,
+        "structure_name": "Day in my life",
+        "hook_template": null,
+        "topic": null,
+        "festival": null
+      },
+      {
+        "source": "PLAN_MY_WEEK",
+        "line_index": 4,
+        "recommended_for": "2026-09-29",
+        "post_type": "POST",
+        "window_label": "weekday afternoon",
+        "window_from": null,
+        "window_to": null,
+        "structure_name": null,
+        "hook_template": null,
+        "topic": null,
+        "festival": null
+      },
+      {
+        "source": "PLAN_MY_WEEK",
+        "line_index": 5,
+        "recommended_for": "2026-09-30",
+        "post_type": "REEL",
+        "window_label": "weekday night",
+        "window_from": "22:00",
+        "window_to": "01:00",
+        "structure_name": "Myth vs fact",
+        "hook_template": null,
+        "topic": "Skincare myths",
+        "festival": null
+      },
+      {
+        "source": "SCRIPT_CARD",
+        "line_index": 7,
+        "recommended_for": null,
+        "post_type": "REEL",
+        "window_label": null,
+        "window_from": null,
+        "window_to": null,
+        "structure_name": "Before/after",
+        "hook_template": null,
+        "topic": "Navratri look in 30 seconds",
+        "festival": "Navratri"
+      }
+    ]
+  }
+}
