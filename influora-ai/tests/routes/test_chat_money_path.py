@@ -147,6 +147,27 @@ async def _fake_tool_result_then_empty_done_loop(**kwargs):
     yield LoopEvent(type="done", finish_reason="stop", usage=None)
 
 
+async def _fake_knowledge_lookup_then_error_loop(**kwargs):
+    """Lookup review (2026-09-25): Meera reads her own notes (get_creator_knowledge, a
+    local tool whose only browser payload is {topic}), then the provider dies before any
+    answer. Nothing usable reached the client."""
+    yield LoopEvent(type="tool_start", tool_name="get_creator_knowledge", tool_input={"topic": "audio"})
+    yield LoopEvent(
+        type="tool_result", tool_name="get_creator_knowledge", tool_status="ok",
+        tool_result_data={"topic": "audio"},
+    )
+    yield LoopEvent(type="error", error_code="provider_error")
+
+
+async def _fake_knowledge_lookup_then_empty_done_loop(**kwargs):
+    yield LoopEvent(type="tool_start", tool_name="get_creator_knowledge", tool_input={"topic": "audio"})
+    yield LoopEvent(
+        type="tool_result", tool_name="get_creator_knowledge", tool_status="ok",
+        tool_result_data={"topic": "audio"},
+    )
+    yield LoopEvent(type="done", finish_reason="stop", usage=None)
+
+
 @pytest.fixture(autouse=True)
 async def _reset_state(monkeypatch):
     monkeypatch.delenv("AI_SPEND_KILL_SWITCH", raising=False)
@@ -351,6 +372,32 @@ async def test_tool_result_delivered_then_empty_done_keeps_charge_no_refund():
         await _drain(response)
 
     spring.release_turn_credit.assert_not_awaited()
+    spring.persist_assistant_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fake_loop",
+    [_fake_knowledge_lookup_then_error_loop, _fake_knowledge_lookup_then_empty_done_loop],
+    ids=["then_provider_error", "then_empty_done"],
+)
+async def test_a_knowledge_lookup_alone_is_not_delivered_output_so_the_credit_is_released(fake_loop):
+    """The lookup gives Meera notes, not the creator an answer. If the answer then fails,
+    the turn must be refunded exactly as it would be without the lookup -- unlike a
+    Spring-backed tool whose result payload is itself usable output (the two tests above)."""
+    request = _make_request(_body())
+    request.is_disconnected = AsyncMock(return_value=False)
+    spring = _mock_spring()
+
+    with patch.object(
+        chat_route, "verify_token_async", AsyncMock(return_value=_verified_stream_token())
+    ), patch.object(chat_route, "run_tool_loop", fake_loop), patch.object(
+        chat_route, "_get_spring", MagicMock(return_value=spring)
+    ):
+        response = await chat_route.chat(request, authorization="Bearer whatever")
+        await _drain(response)
+
+    spring.release_turn_credit.assert_awaited_once()
     spring.persist_assistant_message.assert_not_awaited()
 
 

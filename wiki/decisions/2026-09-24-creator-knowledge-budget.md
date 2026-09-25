@@ -38,3 +38,45 @@ move to filtering or lookup past about 300 rows or about 45k tokens.
   each is a later clean-up.
 - **Photographer terms in dataset 7 rows** ("key", "axis", "negative fill", "practical").
   Meera is told to speak plainly; rewording the rows is a later clean-up.
+
+## 2026-09-24 later: the lookup tool exists
+
+Swapnil approved the lookup design the same day (PROMPT_VERSION `meera-2026.09.24.13`).
+
+- `get_creator_knowledge` is a LOCAL creator tool: influora-ai's tool loop answers it from
+  `LOOKUP_TEXT` in `content_knowledge.py`, never Spring, no Java change. It is offered on every
+  creator turn (warn-only included, it reads no creator data) and never on a brand turn. It is
+  kept out of `CREATOR_TOOL_NAMES` in its own `CREATOR_LOCAL_TOOL_NAMES`.
+- Topics: `audio`, `moving_between_spots`, `delivery_examples`. The 12 `delivery_example` rows
+  moved out of the always-sent block into `delivery_examples`; dataset 8's 42 audio and
+  movement rows went in behind the tool only. The always-sent block ends with a short
+  "More on request" list naming each topic.
+- The budget now counts what is ALWAYS SENT, not the file: always-sent block under 125,000
+  characters and at most 320 always-sent rows (295 of 349 today, about 99.6k characters);
+  frame check still under 40,000 characters and unchanged (about 35.3k). The file may grow
+  behind the tool. Tests: `tests/prompt/test_creator_lighting_placement.py`,
+  `tests/prompt/test_creator_knowledge_lookup.py`, `tests/tools/test_creator_knowledge_tool.py`.
+- `narrative_principle` and `camera_angle` (point 3's other candidates) are still always-sent.
+
+## 2026-09-25: what moves next, and what never moves (Priya, lookup review)
+
+Point 3 above named `camera_angle` as a candidate. Moving it whole would break script writing:
+every script beat names an angle, and the frame check depends on the placement vocabulary.
+
+- **Move next, as lookup topics:** `narrative_principle`, `persuasion_principle` and
+  `marketing_concept` (theory, only for "why does this work" questions); `brand_deal_practice`
+  (a `brand_deals` topic); `platform_export_setting` and `night_video_setting` (settings
+  questions); and the detail of `camera_angle` rows (the why and how of each angle).
+- **Always-sent, never moved:** a one-line index of camera angle names (name plus when to use
+  it), `storytelling_structure`, `structure_selection_rule`, `hook_template`,
+  `length_guideline`, `category_playbook`, `contextual_action`, the delivery guardrails and
+  rules, and the whole placement section (the frame check is one photo call with no tool loop).
+- The 125,000-character, 320-row and 40,000-character frame-check caps stay. Every move lands
+  together with a lookup-topic test like `tests/prompt/test_creator_knowledge_lookup.py`.
+- A new topic touches only `LOOKUP_TOPICS`, its renderer and the frontend label: the persona's
+  "Look it up first" rule and the tool description both follow the topic list, and
+  `src/lib/meera-api.creator-tools-in-sync.test.ts` fails if the app's topic list drifts.
+- A lookup is not an answer: `routes/chat.py` does not count a creator local tool's result as
+  delivered output, so a turn whose answer then fails is refunded
+  (`tests/routes/test_chat_money_path.py`).
+- `get_creator_knowledge` accepts only `{"topic"}`; extra fields are refused.

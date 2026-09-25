@@ -10,9 +10,14 @@ reduces-work.md): the point is fewer steps for the creator, not a cleverer
 answer. The persona rules that tell the model HOW to use this block live in
 `app/prompt/creator_persona.py`; this module only loads, validates and renders.
 
-Data: `app/prompt/knowledge/video_content_concepts.jsonl` (315 rows: 240 through v6 -- v4
-2026-09-22 + the 2026-09-21 go-live additions + the 38 v5 camera rows + the v6 5 outdoor-light
-and 25 delivery rows -- plus 75 v7 lighting and positioning rows of 2026-09-24). It sits
+Data: `app/prompt/knowledge/video_content_concepts.jsonl` (349 rows: 307 through v7 -- v4
+2026-09-22 + the 2026-09-21 go-live additions + the 38 v5 camera rows + the v6 outdoor-light
+and delivery rows + the v7 lighting and positioning rows of 2026-09-24 -- plus 42 v8 audio and
+movement rows of 2026-09-24). Not every row is always sent: 295 rows render into the cached
+block `CREATOR_KNOWLEDGE_TEXT` on every creator turn; the other 54 (the 12 delivery examples
+and the 42 v8 rows) render into `LOOKUP_TEXT`, which the model fetches per topic with the
+local `get_creator_knowledge` tool (`LOOKUP_TOPICS`). The block ends with a "More on request"
+list naming each topic, so the model knows what it can look up. It sits
 under `app/prompt/` on purpose: `ci/stale-comment-check.py` watches that prefix
 (PROMPT_SOURCES), so editing the data forces a PROMPT_VERSION bump exactly like
 a persona edit does -- the rendered text is prompt content.
@@ -115,6 +120,24 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "lighting_look": ("look", "setup", "check", "fits_categories"),
     "mixed_light_rule": ("mix", "recommendation"),
     "sunset_to_night_step": ("stage", "instruction"),
+    # v8 (2026-09-24): sound, and moving between two spots in one reel -- dataset 8's rows that
+    # dataset 7 did not have. NOT in the always-sent block: they render only into the lookup
+    # topics "audio" and "moving_between_spots" (see LOOKUP_TOPICS). Their source document was
+    # not supplied, so every row is confidence medium and each topic heading says so once.
+    # Optional: `safety_note` on walking_configuration (rendered as "Safety: ..."). Their camera
+    # field is `camera_setup`, a string: `camera` is a LIST_FIELDS name (the playbook's shots).
+    "microphone_selection_rule": ("capture_route", "use_when", "main_risk", "price_class"),
+    "mic_distance_rule": ("mouth_to_mic", "interpretation", "default_action"),
+    "lav_placement_rule": ("wardrobe", "placement", "avoid"),
+    "audio_noise_rule": ("noise_source", "decision_tree"),
+    "audio_diagnostic_rule": ("symptom", "likely_cause", "ten_second_test", "fix"),
+    "phone_audio_capability": ("device_family", "known_behavior", "what_to_suggest", "do_not_assume"),
+    "audio_movement_scenario": (
+        "id", "category", "device", "environment", "microphone", "camera_setup", "audio_problem",
+        "recommended_solution", "example_status",
+    ),
+    "movement_continuity_rule": ("rule", "guidance"),
+    "walking_configuration": ("configuration", "camera_setup", "audio", "light_transition"),
 }
 
 # Fields that are non-empty lists of non-empty strings, not plain strings.
@@ -169,6 +192,16 @@ NAME_FIELD: dict[str, str] = {
     "lighting_look": "look",
     "mixed_light_rule": "mix",
     "sunset_to_night_step": "stage",
+    # v8 audio and movement rows (lookup only).
+    "microphone_selection_rule": "capture_route",
+    "mic_distance_rule": "mouth_to_mic",
+    "lav_placement_rule": "wardrobe",
+    "audio_noise_rule": "noise_source",
+    "audio_diagnostic_rule": "symptom",
+    "phone_audio_capability": "device_family",
+    "audio_movement_scenario": "id",
+    "movement_continuity_rule": "rule",
+    "walking_configuration": "configuration",
 }
 
 KNOWN_CONFIDENCE: frozenset[str] = frozenset({"high", "medium", "low", "template"})
@@ -457,6 +490,7 @@ def render_knowledge_block(rows: list[dict[str, Any]]) -> str:
 
     out += [""] + render_shooting_lines(rows)
     out += [""] + render_delivery_lines(rows)
+    out += [""] + render_more_on_request_lines()
     return "\n".join(out) + "\n"
 
 
@@ -467,8 +501,9 @@ DELIVERY_HEADING = (
 
 
 def render_delivery_lines(rows: list[dict[str, Any]]) -> list[str]:
-    """The v6 delivery rows: guardrails first (they bound every rule below), then the
-    rules as advice with their limits, then the synthetic examples, labelled as such."""
+    """The always-sent v6 delivery rows: guardrails first (they bound every rule below),
+    then the rules as advice with their limits. The synthetic examples are NOT here --
+    they are the "delivery_examples" lookup topic (`render_delivery_example_lines`)."""
     out: list[str] = [DELIVERY_HEADING]
     for r in _by_type(rows, "delivery_guardrails"):
         out.append(f"{r['name']} (always):")
@@ -476,12 +511,21 @@ def render_delivery_lines(rows: list[dict[str, Any]]) -> list[str]:
     out += ["", "Delivery rules:"]
     for r in _by_type(rows, "delivery_rule"):
         out.append(f"- {r['rule']}: {r['advice']} Limits: {r['limits']}")
-    out += [
-        "",
-        "Delivery examples (synthetic illustrations, not real creator data; any number or result"
-        " in them is part of the example, never a fact to reuse). \"/\" marks where the line breaks"
-        " into parts; the Stress and Pause here are the same cues a full-script beat carries:",
-    ]
+    return out
+
+
+DELIVERY_EXAMPLES_HEADING = (
+    "Delivery examples (synthetic illustrations, not real creator data; any number or result"
+    " in them is part of the example, never a fact to reuse). \"/\" marks where the line breaks"
+    " into parts; the Stress and Pause here are the same cues a full-script beat carries. The"
+    " delivery guardrails in your knowledge block still apply:"
+)
+
+
+def render_delivery_example_lines(rows: list[dict[str, Any]]) -> list[str]:
+    """The v6 synthetic delivery examples, one per line -- the "delivery_examples" lookup
+    topic. Moved out of the always-sent block on 2026-09-24."""
+    out: list[str] = [DELIVERY_EXAMPLES_HEADING]
     for r in _by_type(rows, "delivery_example"):
         line = (
             f"- {r['example_id']} ({r['language']}, {r['platform']}): Say: \"{r['said']}\""
@@ -748,6 +792,161 @@ def render_placement_lines(rows: list[dict[str, Any]]) -> list[str]:
     return out
 
 
+# ---------------------------------------------------------------------------------------
+# Lookup topics: knowledge the model fetches with the LOCAL tool `get_creator_knowledge`
+# (executed in influora-ai's tool loop, never forwarded to Spring) instead of carrying it on
+# every creator turn. Topic -> the one line the "More on request" list and the tool's enum
+# description show. Order matters: it is the order of the list and of the tool's enum.
+LOOKUP_TOPICS: dict[str, str] = {
+    "audio": (
+        "Getting a clean voice: which mic, mic distance, where to clip a lav by clothing, fan, AC,"
+        " traffic, wind and echo noise, 10-second audio tests, phone audio features, example"
+        " scenarios."
+    ),
+    "moving_between_spots": (
+        "Moving between two spots in one reel: cut or walk and talk, walking camera setups, light"
+        " and sound changes between spots, safety."
+    ),
+    "delivery_examples": (
+        "Worked examples of stress, pauses and pace for a line (English, Hinglish, Hindi)."
+    ),
+}
+
+# The v8 rows' source document was not supplied, so nothing in them could be checked. Said
+# once per topic heading, not on every row.
+LOOKUP_SOURCE_CAVEAT = "Source document not yet supplied; practical starting points."
+
+MORE_ON_REQUEST_HEADING = (
+    "More on request (NOT in this block. Before answering a question on one of these topics,"
+    " call the get_creator_knowledge tool with that topic and answer from what it returns;"
+    " never guess these from memory):"
+)
+
+
+def render_more_on_request_lines() -> list[str]:
+    """The last section of the always-sent block: each lookup topic and its one line."""
+    return [MORE_ON_REQUEST_HEADING] + [f"- {t}: {d}" for t, d in LOOKUP_TOPICS.items()]
+
+
+def _lookup_groups(
+    heading: str, groups: list[tuple[str, list[str]]]
+) -> list[str]:
+    """A topic heading, then each group title and its lines, groups separated by a blank
+    line. Raises when a group has no rows: a topic section can never quietly go missing."""
+    out: list[str] = [heading]
+    for title, lines in groups:
+        if not lines:
+            raise KnowledgeFileError(f"lookup section {title!r} has no rows")
+        out += ["", title]
+        out.extend(lines)
+    return out
+
+
+def render_audio_lines(rows: list[dict[str, Any]]) -> list[str]:
+    """The "audio" lookup topic: the v8 audio rows as readable sections."""
+    return _lookup_groups(
+        f"Audio: getting a clean voice (starting points, not laws. {LOOKUP_SOURCE_CAVEAT})",
+        [
+            (
+                "Which mic:",
+                [
+                    f"- {r['capture_route']}: Use when: {r['use_when']} Main risk: {r['main_risk']}"
+                    f" Price: {r['price_class']}"
+                    for r in _by_type(rows, "microphone_selection_rule")
+                ],
+            ),
+            (
+                "Mic distance (mouth to mic):",
+                [
+                    f"- {r['mouth_to_mic']}: {r['interpretation']} Do this: {r['default_action']}"
+                    for r in _by_type(rows, "mic_distance_rule")
+                ],
+            ),
+            (
+                "Where to clip the mic (by clothing):",
+                [
+                    f"- {r['wardrobe']}: {r['placement']} Avoid: {r['avoid']}"
+                    for r in _by_type(rows, "lav_placement_rule")
+                ],
+            ),
+            (
+                "Noise:",
+                [f"- {r['noise_source']}: {r['decision_tree']}" for r in _by_type(rows, "audio_noise_rule")],
+            ),
+            (
+                "10-second tests (what you hear: likely cause. Test. Fix):",
+                [
+                    f"- {r['symptom']}: {r['likely_cause']} Test: {r['ten_second_test']} Fix: {r['fix']}"
+                    for r in _by_type(rows, "audio_diagnostic_rule")
+                ],
+            ),
+            (
+                "Phone audio features (only for these phone families; never assume a feature for"
+                " any other phone -- ask what its camera app offers):",
+                [
+                    f"- {r['device_family']}: {r['known_behavior']} Suggest: {r['what_to_suggest']}"
+                    f" Do not assume: {r['do_not_assume']}"
+                    for r in _by_type(rows, "phone_audio_capability")
+                ],
+            ),
+            (
+                "Example scenarios (synthetic examples, not observed data; never present one as"
+                " something that happened):",
+                [
+                    f"- {r['id']} ({r['category']}; {r['device']}; {r['example_status']}): Setting:"
+                    f" {r['environment']} Mic: {r['microphone']} Camera: {r['camera_setup']} Problem:"
+                    f" {r['audio_problem']} What to do: {r['recommended_solution']}"
+                    for r in _by_type(rows, "audio_movement_scenario")
+                ],
+            ),
+        ],
+    )
+
+
+def _walking_line(r: dict[str, Any]) -> str:
+    line = (
+        f"- {r['configuration']}: Camera: {r['camera_setup']} Audio: {r['audio']}"
+        f" Light: {r['light_transition']}"
+    )
+    safety = r.get("safety_note")
+    if isinstance(safety, str) and safety.strip():
+        line += f" Safety: {safety.strip()}"
+    return line
+
+
+def render_moving_lines(rows: list[dict[str, Any]]) -> list[str]:
+    """The "moving_between_spots" lookup topic: cut-or-continue rules, then walking setups
+    with their safety notes."""
+    return _lookup_groups(
+        "Moving between two spots in one reel (starting points, not laws; a setup's Safety note"
+        f" always comes before the shot. {LOOKUP_SOURCE_CAVEAT})",
+        [
+            (
+                "Cut or keep talking (light and sound changes between spots):",
+                [f"- {r['rule']}: {r['guidance']}" for r in _by_type(rows, "movement_continuity_rule")],
+            ),
+            (
+                "Walking setups:",
+                [_walking_line(r) for r in _by_type(rows, "walking_configuration")],
+            ),
+        ],
+    )
+
+
+def render_lookup_topic(rows: list[dict[str, Any]], topic: str) -> str:
+    """One lookup topic's plain text. Raises KeyError for an unknown topic and
+    KnowledgeFileError when the topic renders empty."""
+    renderers = {
+        "audio": render_audio_lines,
+        "moving_between_spots": render_moving_lines,
+        "delivery_examples": render_delivery_example_lines,
+    }
+    lines = renderers[topic](rows)
+    if len(lines) < 2:
+        raise KnowledgeFileError(f"lookup topic {topic!r} has no rows")
+    return "\n".join(lines) + "\n"
+
+
 def _phone_key(text: str) -> str:
     """Lower-case letters and digits only, with the brand word and "5g" dropped, so
     "OPPO Reno 14 Pro 5G", "reno14 pro" and "Reno-14-Pro" all compare equal."""
@@ -779,6 +978,19 @@ def find_phone(rows: list[dict[str, Any]], typed: str | None) -> dict[str, Any] 
 # Rendered once, at import. A malformed file raises here -- at startup.
 CREATOR_KNOWLEDGE_ROWS: list[dict[str, Any]] = load_knowledge()
 CREATOR_KNOWLEDGE_TEXT: str = render_knowledge_block(CREATOR_KNOWLEDGE_ROWS)
+
+# Every lookup topic, rendered once at import. An empty section raises here -- at startup.
+LOOKUP_TEXT: dict[str, str] = {
+    topic: render_lookup_topic(CREATOR_KNOWLEDGE_ROWS, topic) for topic in LOOKUP_TOPICS
+}
+
+
+def render_lookup_section(topic: str) -> str | None:
+    """The plain text for one lookup topic, or None for an unknown or missing topic
+    (the tool then returns an unknown_topic error; it never raises at chat time)."""
+    if not isinstance(topic, str):
+        return None
+    return LOOKUP_TEXT.get(topic)
 
 
 def creator_shared_cache_control() -> dict[str, Any]:

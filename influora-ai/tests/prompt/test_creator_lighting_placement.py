@@ -14,8 +14,9 @@ What this pins:
   TikTok-free;
 - the midday row uses the shadow cue, and no row gives a clock range for midday;
 - the persona and the frame check both give instructions creator, phone, light, settings;
-- every row of the 14 v7 types reaches the rendered text, and the block stays in budget
-  (under 125,000 characters and at most 320 rows).
+- every row of the 14 v7 types reaches the rendered text, and the ALWAYS-SENT block stays in
+  budget (under 125,000 characters and at most 320 always-sent rows; since 2026-09-24 the
+  file itself may grow behind the get_creator_knowledge lookup tool).
 """
 
 from __future__ import annotations
@@ -28,6 +29,8 @@ from app.prompt.content_knowledge import (
     CREATOR_KNOWLEDGE_ROWS,
     CREATOR_KNOWLEDGE_TEXT,
     FIRST_MOVE_HEADING,
+    LOOKUP_TEXT,
+    NAME_FIELD,
     LIGHTING_LOOKS_HEADING,
     PLACEMENT_HEADING,
     REQUIRED_FIELDS,
@@ -316,13 +319,38 @@ def test_ceiling_light_is_never_the_bare_face_light():
             assert "bounce" in text or "fill" in text, r
 
 
+def _in_any_lookup_topic(value: str) -> bool:
+    return any(value in text for text in LOOKUP_TEXT.values())
+
+
+def _always_sent_rows() -> list[dict]:
+    """Rows that render into the always-sent block: every row EXCEPT the lookup-only ones,
+    which are found by where their name actually renders (a lookup topic and not the
+    block), not by a hand-kept list that could drift from the renderer."""
+    out = []
+    for r in CREATOR_KNOWLEDGE_ROWS:
+        name = str(r[NAME_FIELD[r["data_type"]]])
+        if name not in CREATOR_KNOWLEDGE_TEXT and _in_any_lookup_topic(name):
+            continue
+        out.append(r)
+    return out
+
+
 def test_knowledge_block_stays_under_the_size_budget():
-    # The knowledge block is sent on every creator turn. Going past either limit needs the
-    # lookup design first (Priya, 2026-09-24): candidates are delivery_example,
-    # narrative_principle and camera_angle behind a lookup tool; the placement section
-    # stays always-sent.
+    # The knowledge block is sent on every creator turn (Priya, 2026-09-24,
+    # wiki/decisions/2026-09-24-creator-knowledge-budget.md). Since the lookup tool
+    # (get_creator_knowledge) the FILE may grow behind it; the budget counts only what is
+    # always sent. The placement section stays always-sent.
     assert len(CREATOR_KNOWLEDGE_TEXT) < 125_000
-    assert len(CREATOR_KNOWLEDGE_ROWS) <= 320
+    always_sent = _always_sent_rows()
+    assert len(always_sent) <= 320
+    # 349 rows in the file, 54 behind the tool (12 delivery examples + 42 v8 audio/movement).
+    assert len(CREATOR_KNOWLEDGE_ROWS) - len(always_sent) == 54
+    lookup_only_types = {r["data_type"] for r in CREATOR_KNOWLEDGE_ROWS} - {
+        r["data_type"] for r in always_sent
+    }
+    assert "delivery_example" in lookup_only_types
+    assert "microphone_selection_rule" in lookup_only_types
 
 
 def test_frame_check_prompt_stays_under_its_budget():

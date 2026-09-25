@@ -28,6 +28,7 @@ from app.clients.spring import (
 )
 from app.config import PROMPT_VERSION, get_settings
 from app.planner.week_plan import enrich_week_plan
+from app.prompt.content_knowledge import LOOKUP_TOPICS, render_lookup_section
 from app.prompt.untrusted import wrap_untrusted
 from app.providers.claude import ClaudeProvider
 from app.routes.analyze_site import perform_site_analysis
@@ -37,6 +38,7 @@ from app.tools.creator_schemas import (
     CREATOR_NO_RETRY_TOOLS,
     CREATOR_TOOL_TO_SPRING_PATH,
     GET_BRIEF,
+    GET_CREATOR_KNOWLEDGE,
     GET_MY_DEALS,
     GET_TODAYS_TOPICS,
     PLAN_MY_WEEK,
@@ -169,9 +171,10 @@ async def run_tool_loop(
     `tools` (Meera for Creators, A4 / SPEC.md §7.2): the tool schemas offered
     to Claude for this turn. `None` (every pre-existing caller) means the full
     BRAND set from `get_tool_schemas()`. CREATOR turns pass the creator set the
-    creator's `tools_enabled` grants -- never a money tool, never a brand tool,
-    and `[]` when nothing is granted. `assemble_prompt` is the single place
-    that decides which; the route only forwards `prompt.tools`.
+    creator's `tools_enabled` grants -- never a money tool, never a brand tool
+    -- plus the local get_creator_knowledge, which every creator turn carries.
+    `assemble_prompt` is the single place that decides which; the route only
+    forwards `prompt.tools`.
     """
     messages = list(initial_messages)
     tools = get_tool_schemas() if tools is None else list(tools)
@@ -379,7 +382,9 @@ async def run_tool_loop(
             # Runs AFTER `is_known_tool` so an invented name still reports as
             # `unknown_tool`, and BEFORE the local-tool branch so it also
             # covers `analyze_site` / `present_options` — brand-only surface a
-            # CREATOR turn must not be able to reach either.
+            # CREATOR turn must not be able to reach either — and, the other
+            # way round, `get_creator_knowledge`, which only creator turns
+            # offer, so a BRAND turn that emits it is refused right here.
             #
             # THE ONE EXEMPTION is a money tool. `get_tool_schemas()` stopped
             # offering request_payment/confirm_launch (ME-2), yet the loop
@@ -424,6 +429,70 @@ async def run_tool_loop(
             # tool_result the model can react to ("couldn't read that page —
             # tell me the product and price?").
             if is_local_tool(tool_name):
+                # get_creator_knowledge — creator-only knowledge lookup
+                # (PROMPT_VERSION .13). Reads Influora's OWN static knowledge
+                # file, rendered at import by content_knowledge.py: no Spring
+                # call, no JWT on the wire, no creator data. Its text is ours,
+                # not brand/creator-written, so it goes back to the model
+                # unwrapped (unlike the `<untrusted_*>` splits in
+                # `_model_copy_of_tool_result`). A missing or unknown topic is
+                # an is_error result naming the valid topics -- never a raise.
+                if tool_name == GET_CREATOR_KNOWLEDGE:
+                    topic = tool_input.get("topic") if isinstance(tool_input, dict) else None
+                    # Only {"topic"} is accepted, matching the schema's
+                    # additionalProperties: false -- anything else is refused, not ignored.
+                    extra_keys = set(tool_input) - {"topic"} if isinstance(tool_input, dict) else set()
+                    knowledge: str | None = None
+                    if isinstance(topic, str) and topic in LOOKUP_TOPICS and not extra_keys:
+                        try:
+                            knowledge = render_lookup_section(topic)
+                        except Exception as exc:  # noqa: BLE001 - a lookup must not break the turn
+                            logger.warning(
+                                "local tool %s failed for topic=%s: %s",
+                                tool_name,
+                                topic,
+                                type(exc).__name__,
+                            )
+                            knowledge = None
+                    if not knowledge:
+                        result_payload = {"error": "unknown_topic", "topics": list(LOOKUP_TOPICS)}
+                        tool_result_blocks.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tool_use_id,
+                                "content": _safe_json(result_payload),
+                                "is_error": True,
+                            }
+                        )
+                        yield LoopEvent(
+                            type="tool_result",
+                            tool_name=tool_name,
+                            tool_status="error",
+                            tool_result_data=result_payload,
+                        )
+                        continue
+                    tool_result_blocks.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_use_id,
+                            "content": _safe_json({"topic": topic, "knowledge": knowledge}),
+                        }
+                    )
+                    # The BROWSER's copy is the topic only: the creator app
+                    # shows one work-trail step for this tool ("Checking
+                    # Influora's notes on audio", keyed on `topic`) and never a
+                    # card, so shipping the knowledge text over SSE would be
+                    # dead weight. NOTE routes/chat.py counts any "ok"
+                    # tool_result as delivered output when deciding whether an
+                    # otherwise empty turn keeps its charge.
+                    yield LoopEvent(
+                        type="tool_result",
+                        tool_name=tool_name,
+                        tool_status="ok",
+                        tool_result_data={"topic": topic},
+                    )
+                    continue
+
                 # present_options — display-only pattern: no fetch, no server
                 # action. Echo the options straight back so the browser can
                 # render tappable cards; the tool_result handed to Claude is a

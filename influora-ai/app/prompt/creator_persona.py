@@ -136,6 +136,10 @@ storytelling, camera):
   it back in a few words and shape every suggestion around it.
 - Knowledge first. Answer from the "Influora content knowledge" block before
   general knowledge, and never guess.
+- Look it up first. For any topic listed under "More on request" at the end
+  of your knowledge block, call get_creator_knowledge with that topic before
+  answering, then answer from what it returns. Never guess those from general
+  knowledge.
 - Name the category first. Look at the creator's categories in your context
   and say it back to them ("you're in fitness"). If no category is set, ask
   what their channel is about as one of your intake questions.
@@ -475,6 +479,19 @@ CREATOR_CAPABILITY_LINES: dict[str, str] = {
     ),
 }
 
+# Creator LOCAL tools (`app.tools.creator_schemas.CREATOR_LOCAL_TOOL_NAMES`),
+# kept apart from CREATOR_CAPABILITY_LINES because that dict is pinned to the
+# Spring-backed CREATOR_TOOL_NAMES one-for-one. Offered on every creator turn,
+# so this bullet renders on warn-only turns too. Same rule: names no other tool.
+CREATOR_LOCAL_CAPABILITY_LINES: dict[str, str] = {
+    "get_creator_knowledge": (
+        "- get_creator_knowledge: read Influora's own notes on one topic kept out of your\n"
+        "  knowledge block: audio, moving between two spots in one reel, and worked examples\n"
+        "  of how to say a line. Call it before answering those, then answer from what it\n"
+        "  returns."
+    ),
+}
+
 _CAPABILITY_HEADING = "What you can do now:"
 
 # The warn-only / Phase-A degrade: no tools at all. Names no tool, promises no
@@ -483,6 +500,18 @@ _NO_CAPABILITY_LINES = (
     "- Talk, and nothing else: you have no tools on this turn. Answer from your creator\n"
     "  context, explain how Influora works for creators, and help them think an offer\n"
     "  through in plain terms.\n"
+    "- Anything that needs an action or a live number is out of reach right now. Say so\n"
+    "  plainly and tell them where in the app they can do it themselves today."
+)
+
+# The warn-only degrade when the ONLY tools offered are local ones (the usual
+# warn-only turn since PROMPT_VERSION .13, which always offers the knowledge
+# lookup). Same meaning as _NO_CAPABILITY_LINES, minus the claim that there are
+# no tools at all, which would contradict the local bullet that follows it.
+_NO_ACCOUNT_TOOL_LINES = (
+    "- No account tools on this turn: you cannot read or change anything in their\n"
+    "  account. Answer from your creator context, explain how Influora works for\n"
+    "  creators, and help them think an offer through in plain terms.\n"
     "- Anything that needs an action or a live number is out of reach right now. Say so\n"
     "  plainly and tell them where in the app they can do it themselves today."
 )
@@ -502,18 +531,33 @@ def render_creator_capabilities(tool_names: Sequence[str] | None) -> str:
     that is not offered is a lie to the model and a refused call. Order follows
     the offered list, which the assembler takes from `CREATOR_TOOL_SCHEMAS`
     order, so Block A stays byte-stable per tool set for the prompt cache.
+
+    Local tools (`CREATOR_LOCAL_CAPABILITY_LINES`) are described after the
+    account tools. When no account tool is offered, the warn-only text still
+    leads -- `_NO_CAPABILITY_LINES` if nothing at all is offered,
+    `_NO_ACCOUNT_TOOL_LINES` followed by the local bullets otherwise.
     """
-    lines: list[str] = []
+    account_lines: list[str] = []
+    local_lines: list[str] = []
     seen: set[str] = set()
     for name in tool_names or []:
         if not isinstance(name, str) or name in seen:
             continue
         bullet = CREATOR_CAPABILITY_LINES.get(name)
+        target = account_lines
+        if bullet is None:
+            bullet = CREATOR_LOCAL_CAPABILITY_LINES.get(name)
+            target = local_lines
         if bullet is None:
             continue
         seen.add(name)
-        lines.append(bullet)
-    body = "\n".join(lines) if lines else _NO_CAPABILITY_LINES
+        target.append(bullet)
+    if account_lines:
+        body = "\n".join(account_lines + local_lines)
+    elif local_lines:
+        body = "\n".join([_NO_ACCOUNT_TOOL_LINES, *local_lines])
+    else:
+        body = _NO_CAPABILITY_LINES
     return _CAPABILITY_HEADING + "\n" + body + "\n"
 
 
@@ -523,6 +567,12 @@ def get_creator_persona_block() -> str:
     tool-agnostic — zero creator data (that lives in Block B) and zero tool
     names (those come from `render_creator_capabilities`, which
     `build_block_a_creator` appends per turn). Safe to cache globally.
+
+    ONE exception, by design: the "Look it up first" rule names
+    `get_creator_knowledge`. That tool is offered on EVERY creator turn
+    (`assemble_prompt` appends it regardless of `tools_enabled`), so naming it
+    unconditionally is true on every turn, which is the reason the rule above
+    exists for the Spring-backed tools.
     """
     return MEERA_CREATOR_PERSONA
 

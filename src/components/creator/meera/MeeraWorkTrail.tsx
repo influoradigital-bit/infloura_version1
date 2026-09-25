@@ -6,10 +6,11 @@ import {
   TOOL_TRAIL_LABELS,
   TRAIL_HIDE,
   TRAIL_SHOW,
+  creatorKnowledgeTrailLabel,
   pickLang,
   trailSummary,
 } from '@/lib/copy/meera-chat';
-import type { CreatorToolName } from '@/lib/meera-api';
+import type { CreatorTrailToolName } from '@/lib/meera-api';
 
 /**
  * MEERA-CHAT-DESIGN-SPEC.md Part A — "work trail on every answer".
@@ -21,8 +22,11 @@ import type { CreatorToolName } from '@/lib/meera-api';
  */
 export interface WorkTrailStep {
   id: string;
-  name: CreatorToolName;
+  /** A Spring-backed creator tool, or a LOCAL one (`get_creator_knowledge`) that has no card. */
+  name: CreatorTrailToolName;
   status: 'pending' | 'ok' | 'error';
+  /** `get_creator_knowledge` only: the topic Meera looked up, from the tool_start input. */
+  topic?: string;
 }
 
 export interface MeeraWorkTrailProps {
@@ -38,10 +42,11 @@ export interface MeeraWorkTrailProps {
   className?: string;
 }
 
-function stepLabel(name: CreatorToolName, status: WorkTrailStep['status'], language: string): string {
-  const labels = TOOL_TRAIL_LABELS[name];
+function stepLabel(step: WorkTrailStep, language: string): string {
+  const { name, status } = step;
   const key = status === 'pending' ? 'running' : status === 'ok' ? 'done' : 'failed';
-  return pickLang(language, labels[key]);
+  if (name === 'get_creator_knowledge') return creatorKnowledgeTrailLabel(step.topic, key, language);
+  return pickLang(language, TOOL_TRAIL_LABELS[name][key]);
 }
 
 function TrailStepIcon({ status }: { status: WorkTrailStep['status'] }) {
@@ -76,7 +81,7 @@ export function MeeraWorkTrail({ steps, done, language, className }: MeeraWorkTr
           className="flex items-center gap-2 text-xs text-muted-foreground"
         >
           <TrailStepIcon status={step.status} />
-          <span>{stepLabel(step.name, step.status, language)}</span>
+          <span>{stepLabel(step, language)}</span>
         </li>
       ))}
     </ul>

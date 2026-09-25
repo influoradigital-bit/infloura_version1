@@ -81,6 +81,7 @@ from app.costs.spend_tracker import (
 from app.prompt.assembler import assemble_prompt
 from app.providers.claude import ClaudeProvider
 from app.security.redaction import log_event, shape_of
+from app.tools.creator_schemas import is_creator_local_tool
 from app.tools.loop import ToolLoopCapExceeded, ToolLoopContext, run_tool_loop
 
 logger = logging.getLogger(__name__)
@@ -858,9 +859,10 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                 initial_messages=prompt.messages,
                 ctx=loop_ctx,
                 is_cancelled=is_cancelled,
-                # A4: CREATOR turns carry an EMPTY tool set (no money tools,
-                # no brand tools); BRAND turns the full schema set. Decided
-                # once, in `assemble_prompt`, never here.
+                # A4: CREATOR turns carry the Spring-backed creator tools their
+                # scope grants (never a money or brand tool) plus the local
+                # get_creator_knowledge; BRAND turns the full brand set.
+                # Decided once, in `assemble_prompt`, never here.
                 tools=prompt.tools,
             ).__aiter__()
 
@@ -951,7 +953,12 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                             "data": event.tool_result_data,
                         },
                     )
-                    if event.tool_status == "ok":
+                    # A creator LOCAL tool (get_creator_knowledge) only hands Meera her own
+                    # notes; the browser gets {topic}, not an answer. It must not count as
+                    # delivered output, or a turn whose answer then fails (provider error,
+                    # empty reply) keeps the creator's credit for nothing (lookup review,
+                    # 2026-09-25).
+                    if event.tool_status == "ok" and not is_creator_local_tool(event.tool_name or ""):
                         tool_result_delivered = True
                 elif event.type == "done":
                     finish_reason = event.finish_reason or "stop"

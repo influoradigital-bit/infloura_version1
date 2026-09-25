@@ -31,6 +31,7 @@ import pytest
 from app.tools.creator_schemas import (
     CREATOR_TOOL_NAMES,
     all_creator_tool_schemas,
+    creator_local_tool_schemas,
     get_creator_tool_schemas,
 )
 from app.tools.schemas import get_tool_schemas
@@ -76,7 +77,9 @@ def _all_tool_schemas():
     handed no list.
     """
     return [(t.get("name", "<unnamed>"), t) for t in get_tool_schemas()] + [
-        (t.get("name", "<unnamed>"), t) for t in all_creator_tool_schemas()
+        (t.get("name", "<unnamed>"), t)
+        # + the creator LOCAL tools (get_creator_knowledge), offered on every creator turn.
+        for t in [*all_creator_tool_schemas(), *creator_local_tool_schemas()]
     ]
 
 

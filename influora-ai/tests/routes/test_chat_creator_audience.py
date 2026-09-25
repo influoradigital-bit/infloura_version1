@@ -43,7 +43,7 @@ from app.costs.spend_tracker import CREATOR_CAP_MESSAGE
 from app.prompt.creator_persona import MEERA_CREATOR_PERSONA
 from app.prompt.persona import MEERA_PERSONA
 from app.routes import chat as chat_route
-from app.tools.creator_schemas import CREATOR_TOOL_NAMES
+from app.tools.creator_schemas import CREATOR_LOCAL_TOOL_NAMES, CREATOR_TOOL_NAMES
 from app.tools.loop import LoopEvent
 
 CREATOR_ID = "creator-user-chat-001"
@@ -501,7 +501,8 @@ async def test_per_creator_cap_override_in_context_raises_this_creators_allowanc
         assert response.status_code == 200
         await _drain(response)
 
-    assert recorded["tools"] == []  # still a creator turn
+    # still a creator turn: no Spring-backed tool, only the local knowledge lookup
+    assert [t["name"] for t in recorded["tools"]] == list(CREATOR_LOCAL_TOOL_NAMES)
     assert await spend_tracker.get_creator_month_total(CREATOR_ID) > Decimal("1.00")
     # Q7: the creator hold was settled by the recorded spend, not leaked.
     assert await spend_tracker.get_reserved_creator(CREATOR_ID) == Decimal(0)
@@ -588,8 +589,9 @@ async def test_consented_creator_turn_uses_creator_persona_and_empty_tool_set():
         assert response.status_code == 200
         wire = await _drain(response)
 
-    # The loop was given NO tools and the creator persona.
-    assert recorded["tools"] == []
+    # The loop was given NO Spring-backed tool (only the local knowledge lookup, offered on
+    # every creator turn) and the creator persona.
+    assert [t["name"] for t in recorded["tools"]] == list(CREATOR_LOCAL_TOOL_NAMES)
     system_text = json.dumps(recorded["system_blocks"])
     assert MEERA_CREATOR_PERSONA.splitlines()[0] in recorded["system_blocks"][0]["text"]
     # Block B (per-creator) is the last system block; the cached content
@@ -631,7 +633,7 @@ async def test_creator_turn_forwards_the_creator_tools_spring_enabled():
         assert response.status_code == 200
         await _drain(response)
 
-    assert [t["name"] for t in recorded["tools"]] == list(CREATOR_TOOL_NAMES)
+    assert [t["name"] for t in recorded["tools"]] == [*CREATOR_TOOL_NAMES, *CREATOR_LOCAL_TOOL_NAMES]
     # Still a creator turn: no brand tool crossed over.
     assert "calculate_budget" not in json.dumps(recorded["tools"])
 

@@ -85,8 +85,9 @@ def test_settings_survive_the_full_assembled_prompt():
     assert assembled.audience == "CREATOR"
     # B0 (§7.2): this fixture carries no `tools_enabled`, so the assembler
     # degrades to the Phase-A empty tool set. The tool-enabled path is covered
-    # in tests/security/test_info_barrier.py.
-    assert assembled.tools == []
+    # in tests/security/test_info_barrier.py. The local knowledge lookup is offered anyway
+    # (it reads no creator data; PROMPT_VERSION .13).
+    assert [t["name"] for t in assembled.tools] == ["get_creator_knowledge"]
     system_text = "\n".join(
         block.get("text", "") for block in assembled.system_blocks if isinstance(block, dict)
     )

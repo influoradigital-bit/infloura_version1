@@ -1,4 +1,4 @@
-import type { CreatorToolName } from '@/lib/meera-api';
+import type { CreatorKnowledgeTopic, CreatorToolName } from '@/lib/meera-api';
 
 /**
  * MEERA-CHAT-DESIGN-SPEC.md — bilingual (en/hi) copy for the creator Meera chat redesign
@@ -121,6 +121,47 @@ export const TOOL_TRAIL_LABELS: Record<CreatorToolName, ToolTrailLabelSet> = {
     failed: { en: "Couldn't plan your week", hi: 'आपका हफ़्ता प्लान नहीं हो पाया' },
   },
 };
+
+/**
+ * `get_creator_knowledge` is a LOCAL tool (not in `CREATOR_TOOL_NAMES`, so not in the table
+ * above): Meera reading Influora's own notes on one topic. Its step names the topic, e.g.
+ * "Checking Influora's notes on audio". Typed `Record<CreatorKnowledgeTopic, ...>` so a topic
+ * added to `CREATOR_KNOWLEDGE_TOPICS` without a name here is a compile error. The phrase is
+ * what the English label says after "notes on", and in Hindi what comes before "वाले नोट्स".
+ */
+const KNOWLEDGE_TOPIC_PHRASES: Record<CreatorKnowledgeTopic, BilingualText> = {
+  audio: { en: 'audio', hi: 'ऑडियो' },
+  moving_between_spots: { en: 'moving between spots', hi: 'एक जगह से दूसरी जगह जाने' },
+  delivery_examples: { en: 'delivery examples', hi: 'डिलीवरी के उदाहरणों' },
+};
+
+function knowledgeTopicPhrase(topic: string | undefined): BilingualText | undefined {
+  if (!topic || !Object.prototype.hasOwnProperty.call(KNOWLEDGE_TOPIC_PHRASES, topic)) return undefined;
+  return KNOWLEDGE_TOPIC_PHRASES[topic as CreatorKnowledgeTopic];
+}
+
+/**
+ * The work-trail line for one `get_creator_knowledge` call. A missing or unrecognised topic
+ * (an older build, or the tool's own `unknown_topic` error) falls back to the plain "Influora's
+ * notes" wording rather than showing the raw topic key.
+ */
+export function creatorKnowledgeTrailLabel(
+  topic: string | undefined,
+  state: keyof ToolTrailLabelSet,
+  language: string,
+): string {
+  const phrase = knowledgeTopicPhrase(topic);
+  if (language.startsWith('hi')) {
+    const notes = phrase ? `Influora के ${phrase.hi} वाले नोट्स` : 'Influora के नोट्स';
+    if (state === 'running') return `${notes} देखे जा रहे हैं…`;
+    if (state === 'done') return `${notes} देख लिए`;
+    return `${notes} नहीं खुल पाए`;
+  }
+  const notes = phrase ? `Influora's notes on ${phrase.en}` : "Influora's notes";
+  if (state === 'running') return `Checking ${notes}…`;
+  if (state === 'done') return `Checked ${notes}`;
+  return `Couldn't open ${notes}`;
+}
 
 export const TRAIL_SHOW: BilingualText = { en: 'Show', hi: 'दिखाएं' };
 export const TRAIL_HIDE: BilingualText = { en: 'Hide', hi: 'छुपाएं' };

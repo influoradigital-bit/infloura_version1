@@ -76,7 +76,26 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.24.12"
+PROMPT_VERSION = "meera-2026.09.24.13"
+# ^ .13 = the creator knowledge lookup tool (Swapnil 2026-09-24, the lookup design the .12 note
+# below says anything past v7 needs). A new LOCAL creator tool, get_creator_knowledge, run
+# in-process by the tool loop: no Spring route, no JWT on the wire, no Java change, and kept out
+# of CREATOR_TOOL_NAMES (the Spring-backed list Java and the frontend sync against) in its own
+# CREATOR_LOCAL_TOOL_NAMES. It takes one topic from three -- audio (mic choice, mic distance, lav
+# placement by clothing, fan/AC/traffic noise, 10-second audio tests, phone audio features),
+# moving_between_spots (cut vs walk-and-talk, walking setups, light and sound changes between
+# spots, safety) and delivery_examples (worked stress/pause/pace examples for a line) -- and
+# returns Influora's own notes for it; an unknown topic is an error naming the three. It is
+# offered on EVERY creator turn, warn-only included (it reads no creator data, so tools_enabled
+# does not gate it) and NEVER on a brand turn (the loop's per-turn offer gate refuses it there).
+# The 12 delivery_example rows MOVED out of the always-sent knowledge block into the
+# delivery_examples topic; the block now ends with a short "More on request" section naming each
+# topic, and the creator persona adds a "Look it up first" rule: for those three subjects, call
+# the tool before answering and answer from what it returns, never from general knowledge.
+# Dataset 8's 42 audio and movement rows live ONLY behind the tool, at medium confidence, pending
+# the source document. BRAND prompt unchanged.
+#
+# Previously (.12):
 # ^ .12 = the go-live line's .11 merged with knowledge v7 (lighting and positioning). The
 # v7 work was numbered .5 on its branch; it lands after .11 on release/0924, so it takes .12
 # rather than going backwards. v7 as written on its branch:

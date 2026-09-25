@@ -13,7 +13,13 @@ import {
   type HistoryTurn,
 } from '@/lib/meera-history';
 import { ApiError, isApiLive } from '@/lib/api';
-import { isCreatorToolName, meeraApi, type CreatorToolName } from '@/lib/meera-api';
+import {
+  isCreatorLocalToolName,
+  isCreatorToolName,
+  meeraApi,
+  type CreatorToolName,
+  type CreatorTrailToolName,
+} from '@/lib/meera-api';
 import { CreatorToolResultRenderer } from '@/components/creator/meera/CreatorToolResultRenderer';
 import { MeeraWorkTrail } from '@/components/creator/meera/MeeraWorkTrail';
 import { MeeraDesk } from '@/components/creator/meera/MeeraDesk';
@@ -79,10 +85,17 @@ import type { CreatorTurnAction } from '@/lib/meera-api';
  */
 interface CreatorToolResult {
   id: string;
-  name: CreatorToolName;
+  /**
+   * A Spring-backed creator tool (gets a card) or a LOCAL one (`get_creator_knowledge`), which
+   * gets only its work-trail step: no spinner row, no card, and its `data` (Influora's notes, the
+   * model's reference text) is never kept, so it can never be dumped into the chat.
+   */
+  name: CreatorTrailToolName;
   status: 'pending' | 'ok' | 'error';
   data?: unknown;
   errorMessage?: string;
+  /** `get_creator_knowledge` only: the topic looked up, for the "notes on audio" trail label. */
+  topic?: string;
 }
 
 /**
@@ -167,6 +180,15 @@ const TOOL_PENDING_LABELS: Record<CreatorToolName, string> = {
  * show its own generic sentence — masking the actual cause (auth/mesh/scope) exactly the way the
  * brand panel's `toolErrorMessage` was written to stop doing.
  */
+/** The `topic` string out of a `get_creator_knowledge` tool_start input or result payload. */
+function knowledgeTopicOf(value: unknown): string | undefined {
+  if (value && typeof value === 'object') {
+    const topic = (value as { topic?: unknown }).topic;
+    if (typeof topic === 'string' && topic) return topic;
+  }
+  return undefined;
+}
+
 function toolErrorMessage(data: unknown): string | undefined {
   if (data && typeof data === 'object') {
     const d = data as { message?: unknown; error?: unknown };
@@ -652,14 +674,18 @@ export function MeeraCopilotChat({
              */
             onToolStart: (event) => {
               setTurnStarted(true);
-              if (!isCreatorToolName(event.name)) {
+              const name = event.name;
+              if (!isCreatorToolName(name) && !isCreatorLocalToolName(name)) {
                 if (import.meta.env.DEV) {
-                  console.warn('[MeeraCopilotChat] ignoring unknown tool name:', event.name);
+                  console.warn('[MeeraCopilotChat] ignoring unknown tool name:', name);
                 }
                 return;
               }
-              const name = event.name;
-              const pending: CreatorToolResult = { id: uniqueId('tool'), name, status: 'pending' };
+              // A LOCAL tool (get_creator_knowledge) is kept for its work-trail step only; the
+              // topic from its input is what lets the step say "notes on audio".
+              const pending: CreatorToolResult = isCreatorLocalToolName(name)
+                ? { id: uniqueId('tool'), name, status: 'pending', topic: knowledgeTopicOf(event.input) }
+                : { id: uniqueId('tool'), name, status: 'pending' };
               editToolResults((current) => [...current, pending]);
             },
 
@@ -671,26 +697,32 @@ export function MeeraCopilotChat({
              * the result is appended, so it is still shown.
              */
             onToolResult: (event) => {
-              if (!isCreatorToolName(event.name)) {
+              const name = event.name;
+              if (!isCreatorToolName(name) && !isCreatorLocalToolName(name)) {
                 if (import.meta.env.DEV) {
-                  console.warn('[MeeraCopilotChat] ignoring unknown tool name:', event.name);
+                  console.warn('[MeeraCopilotChat] ignoring unknown tool name:', name);
                 }
                 return;
               }
-              const name = event.name;
-              const resolved: CreatorToolResult = {
-                id: uniqueId('tool'),
-                name,
-                status: event.status,
-                data: event.data,
-                errorMessage: event.status === 'error' ? toolErrorMessage(event.data) : undefined,
-              };
+              // A LOCAL tool's payload is Meera's reference text ({topic, knowledge}) or its own
+              // {error, topics} refusal: neither is for the creator, so only the status and the
+              // topic are kept. No `data` means nothing downstream can ever render it.
+              const resolved: CreatorToolResult = isCreatorLocalToolName(name)
+                ? { id: uniqueId('tool'), name, status: event.status, topic: knowledgeTopicOf(event.data) }
+                : {
+                    id: uniqueId('tool'),
+                    name,
+                    status: event.status,
+                    data: event.data,
+                    errorMessage: event.status === 'error' ? toolErrorMessage(event.data) : undefined,
+                  };
               editToolResults((current) => {
                 const at = current.findIndex((t) => t.name === name && t.status === 'pending');
                 if (at === -1) return [...current, resolved];
                 const next = [...current];
-                // Keep the pending entry's id so React reconciles in place instead of remounting.
-                next[at] = { ...resolved, id: current[at].id };
+                // Keep the pending entry's id so React reconciles in place instead of remounting,
+                // and the topic tool_start carried when the result has none (an error payload).
+                next[at] = { ...resolved, id: current[at].id, topic: resolved.topic ?? current[at].topic };
                 return next;
               });
             },
@@ -1047,8 +1079,10 @@ export function MeeraCopilotChat({
                 hand them to (both live on the deal pages, §8.6), and every card hides the matching
                 control when the callback is absent. A visible button wired to nothing would be
                 worse than no button. */}
+            {/* Only the Spring-backed tools get a spinner row and a card. A LOCAL tool
+                (get_creator_knowledge) is shown by its work-trail step above and nothing else. */}
             {m.toolResults?.map((tool) =>
-              tool.status === 'pending' ? (
+              !isCreatorToolName(tool.name) ? null : tool.status === 'pending' ? (
                 <div
                   key={tool.id}
                   data-testid="creator-tool-pending"

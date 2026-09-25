@@ -310,7 +310,9 @@ def test_assemble_prompt_routes_creator_audience_case_insensitively():
     # Block B is the LAST system block (the content-knowledge block sits
     # between A and B on the creator path).
     assert "Creator context for creator-user-001" in prompt.system_blocks[-1]["text"]
-    assert prompt.tools == []
+    # No tools_enabled: no Spring-backed tool, only the local knowledge lookup
+    # (get_creator_knowledge, offered on every creator turn since PROMPT_VERSION .13).
+    assert [t["name"] for t in prompt.tools] == ["get_creator_knowledge"]
 
 
 def test_assemble_prompt_defaults_to_brand_when_audience_absent():

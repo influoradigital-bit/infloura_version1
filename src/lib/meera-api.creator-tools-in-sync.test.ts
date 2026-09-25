@@ -14,9 +14,15 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { CREATOR_TOOL_NAMES, isCreatorToolName } from './meera-api';
+import {
+  CREATOR_KNOWLEDGE_TOPICS,
+  CREATOR_LOCAL_TOOL_NAMES,
+  CREATOR_TOOL_NAMES,
+  isCreatorToolName,
+} from './meera-api';
 
 const SCHEMAS = join(process.cwd(), 'influora-ai', 'app', 'tools', 'creator_schemas.py');
+const KNOWLEDGE = join(process.cwd(), 'influora-ai', 'app', 'prompt', 'content_knowledge.py');
 
 /** The names inside influora-ai's `CREATOR_TOOL_NAMES` tuple, resolved through its constants. */
 function pythonCreatorToolNames(): string[] {
@@ -43,6 +49,31 @@ describe('creator tool names: app vs influora-ai', () => {
     expect(python.length).toBeGreaterThanOrEqual(6);
     const unknownToTheApp = python.filter((name) => !isCreatorToolName(name));
     expect(unknownToTheApp, 'these tool calls would show as nothing in the chat').toEqual([]);
+  });
+
+  // Lookup review (2026-09-25, Priya): the local knowledge tool and its topics are hand copies
+  // on this side. A topic added only in Python would show the generic "Influora's notes" label.
+  it('knows the local knowledge tool and every lookup topic, in the same order', () => {
+    const schemas = readFileSync(SCHEMAS, 'utf8');
+    const constants = new Map<string, string>();
+    for (const [, name, value] of schemas.matchAll(/^([A-Z_]+)\s*=\s*"([a-z_]+)"/gm)) {
+      constants.set(name, value);
+    }
+    const local = schemas.match(/CREATOR_LOCAL_TOOL_NAMES:[^=]*=\s*\(([\s\S]*?)\)/);
+    expect(local, 'CREATOR_LOCAL_TOOL_NAMES tuple not found in creator_schemas.py').toBeTruthy();
+    const pythonLocal = local![1]
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0 && !entry.startsWith('#'))
+      .map((entry) => constants.get(entry) ?? entry.replace(/^["']|["']$/g, ''));
+    expect([...CREATOR_LOCAL_TOOL_NAMES]).toEqual(pythonLocal);
+
+    const knowledge = readFileSync(KNOWLEDGE, 'utf8');
+    const block = knowledge.match(/^LOOKUP_TOPICS:[^=]*=\s*\{([\s\S]*?)^\}/m);
+    expect(block, 'LOOKUP_TOPICS dict not found in content_knowledge.py').toBeTruthy();
+    const pythonTopics = [...block![1].matchAll(/^\s{4}"([a-z_]+)":/gm)].map((m) => m[1]);
+    expect(pythonTopics.length).toBeGreaterThanOrEqual(3);
+    expect([...CREATOR_KNOWLEDGE_TOPICS]).toEqual(pythonTopics);
   });
 
   it('claims no tool the AI service does not offer', () => {

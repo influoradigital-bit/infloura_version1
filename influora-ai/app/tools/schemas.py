@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from app.tools.creator_schemas import is_creator_tool
+from app.tools.creator_schemas import is_creator_local_tool, is_creator_tool
 
 ToolTier = Literal["read", "draft", "commit"]
 
@@ -473,14 +473,25 @@ def is_known_tool(name: str) -> bool:
     raises an unhandled KeyError in the middle of a live stream. The two must
     move together; `tests/tools/test_loop_creator_dispatch.py` pins both
     halves.
+
+    Creator LOCAL tools (`get_creator_knowledge`) are known too; they have no
+    Spring path by design and `is_local_tool` routes them in-process before the
+    path lookup is ever reached. Known is not offered: the loop's per-turn
+    `offered_tool_names` gate still refuses one on a brand turn.
     """
-    return name in TOOL_NAMES or name in LOCAL_TOOL_NAMES or is_creator_tool(name)
+    return (
+        name in TOOL_NAMES
+        or name in LOCAL_TOOL_NAMES
+        or is_creator_tool(name)
+        or is_creator_local_tool(name)
+    )
 
 
 def is_local_tool(name: str) -> bool:
     """True for tools the loop runs in-process (Python-native) instead of
-    forwarding to Spring's `/internal/meera/*`."""
-    return name in LOCAL_TOOL_NAMES
+    forwarding to Spring's `/internal/meera/*`: the brand-side
+    `LOCAL_TOOL_NAMES` plus the creator-side `CREATOR_LOCAL_TOOL_NAMES`."""
+    return name in LOCAL_TOOL_NAMES or is_creator_local_tool(name)
 
 
 def is_money_tool(name: str) -> bool:

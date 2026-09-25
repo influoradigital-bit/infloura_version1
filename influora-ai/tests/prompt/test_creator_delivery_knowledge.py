@@ -13,7 +13,13 @@ from __future__ import annotations
 
 import re
 
-from app.prompt.content_knowledge import CREATOR_KNOWLEDGE_ROWS, CREATOR_KNOWLEDGE_TEXT, DELIVERY_HEADING
+from app.prompt.content_knowledge import (
+    CREATOR_KNOWLEDGE_ROWS,
+    CREATOR_KNOWLEDGE_TEXT,
+    DELIVERY_EXAMPLES_HEADING,
+    DELIVERY_HEADING,
+    LOOKUP_TEXT,
+)
 from app.prompt.creator_persona import MEERA_CREATOR_PERSONA
 from app.prompt.frame_check import build_system_prompt
 
@@ -30,11 +36,20 @@ def _delivery_text() -> str:
     return CREATOR_KNOWLEDGE_TEXT[CREATOR_KNOWLEDGE_TEXT.index(DELIVERY_HEADING):]
 
 
+def _examples_text() -> str:
+    # 2026-09-24 (lookup tool): the 12 examples moved out of the always-sent block into the
+    # "delivery_examples" topic that get_creator_knowledge returns.
+    return LOOKUP_TEXT["delivery_examples"]
+
+
 def test_delivery_section_renders_guardrails_before_rules_and_examples():
     text = _delivery_text()
-    assert text.index("Delivery guardrails (always):") < text.index("Delivery rules:") < text.index(
-        "Delivery examples (synthetic illustrations, not real creator data"
-    )
+    assert text.index("Delivery guardrails (always):") < text.index("Delivery rules:")
+    # The examples are the lookup topic now, labelled synthetic, and still bound by the guardrails.
+    assert "Delivery examples (synthetic" not in CREATOR_KNOWLEDGE_TEXT
+    assert _examples_text().startswith(DELIVERY_EXAMPLES_HEADING)
+    assert "Delivery examples (synthetic illustrations, not real creator data" in _examples_text()
+    assert "delivery guardrails in your knowledge block still apply" in _examples_text()
     for r in _rows("delivery_rule"):
         assert f"- {r['rule']}: {r['advice']}" in text
     # The guardrails themselves must reach Meera, not just their heading.
@@ -67,6 +82,7 @@ def test_examples_are_short_video_only_and_labelled_synthetic():
         assert r["platform"] in ("Instagram Reels", "YouTube Shorts"), r
         assert r["example_status"] == "synthetic illustration, not real creator data"
     assert "linkedin" not in CREATOR_KNOWLEDGE_TEXT.lower()
+    assert "linkedin" not in _examples_text().lower()
 
 
 def test_safety_and_identity_rules_are_present_and_high_confidence():
@@ -109,7 +125,7 @@ def test_outdoor_light_gaps_are_covered_and_reach_the_frame_check():
 
 
 def test_examples_show_the_break_the_stress_reason_and_the_pause():
-    text = _delivery_text()
+    text = _examples_text()
     assert (
         '- ex01 (English (India), Instagram Reels): Say: "Most creators post every day, / but they skip'
         ' this one step." Stress: "this one step" (contrastive focal phrase). Pause: after "day"'
@@ -121,6 +137,7 @@ def test_examples_show_the_break_the_stress_reason_and_the_pause():
 
 def test_no_markdown_bold_reaches_meera():
     assert "**" not in CREATOR_KNOWLEDGE_TEXT
+    assert "**" not in _examples_text()
 
 
 def test_ex09_stresses_the_safety_word_and_ex07_is_not_a_fact_to_copy():

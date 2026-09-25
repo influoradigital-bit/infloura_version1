@@ -34,6 +34,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.prompt.content_knowledge import LOOKUP_TOPICS
+
 GET_MY_DEALS = "get_my_deals"
 GET_BRIEF = "get_brief"
 ESTIMATE_MY_RATE = "estimate_my_rate"
@@ -482,3 +484,81 @@ def is_creator_tool(name: str) -> bool:
     unknown) and by `loop.py`'s Spring path lookup — those two must always be
     widened together, see `CREATOR_TOOL_TO_SPRING_PATH`."""
     return name in CREATOR_TOOL_NAMES
+
+
+# ---------------------------------------------------------------------------
+# Creator LOCAL tools (knowledge lookup, 2026-09-24, PROMPT_VERSION .13).
+#
+# Run IN-PROCESS by `app/tools/loop.py`, never forwarded to Spring: no
+# `/internal/meera/creator/*` route, no on-behalf JWT on the wire, no Java
+# change. That is why they are a SEPARATE tuple and never join
+# `CREATOR_TOOL_NAMES` above: that tuple is the Spring-backed list that Java's
+# `CreatorToolName` / `CreatorToolScopes` and the frontend's
+# `CREATOR_TOOL_NAMES` (src/lib/meera-api.creator-tools-in-sync.test.ts parses
+# it out of this file) are kept in sync against, and it builds
+# `CREATOR_TOOL_TO_SPRING_PATH`. A local name in there would get a Spring route
+# that 404s and a scope Spring never grants.
+#
+# Offered on EVERY creator turn, independent of `tools_enabled`: it reads only
+# Influora's own static knowledge file (app/prompt/knowledge/), no creator
+# data, so no approval level needs to grant it. NEVER offered on a brand turn:
+# `get_tool_schemas()` does not include it, so the loop's per-turn
+# `offered_tool_names` gate refuses it there.
+# ---------------------------------------------------------------------------
+GET_CREATOR_KNOWLEDGE = "get_creator_knowledge"
+
+CREATOR_LOCAL_TOOL_NAMES: tuple[str, ...] = (GET_CREATOR_KNOWLEDGE,)
+
+# One line per topic, built from `LOOKUP_TOPICS` so the enum and the model's
+# guide to it can never disagree with the knowledge file.
+_LOOKUP_TOPIC_GUIDE = (
+    "; ".join(f"{key}: {desc.strip().rstrip('.')}" for key, desc in LOOKUP_TOPICS.items()) + "."
+)
+
+GET_CREATOR_KNOWLEDGE_SCHEMA: dict[str, Any] = {
+    "name": GET_CREATOR_KNOWLEDGE,
+    "description": (
+        "Read Influora's own content notes on one topic that is kept out of your "
+        "always-sent knowledge block (the topics listed under 'More on request'). Call it "
+        "BEFORE answering a question on one of these topics: " + _LOOKUP_TOPIC_GUIDE + " "
+        "Pass the one topic that fits; call it again with another topic if the question "
+        "spans two. The "
+        "result is Influora's own notes, not the creator's data: answer from it, in your "
+        "own words, and never guess these from general knowledge. Returns "
+        "{topic, knowledge}."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "topic": {
+                "type": "string",
+                "enum": list(LOOKUP_TOPICS),
+                "description": "The one topic to read. " + _LOOKUP_TOPIC_GUIDE,
+            },
+        },
+        "required": ["topic"],
+        "additionalProperties": False,
+    },
+}
+
+_CREATOR_LOCAL_TOOL_SCHEMAS: list[dict[str, Any]] = [GET_CREATOR_KNOWLEDGE_SCHEMA]
+
+
+def creator_local_tool_schemas() -> list[dict[str, Any]]:
+    """The creator LOCAL tool schemas, in `CREATOR_LOCAL_TOOL_NAMES` order.
+
+    Unlike `get_creator_tool_schemas`, this takes no `tools_enabled`: every
+    creator turn offers these (see the section comment above). The assembler
+    appends them AFTER the filtered Spring-backed schemas, so a creator's
+    Block A stays byte-stable per approval level for the prompt cache. Also the
+    list the CI schema-validity guard must cover alongside
+    `all_creator_tool_schemas()` -- a combinator here 400s every turn too.
+    """
+    return list(_CREATOR_LOCAL_TOOL_SCHEMAS)
+
+
+def is_creator_local_tool(name: str) -> bool:
+    """True for a creator tool the loop runs in-process. Read by
+    `schemas.is_known_tool` and `schemas.is_local_tool`; deliberately NOT by
+    `is_creator_tool`, which means "has a Spring route"."""
+    return name in CREATOR_LOCAL_TOOL_NAMES

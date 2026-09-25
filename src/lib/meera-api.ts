@@ -757,6 +757,38 @@ export function isCreatorToolName(name: string): name is CreatorToolName {
   return (CREATOR_TOOL_NAMES as readonly string[]).includes(name);
 }
 
+/**
+ * LOCAL creator tools: influora-ai runs these inside its own tool loop (like the brand side's
+ * analyze_site/present_options) and never forwards them to Spring. They are deliberately NOT in
+ * `CREATOR_TOOL_NAMES` above, which mirrors influora-ai's Spring-backed `CREATOR_TOOL_NAMES`
+ * tuple and is held to it by meera-api.creator-tools-in-sync.test.ts. Mirrors influora-ai's
+ * separate `CREATOR_LOCAL_TOOL_NAMES`.
+ *
+ * `get_creator_knowledge` (input `{topic}`, result `{topic, knowledge}`) is Meera looking up
+ * Influora's own notes on one topic before answering. It has no card: the chat shows one
+ * friendly work-trail step for it ("Checking Influora's notes on audio") and never the returned
+ * text, which is Meera's reference material, not an answer for the creator to read.
+ */
+export const CREATOR_LOCAL_TOOL_NAMES = ['get_creator_knowledge'] as const;
+
+export type CreatorLocalToolName = (typeof CREATOR_LOCAL_TOOL_NAMES)[number];
+
+export function isCreatorLocalToolName(name: string): name is CreatorLocalToolName {
+  return (CREATOR_LOCAL_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+/** Every tool a creator turn can show a work-trail step for: Spring-backed plus local. */
+export type CreatorTrailToolName = CreatorToolName | CreatorLocalToolName;
+
+/**
+ * The `topic` values `get_creator_knowledge` accepts: influora-ai's `LOOKUP_TOPICS` keys
+ * (app/prompt/content_knowledge.py), in the same order. A topic outside this list still shows a
+ * step, just with the generic "Checking Influora's notes" label.
+ */
+export const CREATOR_KNOWLEDGE_TOPICS = ['audio', 'moving_between_spots', 'delivery_examples'] as const;
+
+export type CreatorKnowledgeTopic = (typeof CREATOR_KNOWLEDGE_TOPICS)[number];
+
 // ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------

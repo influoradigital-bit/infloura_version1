@@ -29,7 +29,11 @@ from app.prompt.creator_persona import (
     MEERA_CREATOR_PERSONA,
     get_creator_persona,
 )
-from app.tools.creator_schemas import CREATOR_TOOL_NAMES, all_creator_tool_schemas
+from app.tools.creator_schemas import (
+    CREATOR_LOCAL_TOOL_NAMES,
+    CREATOR_TOOL_NAMES,
+    all_creator_tool_schemas,
+)
 from app.tools.schemas import get_tool_schemas
 
 PAN = "ABCDE1234F"
@@ -257,8 +261,13 @@ def test_creator_turn_degrades_to_an_empty_tool_set_without_tools_enabled():
         session_id="s-1",
     )
     assert prompt.audience == "CREATOR"
-    assert prompt.tools == []
-    assert "Available tools: none (warn-only mode)" in prompt.system_blocks[0]["text"]
+    # No Spring-backed tool. The local knowledge lookup (PROMPT_VERSION .13) reads only
+    # Influora's static notes, no creator data, so it is the one tool a warn-only turn has.
+    assert [t["name"] for t in prompt.tools] == list(CREATOR_LOCAL_TOOL_NAMES)
+    assert (
+        "Available tools: get_creator_knowledge (warn-only mode: no account tools)"
+        in prompt.system_blocks[0]["text"]
+    )
 
 
 def test_creator_turn_carries_the_creator_tools_when_spring_enables_them():
@@ -274,7 +283,7 @@ def test_creator_turn_carries_the_creator_tools_when_spring_enables_them():
         },
         session_id="s-1",
     )
-    assert [t["name"] for t in prompt.tools] == list(CREATOR_TOOL_NAMES)
+    assert [t["name"] for t in prompt.tools] == [*CREATOR_TOOL_NAMES, *CREATOR_LOCAL_TOOL_NAMES]
     brand_names = {t["name"] for t in get_tool_schemas()}
     assert brand_names.isdisjoint({t["name"] for t in prompt.tools})
 
@@ -287,7 +296,7 @@ def test_creator_turn_carries_the_creator_tools_when_spring_enables_them():
         },
         session_id="s-2",
     )
-    assert [t["name"] for t in partial.tools] == ["get_my_deals", "get_my_metrics"]
+    assert [t["name"] for t in partial.tools] == ["get_my_deals", "get_my_metrics", *CREATOR_LOCAL_TOOL_NAMES]
 
 
 def test_brand_turn_still_carries_the_full_tool_set():

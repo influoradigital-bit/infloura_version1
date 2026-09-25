@@ -17,6 +17,7 @@ from app.prompt.assembler import assemble_prompt
 from app.prompt.content_knowledge import (
     CREATOR_KNOWLEDGE_TEXT,
     KNOWLEDGE_BLOCK_HEADING,
+    LOOKUP_TEXT,
     KNOWLEDGE_PATH,
     KnowledgeFileError,
     has_statistic_slot,
@@ -101,8 +102,11 @@ def test_committed_knowledge_file_loads_every_row_by_type():
     # funnel metrics, the combined short-form platform row, 4 Hinglish hooks that have English
     # versions) -> 232. Plus v7: 75 lighting and positioning rows (50 from dataset_7 -- its duplicate
     # Silhouette portrait pattern dropped, the lighting_look keeps it -- + 25 authored from the
-    # creator lighting guide) -> 307.
-    assert len(rows) == 307
+    # creator lighting guide) -> 307. Plus v8 (2026-09-24, the lookup tool): dataset 8's 42 audio
+    # and movement rows -> 349. The v8 rows and the 12 delivery examples are NOT always sent:
+    # they render only into LOOKUP_TEXT (get_creator_knowledge); see
+    # test_creator_lighting_placement.py for the always-sent budget.
+    assert len(rows) == 349
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["data_type"]] = counts.get(r["data_type"], 0) + 1
@@ -147,6 +151,16 @@ def test_committed_knowledge_file_loads_every_row_by_type():
         "lighting_look": 6,
         "mixed_light_rule": 5,
         "sunset_to_night_step": 5,
+        # v8, lookup only
+        "microphone_selection_rule": 5,
+        "mic_distance_rule": 6,
+        "lav_placement_rule": 3,
+        "audio_noise_rule": 7,
+        "audio_diagnostic_rule": 5,
+        "phone_audio_capability": 4,
+        "audio_movement_scenario": 3,
+        "movement_continuity_rule": 5,
+        "walking_configuration": 4,
     }
 
 
@@ -340,7 +354,24 @@ def test_creator_system_prompt_contains_the_cached_knowledge_block():
     assert sum(1 for b in blocks if "cache_control" in b) <= 4
 
 
+# Rows that render ONLY into a lookup topic (get_creator_knowledge), never the always-sent block.
+LOOKUP_ONLY_TYPES: dict[str, str] = {
+    "delivery_example": "delivery_examples",
+    "microphone_selection_rule": "audio",
+    "mic_distance_rule": "audio",
+    "lav_placement_rule": "audio",
+    "audio_noise_rule": "audio",
+    "audio_diagnostic_rule": "audio",
+    "phone_audio_capability": "audio",
+    "audio_movement_scenario": "audio",
+    "movement_continuity_rule": "moving_between_spots",
+    "walking_configuration": "moving_between_spots",
+}
+
+
 def test_every_row_reaches_the_knowledge_text():
+    """Every row reaches the text the model can see: the always-sent block, or -- for the
+    lookup-only types -- its topic's LOOKUP_TEXT and NOT the always-sent block."""
     for r in load_knowledge():
         name = {
             "camera_angle": "name",
@@ -383,8 +414,22 @@ def test_every_row_reaches_the_knowledge_text():
             "lighting_look": "look",
             "mixed_light_rule": "mix",
             "sunset_to_night_step": "stage",
+            "microphone_selection_rule": "capture_route",
+            "mic_distance_rule": "mouth_to_mic",
+            "lav_placement_rule": "wardrobe",
+            "audio_noise_rule": "noise_source",
+            "audio_diagnostic_rule": "symptom",
+            "phone_audio_capability": "device_family",
+            "audio_movement_scenario": "id",
+            "movement_continuity_rule": "rule",
+            "walking_configuration": "configuration",
         }[r["data_type"]]
-        assert r[name] in CREATOR_KNOWLEDGE_TEXT, r[name]
+        topic = LOOKUP_ONLY_TYPES.get(r["data_type"])
+        if topic is None:
+            assert r[name] in CREATOR_KNOWLEDGE_TEXT, r[name]
+        else:
+            assert r[name] in LOOKUP_TEXT[topic], (topic, r[name])
+            assert r[name] not in CREATOR_KNOWLEDGE_TEXT, r[name]
 
 
 def test_brand_system_prompt_does_not_contain_the_knowledge_block():

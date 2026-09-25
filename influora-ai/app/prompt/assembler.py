@@ -43,7 +43,11 @@ from app.prompt.creator_persona import (
 )
 from app.prompt.persona import get_persona_block, stamp_prompt_version
 from app.prompt.untrusted import neutralize_angle_brackets, wrap_untrusted
-from app.tools.creator_schemas import get_creator_tool_schemas
+from app.tools.creator_schemas import (
+    CREATOR_LOCAL_TOOL_NAMES,
+    creator_local_tool_schemas,
+    get_creator_tool_schemas,
+)
 from app.tools.schemas import get_tool_schemas
 
 # Forbidden brand-context fields — defense in depth. Spring should never send
@@ -560,13 +564,21 @@ def build_block_a_creator(tool_names: list[str] | None = None) -> dict[str, Any]
     belongs in Block B (`build_block_b_creator`), which is keyed per creator.
     Two creators on different approval levels get different Block A cache
     entries, which is correct -- they are being offered different tools.
+
+    LOCAL tools (PROMPT_VERSION .13): `assemble_prompt` appends
+    `get_creator_knowledge` on every creator turn, so a warn-only turn is no
+    longer "no tools at all". It is named on the tools line like any offered
+    tool, and when it is the ONLY tool the line keeps saying warn-only, so the
+    model still knows it has nothing that reads or acts on the account.
     """
     names = [n for n in (tool_names or []) if isinstance(n, str) and n.strip()]
-    tools_line = (
-        "Available tools: " + ", ".join(names)
-        if names
-        else "Available tools: none (warn-only mode)"
-    )
+    account_names = [n for n in names if n not in CREATOR_LOCAL_TOOL_NAMES]
+    if not names:
+        tools_line = "Available tools: none (warn-only mode)"
+    elif not account_names:
+        tools_line = "Available tools: " + ", ".join(names) + " (warn-only mode: no account tools)"
+    else:
+        tools_line = "Available tools: " + ", ".join(names)
     text = (
         get_creator_persona_block()
         + "\n\n"
@@ -1044,7 +1056,17 @@ def assemble_prompt(brand_context: dict[str, Any], session_id: str | None = None
         # filter that would then match nothing but cost a confusing debug.
         enabled = creator.get("tools_enabled")
         enabled_names = [n for n in enabled if isinstance(n, str)] if isinstance(enabled, list) else []
-        tools: list[dict[str, Any]] = get_creator_tool_schemas(enabled_names)
+        # The knowledge lookup (`get_creator_knowledge`, PROMPT_VERSION .13)
+        # is appended on EVERY creator turn, warn-only included: it reads only
+        # Influora's own static knowledge file, no creator data, so no
+        # approval level has to grant it and `tools_enabled` does not gate
+        # it. Appended AFTER the filtered Spring-backed set so each approval
+        # level's Block A stays byte-stable. The brand branch below never gets
+        # it, so the loop's per-turn gate refuses it on a brand turn.
+        tools: list[dict[str, Any]] = [
+            *get_creator_tool_schemas(enabled_names),
+            *creator_local_tool_schemas(),
+        ]
         block_a = build_block_a_creator([t["name"] for t in tools])
         block_b = build_block_b_creator(creator)
         # Influora content knowledge (2026-09-21): a third cached system
