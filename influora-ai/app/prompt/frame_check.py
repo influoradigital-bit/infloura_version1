@@ -42,9 +42,11 @@ ignored. `parse_frame_check_reply` then
     shortened spelling cites only when it fits exactly ONE row), and that row's type fits
     the kind (`KIND_ROW_TYPES`). A phone_hardware row is never a step (the creator's phone
     only decides which parts of other rows they get); a principle, a definition or a note
-    written for a coach (a light angle, a portrait pattern, a camera height other than eye
-    level), with nothing for the creator to do in it, is not a step either;
-  - writes the step's text from the cited ROW's own advice (`render_step`), fitted to the
+    written for a coach with no creator-voice line (the Loop and Butterfly portrait
+    patterns, a camera height other than eye level), with nothing for the creator to do in
+    it, is not a step either;
+  - writes the step's text from the cited ROW (`render_step`): its creator-voice line in the
+    reply's language (`CREATOR_STEP_LINES`), or a settings row's own labelled parts, fitted to the
     creator's phone: a part naming a lens (at a factor the phone lacks), a manual control,
     OIS or HDR the phone lacks is removed, and a manual control or OIS the phone MAY have
     (no phone known, or a phone row that says "Check ...") survives only in one "If your
@@ -71,9 +73,8 @@ ignored. `parse_frame_check_reply` then
 The response shape is unchanged: {what_i_see, steps: [{kind, text, note}], ok, cant_tell,
 ask, fixes, settings} (Java passes the bytes through and the app reads these keys).
 
-Known limits (2026-09-25): a row's advice is written in English, so a Hinglish ("hi")
-reply still gives the step's advice in English (only the templated leads and the fixed
-lines are Hinglish); many rows still read as terse coach notes rather than a coach talking;
+Known limits (2026-09-25): a settings step's values stay English in a Hinglish ("hi")
+reply (its labels and every other step are Hinglish);
 an fps value is not checked against the phone's max_fps; the model can still pick a wrong
 scene value, or a row that fits less well than another; and one photo cannot show motion or
 sound (that is what cant_tell is for).
@@ -343,7 +344,7 @@ def build_system_prompt() -> str:
         "or settings. note is the exact name of the knowledge entry, copied as written "
         "before the first colon on its line (a standing rule: its first sentence). One step "
         "per entry. A step is removed if its entry does not fit its kind or only explains "
-        "(a principle, a definition, a light-angle or portrait-pattern note, a camera height "
+        "(a principle, a definition, the Loop or Butterfly portrait pattern, a camera height "
         "other than Eye-level); phone notes are never a step. If no entry fits, leave the "
         "step out.\n"
         "- side: for move_you and move_light, where the light should end up (your_left or "
@@ -644,20 +645,32 @@ CITABLE_INDEX: dict[str, list[dict[str, Any]]] = _build_citable_index(CREATOR_KN
 
 
 # The label the app shows under a step, for a row whose own name would read as a remark on
-# the person in the photo ("huge nose, tiny ears") or speaks of "the creator" / "the subject"
-# in the third person. Keyed by the row's exact name; a test pins that each key is a row.
+# the person in the photo ("huge nose, tiny ears"), speaks of "the creator" / "the subject"
+# in the third person, or is coach shorthand (a light angle "Near camera axis, 0-15 deg", a
+# lighting pattern "Rembrandt-style"). Keyed by the row's exact name; a test pins that each
+# key is a row.
 NOTE_LABELS: dict[str, str] = {
     "Distorted facial features (huge nose, tiny ears)": "Phone too close to your face",
     "Black, silhouetted face": "Bright window behind you",
     "Backlit subject (bright shop or sunset behind them)": "Bright shop or sunset behind you",
     "Creator faces window; phone between creator and window": "Facing the window, phone in between",
-    "Creator is 30-45 deg to window": "Window at 30-45 deg to you",
-    "Creator is 90 deg to window": "Window at 90 deg to you",
+    "Creator is 30-45 deg to window": "Window at 30-45 degrees to you",
+    "Creator is 90 deg to window": "Window at 90 degrees to you",
     "Window behind creator toward phone": "Window behind you",
     "Window beside creator": "Window beside you",
     "Window above creator": "Window above you",
     "Bright object merging with head": "Bright object right behind you",
     "Subject blends into background": "You blend into the background",
+    "Behind, ~120-180 deg (backlight)": "Light behind you",
+    "Below face": "Light from below",
+    "Directly overhead": "Light straight above you",
+    "Near camera axis, 0-15 deg": "Main light in front of you",
+    "Side, near 90 deg": "Main light at your side",
+    "Slight side, ~15-30 deg": "Main light slightly to the side",
+    "Three-quarter side, ~30-60 deg": "Main light angled to the side",
+    "Backlight/rim": "Light behind you, off to the side",
+    "Rembrandt-style": "Main light high and to the side",
+    "Split": "Half light, half shadow",
 }
 
 

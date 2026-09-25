@@ -371,7 +371,7 @@ def test_every_step_citing_only_unknown_notes_and_no_ask_is_the_fallback():
 
 def test_note_match_is_case_insensitive_and_trimmed_and_returns_the_rows_own_label():
     out = _parse([_step(" MOVE_YOU ", "  creator IS 30-45 deg to WINDOW. ")])
-    assert out["steps"][0]["note"] == WINDOW_LABEL == "Window at 30-45 deg to you"
+    assert out["steps"][0]["note"] == WINDOW_LABEL == "Window at 30-45 degrees to you"
     assert out["steps"][0]["kind"] == "move_you"
 
 
@@ -493,6 +493,33 @@ def test_no_note_the_app_shows_remarks_on_the_face_or_body():
     assert not _BODY_WORDS.search(json.dumps(out))
 
 
+# Coach shorthand a phone creator won't read: "deg", "~", light-angle and lighting-pattern
+# names, and the creator in the third person.
+_NOTE_JARGON = re.compile(
+    r"~|\bdeg\b|\b(?:axis|rim|backlight|rembrandt|key\s+light|fill\s+light|negative\s+fill"
+    r"|practical|creator|subject)\b",
+    re.IGNORECASE,
+)
+
+
+def test_every_step_note_is_in_plain_words():
+    """Review 2026-09-25: light-angle and lighting-pattern rows became steps, and their note
+    was the coach's own name ("Near camera axis, 0-15 deg", "Rembrandt-style")."""
+    for coach_name in ("Near camera axis, 0-15 deg", "Rembrandt-style", "Behind, ~120-180 deg (backlight)"):
+        assert _NOTE_JARGON.search(coach_name)  # not vacuous
+    checked = 0
+    for r in _step_rows():
+        for kind in _kinds_for(r["data_type"]):
+            if render_step(kind, r, PRO, "en", "none") or render_step(kind, r, None, "en", "none"):
+                note = display_note(r)
+                assert not _NOTE_JARGON.search(note), (r["data_type"], note)
+                assert not _BODY_WORDS.search(note), (r["data_type"], note)
+                checked += 1
+                break
+    assert checked > 80
+    assert display_note(_row("Near camera axis, 0-15 deg")) == "Main light in front of you"
+
+
 def test_every_note_label_names_a_real_row():
     names = {r[NAME_FIELD[r["data_type"]]] for r in _step_rows()}
     for name in NOTE_LABELS:
@@ -536,14 +563,24 @@ def test_a_lens_the_phone_lacks_never_reaches_the_step():
 def test_with_no_phone_known_manual_parts_come_only_as_one_conditional_sentence():
     out = _parse([_step("settings", FLICKER)])
     text = out["steps"][0]["text"]
-    assert "If your camera app has a Pro video mode: " in text
-    assert text.count("If your camera app has a Pro video mode") == 1
+    assert "If your camera app has a Pro video mode, indoors under home lights use 25fps at 1/50s" in text
+    assert text.count("Pro video mode") == 1
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        if phone_features_named(sentence):
+            assert sentence.startswith("If your camera app has a Pro video mode"), sentence
     out = _parse([_step("settings", FLICKER)], lang="hi")
-    assert "Agar aapke camera app mein Pro video mode hai: " in out["steps"][0]["text"]
-    # A phone with manual video gets the row's own advice, unconditioned.
+    hi = out["steps"][0]["text"]
+    assert "Agar aapke camera app mein Pro video mode hai, toh ghar ki lights mein 25fps" in hi
+    assert hi.count("Pro video mode") == 1
+    # A phone with manual video gets the whole line, "25fps at 1/50s" included.
     out = _parse([_step("settings", FLICKER)], phone_row=PRO)
-    assert "If your camera app has" not in out["steps"][0]["text"]
     assert "25fps at 1/50s" in out["steps"][0]["text"]
+    # An auto-only phone gets only the auto advice.
+    out = _parse([_step("settings", FLICKER)], phone_row=resolve_phone("OPPO A78 5G"))
+    assert out["steps"][0]["text"] == (
+        "If dark bands roll across the screen and your camera is auto only, switch off the "
+        "flickering light or use daylight."
+    )
 
 
 def test_a_step_with_nothing_left_for_the_phone_is_dropped(monkeypatch):

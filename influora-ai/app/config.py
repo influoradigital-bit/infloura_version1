@@ -76,7 +76,10 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.25.2"
+PROMPT_VERSION = "meera-2026.09.25.3"
+# ^ .25.3 = photo-check steps now use creator-voice lines, en + Hinglish (knowledge/creator_step_lines.jsonl via frame_check_render.py; chat prompts unchanged).
+#
+# Previously (.25.2):
 # ^ .25.2 = photo check: the model picks ids, code writes the text (frame_check.py; creator and BRAND chat prompts unchanged).
 #
 # Previously (.25.1):

@@ -280,7 +280,9 @@ def test_version_note_keeps_the_previously_chain():
 
     source = Path(config_module.__file__).read_text(encoding="utf-8")
     note = source[source.index('PROMPT_VERSION = "') : source.index("# Previously (.12):")]
-    assert 'PROMPT_VERSION = "meera-2026.09.25.2"' in note
+    assert 'PROMPT_VERSION = "meera-2026.09.25.3"' in note
+    assert "photo-check steps now use creator-voice lines, en + Hinglish" in note
+    assert "# Previously (.25.2):" in note
     assert "photo check: the model picks ids, code writes the text" in note
     assert "# Previously (.25.1):" in note
     assert "Plan my shoot" in note

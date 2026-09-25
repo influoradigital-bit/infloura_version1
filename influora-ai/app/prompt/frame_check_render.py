@@ -12,10 +12,13 @@ response is written here:
     fixed clause when someone else is in the frame, and one fixed line per unusable-photo
     reason. Nothing about the person's looks, body, clothes, age or gender exists in any
     template, so nothing of the sort can be said;
-  - each step (`render_step`): the cited knowledge row's OWN advice field (a failure case's
-    fix, a lighting rule's instruction, a settings row's lens / distance / framing / fps /
-    shutter / ISO / white balance / EV / stabilization ...), with a templated side lead for
-    move_you and move_light ("Turn so the light is on your left.");
+  - each step (`render_step`): the cited row's creator-voice line in the reply's language
+    (`CREATOR_STEP_LINES`, read from `knowledge/creator_step_lines.jsonl`: one English and
+    one Hinglish line per row, said to "you", stating only numbers the row's own advice
+    states); a settings row's labelled parts (lens / distance / framing / fps / shutter /
+    ISO / white balance / EV / stabilization ..., the labels in the reply's language, the
+    values as the row writes them); a row with no line, its OWN advice field. With a
+    templated side lead for move_you and move_light ("Turn so the light is on your left.");
   - what is already working and what one photo cannot show (`render_lines`): fixed lines
     per id (`OK_LINES`, `CANT_TELL_LINES`), English and Hinglish (Latin script).
 
@@ -39,22 +42,24 @@ your camera app has a Pro video mode: ..." or "If your phone has optical stabili
 (OIS): ...". A sentence that already says "if your phone ..." stays as it is, and a lens or
 HDR sentence with no condition of its own is removed for an unknown phone (it is not assumed
 to have that lens). A standing rule written to the coach about "the creator" (how Meera
-advises) is never a step; row text written to a coach about "the subject" or "creator" is
-said to the creator ("Position yourself ...", word swaps only).
+advises) is never a step. The lines are written to the creator; the one word swap left
+(`_CREATOR_VOICE`) keeps a settings row's aside about the nose out of its step.
 
 A side lead ("Turn so the light is on your left.") opens only a row where the light sits to
 one side (`_SIDE_ROWS`: a window beside the creator for move_you, a movable main light for
 move_light); every other row's own advice would contradict it.
 
-Known limits: a sentence naming a control is removed on a phone without it even when it is
-the auto-only advice (the WB standing rule's "On an auto-only phone ... auto white balance"
-sentence); an fps value is not checked against the phone's max_fps; many rows are still
-terse coach notes rather than a coach talking ("Keep window behind phone or outside frame").
+Known limits: a sentence naming a control is removed on a phone without it even when it
+only explains ("Auto white balance can shift colours mid-video ..." on an auto-only phone);
+an fps value is not checked against the phone's max_fps; a sentence is cut only at the
+English separators above, so a Hinglish sentence joined by "aur" / "ya" that names a
+missing control is removed whole; a settings row's values stay English under Hinglish
+labels.
 
 A step keeps whole sentences only, at most `MAX_STEP_CHARS` long; the first kept sentence
-is always whole. Row advice stays English in a Hinglish reply (known limit); the side lead
-and the conditional prefix are templated per language and carry no number, so every number
-in a step is the cited row's own.
+is always whole. The side lead and the conditional prefix are templated per language and
+carry no number, and a line states only numbers its row's advice states (the tests pin
+every line), so every number in a step is the cited row's own.
 
 The phone-feature helpers live here (not in frame_check.py) so frame_check can import this
 module without a cycle; frame_check re-exports them under the same names.
@@ -62,8 +67,12 @@ module without a cycle; frame_check re-exports them under the same names.
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from typing import Any
+
+from app.prompt.content_knowledge import CREATOR_KNOWLEDGE_ROWS, NAME_FIELD
 
 LANGS: tuple[str, ...] = ("en", "hi")
 DEFAULT_LANG = "en"
@@ -566,23 +575,120 @@ _SETTINGS_PARTS: dict[str, tuple[tuple[str, str], ...]] = {
         ("stabilization", "Stabilization"),
     ),
 }
+# A settings label in a Hinglish reply; a label not here (Lens, FPS, Shutter, ISO, White
+# balance, EV) is the same word in both.
+_SETTINGS_LABEL_HI: dict[str, str] = {
+    "Distance": "Doori",
+    "Framing": "Frame",
+    "Extra light": "Aur light",
+    "Stabilization": "Phone steady",
+}
 # camera_height_rule: only a height that IS the advice ("Phone at eye-level: ..."). The other
 # rows describe what a deliberate choice looks like ("Low angle: ... increases perceived
 # scale"), three of them by naming parts of the face ("sees more chin/nostril underside") --
 # under the creator's own photo that reads as a remark on them, not as a step.
 _CAMERA_HEIGHT_STEPS: frozenset[str] = frozenset({"eye-level"})
 
+# Row types whose own fields are notes for a coach ("Key roughly 30-45 deg horizontally",
+# "Phone placement: near face-forward axis ..."): a step is written ONLY from the row's
+# creator-voice line, and a row of these types without one (Loop and Butterfly, which can't
+# be said without naming parts of the face) is never a step.
+_LINE_ONLY_TYPES: frozenset[str] = frozenset({"lighting_angle_rule", "portrait_lighting_pattern"})
+
 # The row types render_step writes an instruction for. Left out, with the reason:
 #   phone_hardware -- the creator's phone only gates other rows' advice;
 #   physics_principle -- a definition of how light behaves, not a thing to do;
 #   coordinate_system_note, lighting_workflow -- rules for how Meera words and orders her
-#     advice, not a step for the creator;
-#   lighting_angle_rule, portrait_lighting_pattern -- notes written for a coach ("Key roughly
-#     30-45 deg horizontally", "Phone placement: near face-forward axis ...") with no
-#     creator-voice wording yet; lighting_look gives the same set-ups in the creator's words.
+#     advice, not a step for the creator.
 STEP_TEXT_TYPES: frozenset[str] = frozenset(
-    set(_ADVICE_FIELD) | set(_SETTINGS_PARTS) | {"camera_height_rule"}
+    set(_ADVICE_FIELD) | set(_SETTINGS_PARTS) | {"camera_height_rule"} | _LINE_ONLY_TYPES
 )
+# The row types a creator-voice line may be written for: every sentence-style type (a
+# settings row stays its labelled parts).
+_LINE_TYPES: frozenset[str] = STEP_TEXT_TYPES - frozenset(_SETTINGS_PARTS)
+
+# --- creator-voice lines ---------------------------------------------------------------------
+
+CREATOR_STEP_LINES_PATH = Path(__file__).parent / "knowledge" / "creator_step_lines.jsonl"
+# The most a line may be in either language; the step cap (`MAX_STEP_CHARS`) leaves room
+# for a side lead.
+LINE_MAX_CHARS = 300
+
+
+class CreatorStepLinesError(ValueError):
+    """The creator-voice lines file is malformed. Raised at import, never at request time."""
+
+
+def load_creator_step_lines(
+    path: Path = CREATOR_STEP_LINES_PATH, rows: list[dict[str, Any]] | None = None
+) -> dict[tuple[str, str], dict[str, str]]:
+    """(data_type, row name) -> {"en", "hi"}: one step line per row, said to the creator.
+
+    Each line of the file is {"data_type", "name", "en", "hi"} with `name` the row's own
+    name (`NAME_FIELD`), exactly. Raises `CreatorStepLinesError` on the first line that is
+    not such an object, whose type is not a sentence-style step type (`_LINE_TYPES`), whose
+    (data_type, name) does not name exactly ONE row of `rows` (default: the knowledge rows),
+    that repeats a key, or whose en or hi is empty or over `LINE_MAX_CHARS`; and on an empty
+    file."""
+    rows = CREATOR_KNOWLEDGE_ROWS if rows is None else rows
+    row_count: dict[tuple[str, str], int] = {}
+    for r in rows:
+        dt = r.get("data_type")
+        name = r.get(NAME_FIELD.get(dt, ""))
+        if isinstance(dt, str) and isinstance(name, str):
+            key = (dt, name.strip())
+            row_count[key] = row_count.get(key, 0) + 1
+    lines: dict[tuple[str, str], dict[str, str]] = {}
+    with path.open(encoding="utf-8") as fh:
+        for lineno, raw in enumerate(fh, start=1):
+            if not raw.strip():
+                continue
+            where = f"{path.name} line {lineno}"
+            try:
+                obj = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise CreatorStepLinesError(f"{where}: invalid JSON ({exc.msg})") from exc
+            if not isinstance(obj, dict) or set(obj) != {"data_type", "name", *LANGS}:
+                raise CreatorStepLinesError(f"{where}: not a {{data_type, name, en, hi}} object")
+            dt, name = obj["data_type"], obj["name"]
+            if not isinstance(dt, str) or not isinstance(name, str):
+                raise CreatorStepLinesError(f"{where}: data_type and name must be text")
+            key = (dt, name.strip())
+            if dt not in _LINE_TYPES:
+                raise CreatorStepLinesError(f"{where}: {dt!r} is not a type a step line is written for")
+            found = row_count.get(key, 0)
+            if found != 1:
+                raise CreatorStepLinesError(f"{where}: {key} names {found} rows, not exactly one")
+            if key in lines:
+                raise CreatorStepLinesError(f"{where}: {key} has a line already")
+            for lang in LANGS:
+                text = obj[lang]
+                if not isinstance(text, str) or not text.strip():
+                    raise CreatorStepLinesError(f"{where}: {key} {lang} is empty")
+                if len(text) > LINE_MAX_CHARS:
+                    raise CreatorStepLinesError(
+                        f"{where}: {key} {lang} is {len(text)} chars, over {LINE_MAX_CHARS}"
+                    )
+            lines[key] = {lang: _one_line(obj[lang]) for lang in LANGS}
+    if not lines:
+        raise CreatorStepLinesError(f"{path.name}: no lines")
+    return lines
+
+
+def _one_line(text: str) -> str:
+    return " ".join(text.split())
+
+
+CREATOR_STEP_LINES: dict[tuple[str, str], dict[str, str]] = load_creator_step_lines()
+
+
+def _line_for(row: dict[str, Any]) -> dict[str, str] | None:
+    """The row's creator-voice line ({"en", "hi"}), or None."""
+    dt = row.get("data_type")
+    name = row.get(NAME_FIELD.get(dt, "")) if isinstance(dt, str) else None
+    if not isinstance(name, str):
+        return None
+    return CREATOR_STEP_LINES.get((dt, name.strip()))
 
 # The side lead for kinds where the side matters; no number in any of them.
 _SIDE_LEADS: dict[str, dict[str, dict[str, str]]] = {
@@ -650,25 +756,20 @@ _PRO_PHRASE_RE = re.compile(
 _SENTENCE_SEPS: tuple[str, ...] = ("; ", ", and ", ", or ")
 # The "else" branch of an if-your-phone-allows-it sentence. When the branch before it was
 # removed (the phone lacks the control), the else branch IS the advice: its lead-in goes
-# ("If it does not, cut down the competing light colours" -> "Cut down ...").
-_ELSE_LEAD_RE = re.compile(r"^(?:if it does not|if it doesn't|if not|otherwise)\b,?\s*", re.IGNORECASE)
+# ("If your phone can't, cut down the clashing light colours" -> "Cut down ...";
+# "Agar phone mein yeh nahi hai, toh alag-alag colour ..." -> "Alag-alag colour ...").
+_ELSE_LEAD_RE = re.compile(
+    r"^(?:(?:if it does not|if it doesn't|if not|otherwise|if your phone can(?:not|'t))\b,?\s*"
+    r"|(?:agar (?:aapke )?phone mein yeh nahi hai|warna|nahi toh?)\b,?\s*(?:toh\s+)?)",
+    re.IGNORECASE,
+)
 _SETTINGS_SEPS: tuple[str, ...] = (", or ",)
-# Rows written to a coach about "the subject" / "creator", said to the creator instead. Word
-# swaps only: no number is added or changed.
+# Word swaps on the text of a row WITHOUT a creator-voice line (a line is used as written).
+# Every sentence-style row that is a step has a line, so only a settings row's own text is
+# left: its aside naming the nose goes. No number is added or changed.
 _CREATOR_VOICE: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"\bMove creator/camera\b"), "Move yourself or the phone"),
-    (re.compile(r"\bcamera or creator\b"), "the phone or yourself"),
-    (re.compile(r"\b(Position|Reposition|Move|move|rotate) (?:the subject|creator)\b"), r"\1 yourself"),
-    (re.compile(r"\bcreator turns\b"), "you turn"),
-    (re.compile(r"\bthe subject\b"), "you"),
-    (re.compile(r"\bCreator\b"), "You"),
-    (re.compile(r"\bcreator\b"), "you"),
     (re.compile(r",\s*like your nose,"), ""),  # "the nearest features, like your nose, look bigger"
 )
-
-
-def _one_line(text: str) -> str:
-    return " ".join(text.split())
 
 
 def _text(row: dict[str, Any], field: str) -> str:
@@ -928,12 +1029,12 @@ def _add(into: dict[str, list[str]], more: dict[str, list[str]], shape: Any) -> 
 
 
 def _render_sentences(
-    row: dict[str, Any], phone_row: dict[str, Any] | None
+    advice: str, phone_row: dict[str, Any] | None
 ) -> tuple[list[str], dict[str, list[str]]]:
     plain: list[str] = []
     conditional: dict[str, list[str]] = {}
     before_dropped = False
-    for sentence in _split_sentences(_sentence_advice(row)):
+    for sentence in _split_sentences(advice):
         if before_dropped and _ELSE_LEAD_RE.match(sentence):
             sentence = _upper_first(_ELSE_LEAD_RE.sub("", sentence))
         kept, more = _fit(_narrow_factors(sentence, phone_row), phone_row)
@@ -963,12 +1064,14 @@ def _lens_value(value: str, phone_row: dict[str, Any] | None) -> tuple[str, str 
 
 
 def _render_settings(
-    row: dict[str, Any], phone_row: dict[str, Any] | None
+    row: dict[str, Any], phone_row: dict[str, Any] | None, lang: str
 ) -> tuple[list[str], dict[str, list[str]]]:
     plain: list[str] = []
     conditional: dict[str, list[str]] = {}
     lacking: set[str] = set()
     for field, label in _SETTINGS_PARTS[row["data_type"]]:
+        if lang == "hi":
+            label = _SETTINGS_LABEL_HI.get(label, label)
         value = _creator_voice(_text(row, field)).rstrip(".").strip()
         if not value:
             continue
@@ -1000,11 +1103,13 @@ def render_step(
     lang: str,
     side: str = "none",
 ) -> str | None:
-    """One step's text, written from the cited row's own advice, fitted to the creator's
-    phone (see the module docstring). None when the kind is unknown, the row's type has no
-    instruction (`STEP_TEXT_TYPES`), the row is a coach-facing standing rule, the row has no
-    advice (the "good background" row has no fix; a camera height other than eye level), or
-    nothing fits the phone. `side` opens the step only for a row in `_SIDE_ROWS`."""
+    """One step's text, fitted to the creator's phone (see the module docstring): a
+    settings row's labelled parts; any other row's creator-voice line in `lang`
+    (`CREATOR_STEP_LINES`, used as written); a row with no line, its own advice field. None
+    when the kind is unknown, the row's type has no instruction (`STEP_TEXT_TYPES`), the row
+    is a coach-facing standing rule, the row has no advice (the "good background" row has no
+    fix; a camera height other than eye level; a light-angle or portrait-pattern row with no
+    line), or nothing fits the phone. `side` opens the step only for a row in `_SIDE_ROWS`."""
     if kind not in STEP_KINDS or not isinstance(row, dict):
         return None
     if row.get("data_type") not in STEP_TEXT_TYPES or _coach_facing(row):
@@ -1012,15 +1117,26 @@ def render_step(
     lang = _lang(lang)
     lead = _side_lead(kind, row, side, lang)
     if row["data_type"] in _SETTINGS_PARTS:
-        plain, conditional = _render_settings(row, phone_row)
+        plain, conditional = _render_settings(row, phone_row, lang)
     else:
-        plain, conditional = _render_sentences(row, phone_row)
+        line = _line_for(row)
+        if line is not None:
+            advice = line[lang]
+        elif row["data_type"] in _LINE_ONLY_TYPES:
+            return None
+        else:
+            advice = _sentence_advice(row)
+        plain, conditional = _render_sentences(advice, phone_row)
     return _assemble(lead, plain, conditional, lang)
 
 
 __all__ = [
     "CANT_TELL_LINES",
+    "CREATOR_STEP_LINES",
+    "CREATOR_STEP_LINES_PATH",
+    "CreatorStepLinesError",
     "LANGS",
+    "LINE_MAX_CHARS",
     "MAX_STEP_CHARS",
     "OIS_PREFIX",
     "OK_LINES",
@@ -1029,6 +1145,7 @@ __all__ = [
     "STEP_KINDS",
     "STEP_TEXT_TYPES",
     "USABLE_UNCLEAR",
+    "load_creator_step_lines",
     "normalize_lang",
     "normalize_scene",
     "phone_features_named",

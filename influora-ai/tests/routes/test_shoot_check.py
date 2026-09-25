@@ -515,7 +515,8 @@ async def test_happy_path_returns_code_written_steps_and_the_legacy_lists():
     assert result["fixes"][0].startswith("Turn so the light is on your left. ")
     # No saved phone: the flicker row's manual settings come as one conditional sentence.
     assert result["settings"] == [_rendered("settings", FLICKER_ENTRY)]
-    assert "If your camera app has a Pro video mode: " in result["settings"][0]
+    assert "If your camera app has a Pro video mode, " in result["settings"][0]
+    assert result["settings"][0].count("Pro video mode") == 1
     assert result["ok"] == [OK_LINES["background_clean"]["en"]]
     assert result["cant_tell"] == [CANT_TELL_LINES["light_outside_frame"]["en"]]
     assert result["ask"] is None

@@ -16,11 +16,18 @@ knowledge rows and fixed templates; the model only picks ids and enum values. Wh
     other fields varied, in both languages) is description-only, non-empty, and says nothing
     about the person ("face" only as "light on your face");
 (d) unknown enum values, unknown ids and unknown kinds are dropped, never rendered -- a
-    string the model writes never reaches the output.
+    string the model writes never reaches the output;
+(e) the creator-voice lines (`knowledge/creator_step_lines.jsonl`): every line passes the
+    writers' checks (numbers grounded in its row's advice, the same numbers and phone features
+    in en and hi, no growth / person / third-person words, at most 300 chars); a step IS its
+    row's line in the reply's language (a hi step holds none of the row's English); the file
+    fails loud at import on a bad line; every sentence-style step row has a line or a listed
+    reason (`ROWS_WITHOUT_A_LINE`).
 """
 
 from __future__ import annotations
 
+import json
 import random
 import re
 from typing import Any
@@ -32,12 +39,15 @@ from app.prompt import frame_check_render as render
 from app.prompt.content_knowledge import CREATOR_KNOWLEDGE_ROWS, NAME_FIELD
 from app.prompt.frame_check_render import (
     CANT_TELL_LINES,
+    CREATOR_STEP_LINES,
     LANGS,
     MAX_STEP_CHARS,
     OK_LINES,
     PRO_MODE_PREFIX,
     SCENE_VALUES,
     STEP_TEXT_TYPES,
+    CreatorStepLinesError,
+    load_creator_step_lines,
     normalize_lang,
     normalize_scene,
     render_lines,
@@ -66,8 +76,6 @@ NOT_RENDERED: dict[str, str] = {
     "physics_principle": "a definition of how light behaves, with no instruction field",
     "coordinate_system_note": "a rule for how Meera words left and right, not a creator step",
     "lighting_workflow": "a rule for the order Meera gives fixes in, not a creator step",
-    "lighting_angle_rule": "a coach's note ('Phone placement: near face-forward axis'), no creator voice yet",
-    "portrait_lighting_pattern": "a coach's note ('Key roughly 30-45 deg horizontally'); lighting_look says it plainly",
 }
 
 # Rows of a rendered type that still render nothing, and why.
@@ -83,6 +91,9 @@ EMPTY_ROWS: dict[str, str] = {
     "Slightly below eyes": "camera height that only describes an effect",
     "High angle": "camera height that only describes an effect",
     "Low angle": "camera height that only describes an effect",
+    # portrait patterns with no creator-voice line (see ROWS_WITHOUT_A_LINE).
+    "Loop": "portrait pattern with no creator-voice line",
+    "Butterfly": "portrait pattern with no creator-voice line",
 }
 
 PERSON_WORDS_RE = re.compile(
@@ -243,7 +254,8 @@ def test_raw_row_advice_fails_the_gates_that_the_rendered_step_passes() -> None:
     # The first sentence stays whole; the side hint yields.
     assert render._assemble(lead, [serious["setup"]], {}, "en") == serious["setup"]
     text = render_step("move_light", serious, None, "en", "your_left")
-    assert text == serious["setup"] and len(text) <= MAX_STEP_CHARS
+    assert text == CREATOR_STEP_LINES[("lighting_look", "Serious / educational")]["en"]
+    assert len(text) <= MAX_STEP_CHARS
 
 
 def test_no_phone_puts_manual_controls_in_one_pro_mode_sentence() -> None:
@@ -290,11 +302,11 @@ def test_a_lens_factor_must_be_the_phones_own() -> None:
     assert "(3.5x)" in render_step("move_you", bad_bg, RENO, "en")
     assert "(3x)" in render_step("move_you", bad_bg, PRO, "en")
     flip = render_step("move_you", bad_bg, FLIP, "en")
-    assert "switch to the telephoto to narrow the view" in flip and "3x" not in flip
-    talking = _row("Talking-head (educational/vlog)")  # "or the 3x telephoto at 2-2.5m if the phone has one"
+    assert "If your phone has a telephoto, switch to it to narrow the view." in flip and "3x" not in flip
+    talking = _row("Talking-head (educational/vlog)")  # "If your phone has a 3x telephoto ... 2-2.5m"
     for phone in (FLIP, RENO):
         text = render_step("move_phone", talking, phone, "en")
-        assert "1x main at about 0.8-1m." in text and "3x" not in text, text
+        assert "keep the phone about 0.8-1m away." in text and "3x" not in text, text
     assert "3x telephoto" in render_step("move_phone", talking, PRO, "en")
 
 
@@ -308,15 +320,19 @@ def test_ois_and_hdr_are_checked_against_the_phone() -> None:
     outdoors = render_step("settings", _row("Talking Head (Outdoors, daylight)"), A78, "en")
     assert "Stabilization: Tripod (stabilization off)." in outdoors  # the OIS alternative is cut
     jitter = _row("Digital crop jitter")
-    assert render_step("move_phone", jitter, A78, "en") is None  # EIS off with no OIS is wrong advice
-    assert render_step("move_phone", jitter, F25, "en").startswith("Disable 'Ultra Steady'/EIS")
-    no_phone = render_step("move_phone", jitter, None, "en")
-    assert no_phone.startswith(render.OIS_PREFIX["en"]), no_phone
-    assert render_step("move_phone", jitter, None, "hi").startswith(render.OIS_PREFIX["hi"])
+    for lang in LANGS:  # EIS off with no OIS is wrong advice
+        assert render_step("move_phone", jitter, A78, lang) is None
+    assert "turn off 'Ultra Steady' (EIS)" in render_step("move_phone", jitter, F25, "en")
+    # With no phone known, EIS off only ever rides in the "if your phone has OIS" sentence.
+    assert render_step("move_phone", jitter, None, "en").startswith("If your phone has OIS and ")
+    assert render_step("move_phone", jitter, None, "hi").startswith("Agar aapke phone mein OIS hai ")
     backlit = _row("Backlit subject")
-    for phone in (A78, F25, FLIP, None):
+    for phone in (A78, F25, FLIP):
         text = render_step("move_light", backlit, phone, "en")
-        assert "HDR" not in text and "exposure compensation (+EV)" in text, text
+        assert "HDR" not in text and "push brightness up (+EV)" in text, text
+    # No phone known: HDR only in the line's own "if your phone has" sentence.
+    assert render_step("move_light", backlit, None, "en").endswith(
+        "If your phone has an HDR video mode, use it to balance the strong contrast.")
     assert "HDR video mode" in render_step("move_light", backlit, RENO, "en")
 
 
@@ -339,27 +355,51 @@ def test_with_no_phone_only_the_control_clause_is_conditional() -> None:
     Pro-mode sentence, so an auto-only creator read it as not for them."""
     colours = render_step("move_light", _row("Lights of different colours"), None, "en")
     assert colours == (
-        "Pick one light as your face light, switch the others off or keep them only in the "
-        "background. If your camera app has a Pro video mode: set white balance for that face light."
+        "Pick the light you want on your face, and switch the others off or keep them only in the "
+        "background. If your camera app has a Pro video mode, set white balance for that face light."
+    )
+    assert render_step("move_light", _row("Lights of different colours"), A78, "en") == (
+        "Pick the light you want on your face, and switch the others off or keep them only in the "
+        "background."
     )
     choppy = render_step("move_phone", _row("Choppy, laggy video in a dim room"), None, "hi")
-    assert choppy.startswith("Add a physical light source. " + PRO_MODE_PREFIX["hi"] + "lock FPS manually")
+    assert choppy.startswith("Room mein asli light add karo. ")
+    assert "Agar aapke camera app mein Pro video mode hai, toh fps khud lock karo" in choppy
     shade = render_step("move_light", _row("Shade under trees"), None, "en")
     assert "face open sky or a light-coloured wall." in shade
-    assert shade.endswith(PRO_MODE_PREFIX["en"] + "lock white balance.")
+    assert shade.endswith("If your camera app has a Pro video mode, lock white balance.")
     flicker = render_step("settings", _row("India"), None, "en")
-    assert PRO_MODE_PREFIX["en"] + "indoors under mains lights, 25fps at 1/50s" in flicker
-    assert "Pro/manual mode" not in flicker and "mode: indoors under mains lights:" not in flicker
+    assert "If your camera app has a Pro video mode, indoors under home lights use 25fps at 1/50s" in flicker
+    assert flicker.count("Pro video mode") == 1 and "Pro/manual mode" not in flicker
 
 
 def test_the_else_branch_is_the_advice_when_the_if_branch_is_cut() -> None:
     awb = _row("Phone auto white balance shifts during the take")
     assert render_step("move_light", awb, A78, "en") == (
-        "Cut down the competing light colours and do not walk through areas lit by different "
+        "Cut down the clashing light colours, and don't walk through areas lit by different "
         "colours during the shot."
     )
-    lamp = render_step("move_light", _row("Window daylight + warm room lamp"), A78, "en")
-    assert "Otherwise" not in lamp and lamp.count("Switch the lamp off") == 1
+    assert render_step("move_light", awb, A78, "hi").startswith("Alag-alag colour ki lights kam karo, ")
+    assert render_step("move_light", awb, PRO, "en").startswith("Lock or set white balance")
+    # Review 2026-09-25: on a phone that can't lock white balance, the en step once kept "the
+    # lamp behind you can stay warm" (cut loose from its white-balance condition at ", and ")
+    # while hi dropped the whole sentence. Both now keep only the row's own two options.
+    lamp = _row("Window daylight + warm room lamp")
+    assert render_step("move_light", lamp, A78, "en") == (
+        "Use the window as your face light. Switch the lamp off, or move it behind you as a warm "
+        "lamp in the background."
+    )
+    assert render_step("move_light", lamp, A78, "hi") == (
+        "Window ko apni face light banao. Lamp off karo, ya use apne peeche background mein warm "
+        "lamp ki tarah rakho."
+    )
+    for phone in (A78, F25):
+        for lang in LANGS:
+            text = render_step("move_light", lamp, phone, lang)
+            assert re.search(r"switch the lamp off|lamp off karo", text, re.IGNORECASE), text
+            assert not re.search(r"stay warm|warm rakho|warm reh|can't|yeh nahi hai", text, re.IGNORECASE), text
+    assert render_step("move_light", lamp, PRO, "en").endswith("If your phone can't, switch the lamp off.")
+    assert render_step("move_light", lamp, PRO, "hi").endswith("Agar phone mein yeh nahi hai, toh lamp off karo.")
 
 
 def test_coach_notes_are_said_to_the_creator() -> None:
@@ -368,7 +408,7 @@ def test_coach_notes_are_said_to_the_creator() -> None:
         text = render_step(_kinds_for(_row(name))[0], _row(name), PRO, "en")
         assert not re.search(r"\b(?:creator|the subject)\b", text, re.IGNORECASE), (name, text)
     assert render_step("move_you", _row("Messy room/clutter"), None, "en").startswith(
-        "Move yourself or the phone so only a clean zone is visible")
+        "Move yourself or the phone until only a clean part of the room shows behind you")
     vlog = render_step("settings", _row("Walking Street Vlog"), A78, "en")
     assert "nose" not in vlog and "the nearest features look bigger" in vlog
 
@@ -379,22 +419,27 @@ def test_an_aside_or_clause_naming_a_missing_lens_is_cut_and_the_rest_kept() -> 
     assert "0.5x" in render_step("settings", vlog, F25, "en")  # F25 has the ultrawide
     wide_face = _row("Distorted facial features")
     assert render_step("move_phone", wide_face, A78, "en") == (
-        "Move the phone farther than arm's length and reframe."
+        "The phone is too close to your face. Move it farther than arm's length and reframe."
     )
     assert "telephoto" in render_step("move_phone", wide_face, PRO, "en")
     choppy = _row("Choppy, laggy video in a dim room")
-    assert render_step("move_phone", choppy, A78, "en") == "Add a physical light source."
+    assert render_step("move_phone", choppy, A78, "en") == (
+        "Add a real light to the room. In low light your phone records fewer frames each second to "
+        "catch more light, so the video looks choppy."
+    )
 
 
 def test_side_lead_is_templated_per_kind_and_lang() -> None:
     window = _row("Soft natural window light")  # a window beside you: you turn (move_you)
     body = render_step("move_you", window, None, "en")
     assert render_step("move_you", window, None, "en", "your_left") == "Turn so the light is on your left. " + body
-    assert render_step("move_you", window, None, "hi", "your_left") == "Aise baitho ki light aapke left side ho. " + body
+    body_hi = render_step("move_you", window, None, "hi")
+    assert render_step("move_you", window, None, "hi", "your_left") == "Aise baitho ki light aapke left side ho. " + body_hi
     lamp = _row("Low-key / dramatic")  # a movable main light from the side (move_light)
     body = render_step("move_light", lamp, None, "en")
     assert render_step("move_light", lamp, None, "en", "your_left") == "Put the light on your left. " + body
-    assert render_step("move_light", lamp, None, "hi", "your_right") == "Light ko apne right side rakho. " + body
+    body_hi = render_step("move_light", lamp, None, "hi")
+    assert render_step("move_light", lamp, None, "hi", "your_right") == "Light ko apne right side rakho. " + body_hi
     # Ignored for the other kinds, and for a side that is not one of the three.
     phone_row = _row("Eye-level")
     assert render_step("move_phone", phone_row, None, "en", "your_left") == render_step("move_phone", phone_row, None, "en")
@@ -433,10 +478,12 @@ def test_every_side_row_is_a_real_row() -> None:
             assert render_step(kind, found[0], None, "en", "your_left") != render_step(kind, found[0], None, "en")
 
 
-def test_camera_height_rule_reads_as_phone_at() -> None:
+def test_camera_height_rule_is_its_line() -> None:
     assert render_step("move_phone", _row("Eye-level"), None, "en") == (
-        "Phone at eye-level: neutral point of view, reliable eye contact."
+        "Keep the phone at your eye level. It gives a neutral view and easy eye contact, the best "
+        "default for interviews, teaching and talking straight to camera."
     )
+    assert render_step("move_phone", _row("Eye-level"), None, "hi").startswith("Phone apni eye level pe rakho.")
 
 
 def test_every_step_row_renders_on_a_phone_with_every_feature() -> None:
@@ -658,6 +705,272 @@ def test_normalize_lang_defaults_to_english() -> None:
     assert normalize_lang(" HI ") == "hi"
     for raw in (None, "hinglish", "fr", 1):
         assert normalize_lang(raw) == "en"
+
+
+# --- (e) creator-voice lines ----------------------------------------------------------------------
+
+# Sentence-style step rows with NO creator-voice line, and why. Every one renders nothing. A
+# settings row (camera_technical_setting, night_video_setting) never has a line: it stays its
+# labelled parts. Keyed by (data_type, the start of the row's name).
+ROWS_WITHOUT_A_LINE: dict[tuple[str, str], str] = {
+    ("background_rule", "What makes a good background"): (
+        "a definition with no fix field; the renderer returns None for it"
+    ),
+    ("permanent_rule", "Only suggest what the creator's phone can actually do"): (
+        "a rule for how the coach advises (_coach_facing), not an instruction for the creator"
+    ),
+    ("permanent_rule", "Give every camera setting with its one-line reason"): (
+        "a rule for how the coach talks (_coach_facing), not an instruction for the creator"
+    ),
+    ("camera_height_rule", "Slightly above eyes"): (
+        "describes how the angle makes the face look; only eye level is written as a step"
+    ),
+    ("camera_height_rule", "Slightly below eyes"): (
+        "describes how the angle makes the face look (chin / nostrils); only eye level is a step"
+    ),
+    ("camera_height_rule", "High angle"): "describes an effect; only eye level is a step",
+    ("camera_height_rule", "Low angle"): "describes an effect; only eye level is a step",
+    ("portrait_lighting_pattern", "Loop"): (
+        "the note is where a small nose shadow falls; it can't be said without naming face parts"
+    ),
+    ("portrait_lighting_pattern", "Butterfly"): (
+        "the note is a small downward nose shadow and an eye-socket check; same face-part problem"
+    ),
+}
+SETTINGS_TYPES = frozenset(render._SETTINGS_PARTS)
+
+# The checks every line passes (the writers' check_lines.py, ported): no growth wording
+# (`_GROWTH_WORDS_PINNED`), nothing about the person's looks or body, no third person.
+LINE_PERSON_RE = re.compile(
+    r"\b(?:skin(?:\s+tone)?|complexion|clothes|clothing|dress|shirt|hair|age|old|young|man|woman"
+    r"|girl|boy|beautiful|pretty|handsome|ugly|fat|thin|weight|nose|chin|ears?|nostrils?|wrinkles?"
+    r"|forehead|jaw|double\s+chin|body|under\s+(?:your\s+)?eyes|aankhon\s+ke\s+neeche)\b",
+    re.IGNORECASE,
+)
+# The camera controls a line names by their short name: en and hi must name the same ones.
+LINE_CONTROL_RE = re.compile(r"\b(?:EV|ISO|fps)\b", re.IGNORECASE)
+# An absolute side: the templated side lead says which side, a line must not fight it. "right
+# behind you", "right under you" and "looks right" are not sides.
+LINE_SIDE_RE = re.compile(r"\b(?:left|right)\b", re.IGNORECASE)
+LINE_NOT_A_SIDE_RE = re.compile(r"\bright\s+(?:behind|under)\b|\blooks?\s+right\b", re.IGNORECASE)
+LINE_THIRD_PERSON_RE = re.compile(r"\b(?:the creator|creator's|the subject|subject's|talent)\b", re.IGNORECASE)
+
+
+def _key(row: dict[str, Any]) -> tuple[str, str]:
+    return row["data_type"], _name(row).strip()
+
+
+def _without_a_line(row: dict[str, Any]) -> str | None:
+    found = [why for (dt, start), why in ROWS_WITHOUT_A_LINE.items()
+             if row["data_type"] == dt and _name(row).startswith(start)]
+    assert len(found) <= 1, _name(row)
+    return found[0] if found else None
+
+
+def _number_claims(text: str) -> list[tuple[str, tuple[str, ...], str | None]]:
+    return sorted((n, tuple(parts), unit) for n, parts, unit in frame_check._number_tokens(text))
+
+
+def _line_problems(row: dict[str, Any], line: dict[str, str]) -> list[str]:
+    out: list[str] = []
+    for lang in LANGS:
+        text = line[lang]
+        if not text.strip() or len(text) > render.LINE_MAX_CHARS:
+            out.append(f"{lang} empty or {len(text)} chars")
+        if not frame_check.step_numbers_grounded(text, [row]):
+            out.append(f"{lang} states a number (or number word) the row's advice does not")
+        if _growth(text):
+            out.append(f"{lang} growth word")
+        if LINE_PERSON_RE.search(text):
+            out.append(f"{lang} person/body word {LINE_PERSON_RE.search(text).group(0)!r}")
+        if LINE_THIRD_PERSON_RE.search(text):
+            out.append(f"{lang} third person {LINE_THIRD_PERSON_RE.search(text).group(0)!r}")
+        if "\n" in text or "  " in text:
+            out.append(f"{lang} newline or double space")
+        if LINE_SIDE_RE.search(LINE_NOT_A_SIDE_RE.sub("", text)):
+            out.append(f"{lang} absolute left/right")
+    if _number_claims(line["en"]) != _number_claims(line["hi"]):
+        out.append("en and hi numbers differ")
+    if render.phone_features_named(line["en"]) != render.phone_features_named(line["hi"]):
+        out.append("en and hi name different phone features")
+    controls = [{c.upper() for c in LINE_CONTROL_RE.findall(line[lang])} for lang in LANGS]
+    if controls[0] != controls[1]:
+        out.append("en and hi name different controls (EV/ISO/fps)")
+    return out
+
+
+def test_every_line_passes_the_voice_checks() -> None:
+    rows = {_key(r): r for r in CREATOR_KNOWLEDGE_ROWS if r["data_type"] in STEP_TEXT_TYPES}
+    assert len(CREATOR_STEP_LINES) > 80
+    failures = [
+        f"{key}: {problem}"
+        for key, line in CREATOR_STEP_LINES.items()
+        for problem in _line_problems(rows[key], line)
+    ]
+    assert not failures, "\n".join(failures)
+
+
+def test_the_voice_checks_are_not_vacuous() -> None:
+    row = _row("Eye-level")
+    good = CREATOR_STEP_LINES[_key(row)]
+    assert _line_problems(row, good) == []
+    for bad in (
+        {**good, "hi": good["hi"] + " Ek baar check karo."},  # a Hinglish number word the row lacks
+        {**good, "en": good["en"] + " Stand 2m back."},  # a number the row lacks
+        {**good, "en": good["en"] + " Your hair looks great."},
+        {**good, "en": good["en"] + " The creator should smile."},
+        {**good, "en": good["en"] + " This gets more views."},
+        {**good, "hi": good["hi"] + " ISO check karo."},  # a feature only one language names
+        {**good, "hi": "x" * (render.LINE_MAX_CHARS + 1)},
+    ):
+        assert _line_problems(row, bad), bad
+    # Review 2026-09-25: each of these once passed the gate.
+    backlit = _row("Backlit subject")
+    ev_line = CREATOR_STEP_LINES[_key(backlit)]
+    assert _line_problems(backlit, ev_line) == []
+    for which, bad_row, bad, problem in (
+        ("hi drops EV", backlit, {**ev_line, "hi": ev_line["hi"].replace(" (+EV)", "")}, "controls"),
+        ("absolute side", row, {**good, "en": good["en"] + " Keep the lamp on your left."}, "left/right"),
+        ("under-eye", row, {**good, "en": good["en"] + " It shows shadows under your eyes."}, "person/body"),
+        ("under-eye hi", row, {**good, "hi": good["hi"] + " Aankhon ke neeche shadows dikhti hain."}, "person/body"),
+    ):
+        assert any(problem in p for p in _line_problems(bad_row, bad)), which
+
+
+def test_every_step_row_has_a_line_or_a_reason() -> None:
+    """Contract (e): a sentence-style step row has a line, or is in ROWS_WITHOUT_A_LINE with the
+    reason (and renders nothing); a settings row never has one."""
+    for row in STEP_ROWS:
+        key, why = _key(row), _without_a_line(row)
+        if row["data_type"] in SETTINGS_TYPES:
+            assert key not in CREATOR_STEP_LINES and why is None, key
+            continue
+        assert (key in CREATOR_STEP_LINES) != (why is not None), key
+        if why is not None:
+            for kind in _kinds_for(row):
+                for phone in (None, PRO):
+                    for lang in LANGS:
+                        assert render_step(kind, row, phone, lang) is None, (key, why)
+    for dt, start in ROWS_WITHOUT_A_LINE:  # every reason names a real row
+        assert [r for r in STEP_ROWS if r["data_type"] == dt and _name(r).startswith(start)], start
+    assert set(CREATOR_STEP_LINES) <= {_key(r) for r in STEP_ROWS}
+
+
+def _advice_sentences(row: dict[str, Any]) -> list[str]:
+    """The row's own English sentences (its advice field and every advice text), 3+ words."""
+    text = render._sentence_advice(row) + " " + frame_check.advice_text(row)
+    return [s.rstrip(".") for s in render._split_sentences(" ".join(text.split())) if len(s.split()) >= 3]
+
+
+def test_a_step_is_the_line_in_its_language() -> None:
+    """Contract (b): on a phone with every feature, the en step IS the en line and the hi step
+    the hi line (lens factors narrowed to the phone's own); a hi step, on any phone, holds none
+    of the row's English advice sentences nor of its English line."""
+    checked = 0
+    for row in STEP_ROWS:
+        line = CREATOR_STEP_LINES.get(_key(row))
+        if line is None:
+            continue
+        english = _advice_sentences(row) + [
+            s.rstrip(".") for s in render._split_sentences(line["en"]) if len(s.split()) >= 3
+        ]
+        for kind in _kinds_for(row):
+            for lang in LANGS:
+                assert render_step(kind, row, PRO, lang) == render._narrow_factors(line[lang], PRO), (_key(row), lang)
+            for phone in PHONES:
+                hi = render_step(kind, row, phone, "hi")
+                if hi is None:
+                    continue
+                checked += 1
+                leaked = [s for s in english if s.casefold() in hi.casefold()]
+                assert not leaked, (_key(row), _phone_label(phone), leaked)
+    assert checked > 100
+
+
+def test_en_and_hi_steps_keep_the_same_sentences_on_every_phone() -> None:
+    """Review 2026-09-25: the phone fit cuts an English sentence at ", and " but a Hinglish one
+    that has no such separator only whole, so en could keep a clause that hi dropped (the
+    warm-lamp row on the A78 kept "the lamp behind you can stay warm" in en only). On every
+    phone, a line's en and hi steps keep as many sentences, the same numbers and the same
+    phone features."""
+    checked = 0
+    for row in STEP_ROWS:
+        if _key(row) not in CREATOR_STEP_LINES:
+            continue
+        for kind in _kinds_for(row):
+            for phone in PHONES:
+                en, hi = render_step(kind, row, phone, "en"), render_step(kind, row, phone, "hi")
+                where = (_key(row), kind, _phone_label(phone))
+                assert (en is None) == (hi is None), where
+                if en is None:
+                    continue
+                checked += 1
+                assert len(render._split_sentences(en)) == len(render._split_sentences(hi)), (where, en, hi)
+                assert _number_claims(en) == _number_claims(hi), (where, en, hi)
+                assert render.phone_features_named(en) == render.phone_features_named(hi), (where, en, hi)
+    assert checked > 300
+
+
+def test_a_side_lead_opens_the_line() -> None:
+    window = _row("Creator is 30-45 deg to window")
+    for lang in LANGS:
+        body = CREATOR_STEP_LINES[_key(window)][lang]
+        lead = render._SIDE_LEADS["move_you"]["your_left"][lang]
+        assert render_step("move_you", window, PRO, lang, "your_left") == lead + body
+
+
+def test_a_hinglish_settings_step_has_hinglish_labels() -> None:
+    row = _row("Talking Head (Window light)")
+    en = render_step("settings", row, A78, "en")
+    hi = render_step("settings", row, A78, "hi")
+    assert en == (
+        "Lens: 1x Main. Distance: 0.8-1m. Framing: Chest up. EV: +0.5. "
+        "Stabilization: Tripod (stabilization off)."
+    )
+    assert hi == (
+        "Lens: 1x Main. Doori: 0.8-1m. Frame: Chest up. EV: +0.5. "
+        "Phone steady: Tripod (stabilization off)."
+    )
+    night = next(r for r in STEP_ROWS if r["data_type"] == "night_video_setting" and r.get("extra_light"))
+    assert "Aur light: " in render_step("settings", night, PRO, "hi")
+    assert "Extra light: " in render_step("settings", night, PRO, "en")
+
+
+def test_the_lines_file_resolves_and_fails_loud_on_a_bad_line(tmp_path) -> None:
+    good = {"data_type": "camera_height_rule", "name": "Eye-level", "en": "Keep the phone at eye level.",
+            "hi": "Phone eye level pe rakho."}
+
+    def load(*objs: Any, rows: list[dict[str, Any]] | None = None) -> Any:
+        path = tmp_path / "lines.jsonl"
+        path.write_text("".join((o if isinstance(o, str) else json.dumps(o)) + "\n" for o in objs), encoding="utf-8")
+        return load_creator_step_lines(path, rows)
+
+    assert load(good) == {("camera_height_rule", "Eye-level"): {"en": good["en"], "hi": good["hi"]}}
+    assert load_creator_step_lines() == CREATOR_STEP_LINES  # the shipped file resolves
+    bad_lines = {
+        "unknown name": {**good, "name": "Eye level-ish"},
+        "unknown type": {**good, "data_type": "hook_template"},
+        "settings type": {**good, "data_type": "camera_technical_setting", "name": "Talking Head (Window light)"},
+        "empty hi": {**good, "hi": "  "},
+        "missing hi": {k: v for k, v in good.items() if k != "hi"},
+        "extra key": {**good, "note": "x"},
+        "long en": {**good, "en": "a" * (render.LINE_MAX_CHARS + 1)},
+        "not text": {**good, "en": 5},
+    }
+    for label, obj in bad_lines.items():
+        with pytest.raises(CreatorStepLinesError):
+            load(obj)
+        assert label
+    with pytest.raises(CreatorStepLinesError):
+        load(good, good)  # a key twice
+    with pytest.raises(CreatorStepLinesError):
+        load("{not json")
+    with pytest.raises(CreatorStepLinesError):
+        load("")  # no lines
+    eye = _row("Eye-level")
+    with pytest.raises(CreatorStepLinesError):
+        load(good, rows=[eye, dict(eye)])  # the name fits two rows
+    assert load({**good, "hi": "x" * render.LINE_MAX_CHARS}, rows=[eye])  # the cap itself is fine
 
 
 # --- the phone helpers match frame_check's ------------------------------------------------------------
