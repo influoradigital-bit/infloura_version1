@@ -218,6 +218,11 @@ public final class MeeraContextDtos {
             // interactions, accounts engaged and profile-link taps, pre-rendered by Java like
             // audience_summary. An explicit "not available (...)" string when there are none.
             @JsonProperty("account_insights_summary") String accountInsightsSummary,
+            // Connected account (Swapnil 2026-09-26): which Instagram account is connected, as
+            // "@handle" (the username Meta returned on the newest verified poll of THAT account),
+            // or the explicit MeeraContextService.INSTAGRAM_ACCOUNT_NOT_CONNECTED /
+            // INSTAGRAM_ACCOUNT_NOT_YET text. Never null. CREATOR audience only.
+            @JsonProperty("instagram_account") String instagramAccount,
             @JsonProperty("deals_summary") Map<String, Object> dealsSummary,
             @JsonProperty("approval_level") int approvalLevel,
             @JsonProperty("represented") boolean represented,

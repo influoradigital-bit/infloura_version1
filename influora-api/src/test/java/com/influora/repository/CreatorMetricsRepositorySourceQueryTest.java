@@ -76,4 +76,40 @@ class CreatorMetricsRepositorySourceQueryTest {
 
         assertEquals(List.of(9100L, 9000L), page.stream().map(CreatorMetric::getFollowers).toList());
     }
+
+    @Test
+    @DisplayName(
+            "Meera's username read: newer creator-declared rows and another account's rows cannot"
+                    + " push this account's Meta rows out of a 10-row page")
+    void accountAndSourceNarrowedInTheQuery() {
+        String account = "17841400000000123";
+        String other = "17841400000000999";
+        repository.save(accountRow("01HACCSRCMETA0000001", account, CreatorMetric.DATA_SOURCE_META_API, 7000, "2026-09-01T00:00:00Z"));
+        repository.save(accountRow("01HACCSRCMETA0000002", null, CreatorMetric.DATA_SOURCE_META_API, 7100, "2026-09-02T00:00:00Z"));
+        repository.save(accountRow("01HACCSRCOTHER000001", other, CreatorMetric.DATA_SOURCE_META_API, 1, "2026-09-20T00:00:00Z"));
+        for (int i = 0; i < 12; i++) {
+            repository.save(
+                    accountRow(String.format("01HACCSRCDECL%07d", i), account, CreatorMetric.DATA_SOURCE_CREATOR_REPORTED,
+                            60000 + i, String.format("2026-09-10T00:%02d:00Z", i)));
+        }
+
+        List<CreatorMetric> page =
+                repository.findForAccountAndDataSourceOrderByTimeDesc(
+                        CREATOR, account, CreatorMetric.DATA_SOURCE_META_API, PageRequest.of(0, 10));
+
+        assertEquals(List.of(7100L, 7000L), page.stream().map(CreatorMetric::getFollowers).toList());
+    }
+
+    private CreatorMetric accountRow(String id, String igAccountId, String source, long followers, String at) {
+        return CreatorMetric.builder()
+                .id(id)
+                .creatorProfileId(CREATOR)
+                .platform("INSTAGRAM")
+                .igAccountId(igAccountId)
+                .dataSource(source)
+                .followers(followers)
+                .time(Instant.parse(at))
+                .fetchedAt(Instant.parse(at))
+                .build();
+    }
 }

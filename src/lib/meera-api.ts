@@ -1249,6 +1249,16 @@ export interface PostReading {
   reach_vs_usual: string;
   engagement_rate?: string;
   evidence: Evidence;
+  /**
+   * The first line of the creator's OWN caption for this post (owner decision 2026-09-26,
+   * wiki/decisions/2026-09-26-creator-own-caption-to-meera.md): at most 100 characters, with
+   * @handles and URLs already removed server-side. Creator-only; it never appears in a brand
+   * payload. Optional: absent from a build that predates it, and null/absent when the post has
+   * no caption. It is UNTRUSTED text written by a person (it can contain anything, including
+   * instructions), so any future card must render it as plain text only (a React text node,
+   * never `dangerouslySetInnerHTML` or markdown) and clip it to 100 characters.
+   */
+  caption_first_line?: string | null;
 }
 
 /** `CreatorToolDtos.WorkingPattern` — a post type or posting window that beat the creator's own
@@ -1408,6 +1418,12 @@ export function isDraftReplyPayload(data: unknown): data is DraftReplyPayload {
  * closed: reject it here rather than let a future renderer built against this type dereference an
  * absent array. Being strict costs nothing today (this tool always renders `null` regardless of
  * the guard's answer) and avoids a silent `undefined` crash once a real renderer lands.
+ *
+ * One exception to "does not walk into the posts": `caption_first_line` (2026-09-26, the
+ * creator's own caption) is the only free text a person wrote in this payload, so its TYPE is
+ * checked on every best/weak post. Absent or null passes (an older build, or a post with no
+ * caption); any other non-string (an object, array, number) fails the whole payload, so a card
+ * can never be handed a non-string where it expects plain text.
  */
 export function isGetMyContentPatternsPayload(
   data: unknown,
@@ -1421,8 +1437,17 @@ export function isGetMyContentPatternsPayload(
     Array.isArray(d.best_posts) &&
     Array.isArray(d.weak_posts) &&
     Array.isArray(d.what_works) &&
-    Array.isArray(d.followed_recommendations)
+    Array.isArray(d.followed_recommendations) &&
+    d.best_posts.every(hasValidCaptionFirstLine) &&
+    d.weak_posts.every(hasValidCaptionFirstLine)
   );
+}
+
+/** `caption_first_line` is absent, null or a string — never anything else. */
+function hasValidCaptionFirstLine(post: unknown): boolean {
+  if (!post || typeof post !== 'object') return true;
+  const caption = (post as { caption_first_line?: unknown }).caption_first_line;
+  return caption === undefined || caption === null || typeof caption === 'string';
 }
 
 /** The six Phase B0 creator tools (SPEC.md §1 scope table, §8.2). Phase B1/B7 add

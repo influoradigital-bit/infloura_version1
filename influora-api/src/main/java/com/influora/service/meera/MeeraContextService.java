@@ -155,6 +155,25 @@ public class MeeraContextService {
     public static final String ACCOUNT_INSIGHTS_NOT_YET =
             "not available yet: Instagram is connected, but its account numbers have not arrived";
 
+    /**
+     * Connected account (Swapnil 2026-09-26): what {@code instagram_account} carries when there is
+     * no live Instagram connection. Meera says so plainly and can suggest connecting.
+     */
+    public static final String INSTAGRAM_ACCOUNT_NOT_CONNECTED = "not connected";
+
+    /**
+     * Connected, but no verified poll of THIS account has returned a usable username yet (just
+     * connected, or Meta sent none). Never a guess and never an older account's name.
+     */
+    public static final String INSTAGRAM_ACCOUNT_NOT_YET =
+            "connected, but its username has not arrived yet";
+
+    /** Instagram's own username rule: 1-30 letters, digits, dots and underscores. */
+    private static final Pattern INSTAGRAM_USERNAME = Pattern.compile("[A-Za-z0-9._]{1,30}");
+
+    /** How many newest rows of this account are looked through for a username. */
+    private static final int USERNAME_LOOKBACK_ROWS = 10;
+
     private static final int AUDIENCE_TOP_AGE_BANDS = 2;
     private static final int AUDIENCE_TOP_CITIES = 3;
 
@@ -316,6 +335,7 @@ public class MeeraContextService {
         // this method uses, never a caller-supplied creator id. The BRAND path never calls this.
         String audienceSummary = buildAudienceSummary(profile.getId(), locale);
         String accountInsightsSummary = buildAccountInsightsSummary(profile.getId(), locale);
+        String instagramAccount = buildInstagramAccount(profile.getId());
 
         List<Collaboration> collaborations = collaborationRepository.findByCreatorId(creatorUserId);
         Map<String, Object> dealsSummary = buildDealsSummary(collaborations, locale);
@@ -365,6 +385,7 @@ public class MeeraContextService {
                 metricsSummary,
                 audienceSummary,
                 accountInsightsSummary,
+                instagramAccount,
                 dealsSummary,
                 approvalLevel,
                 represented,
@@ -473,6 +494,82 @@ public class MeeraContextService {
                 + "): "
                 + String.join(", ", parts)
                 + ".";
+    }
+
+    /**
+     * Connected account (Swapnil 2026-09-26) - which Instagram account this creator has connected,
+     * so Meera can say it: {@code "@handle"}, or {@link #INSTAGRAM_ACCOUNT_NOT_CONNECTED}, or
+     * {@link #INSTAGRAM_ACCOUNT_NOT_YET}.
+     *
+     * <p>The token row has no username, so it comes from {@code creator_metrics.username} (Meta's
+     * {@code username} at fetch time) on the newest Meta-synced row of the account connected NOW:
+     * a row stamped with another {@code ig_account_id} is never used, so an account-switcher is
+     * never shown her old handle. An unstamped row (written before V20260924120000) is used only
+     * when she has ever connected just one account, the same rule {@code CreatorIntelligenceService}
+     * applies to her posts. The value must match Instagram's username rule, so nothing else (a
+     * line break, an instruction) can reach the prompt through it. A failed read degrades to
+     * {@link #INSTAGRAM_ACCOUNT_NOT_YET}, logged with the profile id only.
+     */
+    private String buildInstagramAccount(String creatorProfileId) {
+        Optional<MetaOAuthToken> live = liveMetaToken(creatorProfileId);
+        if (live.isEmpty()) {
+            return INSTAGRAM_ACCOUNT_NOT_CONNECTED;
+        }
+        String accountId = live.get().getIgBusinessAccountId();
+        if (accountId == null || accountId.isBlank()) {
+            return INSTAGRAM_ACCOUNT_NOT_YET;
+        }
+        try {
+            List<CreatorMetric> rows =
+                    // Narrowed to Meta-synced rows IN THE QUERY (F-0961): filtering after the
+                    // page limit let a burst of newer creator-reported rows hide the username.
+                    creatorMetricsRepository.findForAccountAndDataSourceOrderByTimeDesc(
+                            creatorProfileId,
+                            accountId,
+                            CreatorMetric.DATA_SOURCE_META_API,
+                            PageRequest.of(0, USERNAME_LOOKBACK_ROWS));
+            Optional<String> tagged = usernameFrom(rows, row -> accountId.equals(row.getIgAccountId()));
+            if (tagged.isPresent()) {
+                return tagged.get();
+            }
+            if (metaOAuthTokenRepository.countDistinctCreatorIgAccounts(creatorProfileId) <= 1) {
+                return usernameFrom(rows, row -> row.getIgAccountId() == null).orElse(INSTAGRAM_ACCOUNT_NOT_YET);
+            }
+            return INSTAGRAM_ACCOUNT_NOT_YET;
+        } catch (RuntimeException e) {
+            log.warn(
+                    "MeeraContextService: Instagram username read failed for creator profile {};"
+                            + " falling back to the not-yet text",
+                    creatorProfileId,
+                    e);
+            return INSTAGRAM_ACCOUNT_NOT_YET;
+        }
+    }
+
+    /** The newest Meta-synced row matching {@code which} with a valid username, as "@handle". */
+    private static Optional<String> usernameFrom(
+            List<CreatorMetric> newestFirst, java.util.function.Predicate<CreatorMetric> which) {
+        if (newestFirst == null) {
+            return Optional.empty();
+        }
+        return newestFirst.stream()
+                .filter(CreatorMetric::isPlatformVerified)
+                .filter(which)
+                .map(row -> instagramHandle(row.getUsername()))
+                .filter(java.util.Objects::nonNull)
+                .findFirst();
+    }
+
+    /** {@code "@name"} for a valid Instagram username (a leading @ tolerated), else null. */
+    static String instagramHandle(String username) {
+        if (username == null) {
+            return null;
+        }
+        String name = username.strip();
+        if (name.startsWith("@")) {
+            name = name.substring(1);
+        }
+        return INSTAGRAM_USERNAME.matcher(name).matches() ? "@" + name : null;
     }
 
     private static void addCount(List<String> parts, Long value, String label, Locale locale) {
@@ -596,10 +693,14 @@ public class MeeraContextService {
      * change connection state, only asks the same repository the rest of the codebase already asks.
      */
     private boolean hasLiveMetaConnection(String creatorProfileId) {
+        return liveMetaToken(creatorProfileId).isPresent();
+    }
+
+    /** The live creator-owned token behind {@link #hasLiveMetaConnection}, when there is one. */
+    private Optional<MetaOAuthToken> liveMetaToken(String creatorProfileId) {
         return metaOAuthTokenRepository
                 .findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(creatorProfileId)
-                .filter(t -> t.getExpiresAt() == null || t.getExpiresAt().isAfter(Instant.now()))
-                .isPresent();
+                .filter(t -> t.getExpiresAt() == null || t.getExpiresAt().isAfter(Instant.now()));
     }
 
     /** Largest first; ties broken by key so the same snapshot always renders the same text. */

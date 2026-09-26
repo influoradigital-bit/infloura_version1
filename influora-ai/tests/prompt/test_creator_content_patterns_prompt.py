@@ -102,9 +102,13 @@ def _schema_description(tools: list[dict[str, Any]]) -> str:
 
 
 def _model_view(payload: dict[str, Any]) -> dict[str, Any]:
+    """The trusted part of the model copy. Its only wrapper may be the creator's own caption
+    lines (`<untrusted_creator_captions>`, 2026-09-26); nothing may land unclassified."""
     text = _model_copy_of_tool_result(GET_MY_CONTENT_PATTERNS, payload)
-    assert "<untrusted_" not in text
-    return json.loads(text)
+    assert "<untrusted_unclassified>" not in text
+    trusted, _, rest = text.partition("\n")
+    assert rest == "" or rest.startswith("<untrusted_creator_captions>")
+    return json.loads(trusted)
 
 
 # Rules every one of the three turns must carry, whatever the data says.

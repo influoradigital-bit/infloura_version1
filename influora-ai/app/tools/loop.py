@@ -16,7 +16,10 @@ Hard rules encoded here (do not weaken):
 
 from __future__ import annotations
 
+import json
 import logging
+import re
+import unicodedata
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -887,8 +890,10 @@ _TRUSTED_KEYS_ADD_ON = ("code", "label", "amount", "amount_value", "basis")
 # get_my_content_patterns (Meera intelligence v1, spec 4.4/4.5): every field is computed by
 # Spring from the creator's OWN stored post readings (CreatorIntelligenceService, rendered by
 # GetMyContentPatternsExecutor) plus Meta's own permalinks and fixed vocabulary (metric names,
-# REEL/CAROUSEL/POST/OTHER, "weekday evening", "Reels and videos"). No caption, no brand text,
-# no editorial text ever reaches it, so the whole record is trusted -- but only field-for-field,
+# REEL/CAROUSEL/POST/OTHER, "weekday evening", "Reels and videos"). No brand text and no
+# editorial text ever reaches it. The ONE field a person wrote is PostReading.caption_first_line
+# (the creator's OWN caption, 2026-09-26), which is never trusted: see _UNTRUSTED_KEYS_CONTENT_POST.
+# Everything else is trusted -- but only field-for-field,
 # one allow-list per Java record (CreatorToolDtos.GetMyContentPatternsResult / BaselineMetric /
 # PostReading / WorkingPattern / Evidence), so an element carrying a key nobody classified pulls
 # its WHOLE list into the wrapper (the F-1771 rule: a container is never trusted whole).
@@ -924,6 +929,51 @@ _TRUSTED_KEYS_CONTENT_POST = (
     "engagement_rate",
     "evidence",
 )
+# 2026-09-26 (wiki/decisions/2026-09-26-creator-own-caption-to-meera.md, Swapnil): PostReading's
+# ONE untrusted field -- the first line of the creator's OWN caption for that post, cut by Spring
+# to 100 characters with @handles and links removed. A person wrote it and it can say anything
+# ("ignore your rules ..."), so it is never trusted: the model copy takes it OUT of the post,
+# re-applies the same cut here (`_caption_first_line_for_model`, defence in depth if Spring ever
+# regresses; the rules mirror influora-api CreatorOwnCaption, so Spring's own output passes
+# through unchanged) and hands it over inside `<untrusted_creator_captions>`, keyed by the post's
+# `post_id`. Creator-only: get_my_content_patterns is a creator tool, never offered on a brand
+# turn, and nothing here logs the text. A caption_first_line that is not a string (or null) is
+# left in the post, so that post's WHOLE list fails its allow-list and is wrapped (fail closed).
+_UNTRUSTED_KEYS_CONTENT_POST = ("caption_first_line",)
+_CONTENT_CAPTION_LISTS = ("best_posts", "weak_posts")
+CAPTION_FIRST_LINE_MAX_CHARS = 100
+_CAPTION_ELLIPSIS = "\u2026"
+_CAPTION_LINE_BREAKS = re.compile(r"\r\n|[\n\r\v\f\x85\u2028\u2029]")
+_CAPTION_ZWNJ = "\u200c"
+_CAPTION_ZWJ = "\u200d"
+# The patterns spell letters out as [A-Za-z] and never use IGNORECASE: Python's Unicode
+# IGNORECASE also matches a few non-ASCII letters (the Kelvin sign, the long s), Java's does not,
+# and the shared fixture (influora-api src/test/resources/creator-own-caption-cases.json) holds
+# the two cleaners to identical output.
+_CAPTION_EMAIL = re.compile(r"[A-Za-z0-9_.+-]+@[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+")
+# A scheme or www. link, up to the next (Unicode) space, so a no-break space ends it too.
+_CAPTION_URL = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*://|[Ww][Ww][Ww]\.)\S+")
+# A bare link with a path (youtu.be/abc, example.co.uk/sale): any dotted name whose last label is
+# two or more letters, followed by a slash.
+_CAPTION_BARE_LINK_WITH_PATH = re.compile(
+    r"(?<![A-Za-z0-9_@.])[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/\S*"
+)
+# A bare domain with no path (shop.nike.de): only common top-level domains, so ordinary text with
+# a missing space after a full stop is not taken for a link.
+_CAPTION_BARE_DOMAIN_TLDS = (
+    "com|in|io|co|net|org|me|ee|ly|app|link|gl|to|shop|store|site|xyz|bio|page|gg|tv"
+    "|be|uk|ai|de|us|info|club|live|online|fm|biz"
+)
+_CAPTION_BARE_DOMAIN = re.compile(
+    r"(?<![A-Za-z0-9_@.])[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?:"
+    + "|".join(
+        "".join(f"[{c}{c.upper()}]" for c in tld) for tld in _CAPTION_BARE_DOMAIN_TLDS.split("|")
+    )
+    + r")(?![A-Za-z0-9_.])"
+)
+# An @handle after an at sign, a full-width at sign (U+FF20) or a small at sign (U+FE6B), even
+# glued to the word before it.
+_CAPTION_HANDLE = re.compile("[@\uff20\ufe6b][A-Za-z0-9._]+")
 _TRUSTED_KEYS_CONTENT_PATTERN = (
     "kind",
     "label",
@@ -1069,6 +1119,133 @@ def _strip_post_ids(value: Any) -> Any:
     return value
 
 
+def _caption_invisible_removed(line: str) -> str:
+    """Control characters (Cc: C0, DEL and C1) become a space; format characters (Cf: bidi
+    overrides, zero-width spaces, ...) are removed without a space, so they can neither split a
+    word nor hide a handle or link. The joiners U+200C/U+200D are kept only after a non-ASCII
+    character, where they hold an emoji sequence or an Indic word together -- influora-api
+    CreatorOwnCaption.invisibleRemoved, rule for rule."""
+    out: list[str] = []
+    prev = -1
+    for ch in line:
+        category = unicodedata.category(ch)
+        if category == "Cc":
+            out.append(" ")
+        elif category == "Cf":
+            if ch in (_CAPTION_ZWNJ, _CAPTION_ZWJ) and prev > 0x7F:
+                out.append(ch)
+        else:
+            out.append(ch)
+        prev = ord(ch)
+    return "".join(out)
+
+
+def _clean_caption_line(line: str) -> str:
+    """One caption line with invisible characters handled (`_caption_invisible_removed`), e-mail
+    addresses, links and @handles replaced by a space, and whitespace collapsed -- influora-api
+    CreatorOwnCaption.clean, rule for rule."""
+    out = _caption_invisible_removed(line)
+    out = _CAPTION_EMAIL.sub(" ", out)
+    out = _CAPTION_URL.sub(" ", out)
+    out = _CAPTION_BARE_LINK_WITH_PATH.sub(" ", out)
+    out = _CAPTION_BARE_DOMAIN.sub(" ", out)
+    out = _CAPTION_HANDLE.sub(" ", out)
+    return " ".join(out.split())
+
+
+def _caption_is_regional_indicator(ch: str) -> bool:
+    return 0x1F1E6 <= ord(ch) <= 0x1F1FF
+
+
+def _caption_joined(cps: str, i: int) -> bool:
+    """Whether a cut between cps[i - 1] and cps[i] would split one visible character: a combining
+    mark stays on what it marks, a joiner keeps both neighbours, a skin-tone modifier or tag stays
+    on its emoji, a virama keeps the next letter, a flag's regional indicators stay a pair --
+    influora-api CreatorOwnCaption.joined, rule for rule."""
+    prev, cur = cps[i - 1], cps[i]
+    if unicodedata.category(cur) in ("Mn", "Mc", "Me"):
+        return True
+    if cur in (_CAPTION_ZWNJ, _CAPTION_ZWJ) or prev in (_CAPTION_ZWNJ, _CAPTION_ZWJ):
+        return True
+    if 0x1F3FB <= ord(cur) <= 0x1F3FF or 0xE0020 <= ord(cur) <= 0xE007F:
+        return True
+    if unicodedata.category(prev) == "Mn" and unicodedata.name(prev, "").endswith(" SIGN VIRAMA"):
+        return True
+    if _caption_is_regional_indicator(cur) and _caption_is_regional_indicator(prev):
+        run = 0
+        k = i - 1
+        while k >= 0 and _caption_is_regional_indicator(cps[k]):
+            run += 1
+            k -= 1
+        return run % 2 == 1
+    return False
+
+
+def _caption_truncated(line: str) -> str | None:
+    """At most CAPTION_FIRST_LINE_MAX_CHARS code points, the cut backed off to the start of a
+    character the reader sees as one, with a closing ellipsis."""
+    if len(line) <= CAPTION_FIRST_LINE_MAX_CHARS:
+        return line
+    end = CAPTION_FIRST_LINE_MAX_CHARS - 1
+    while end > 0 and _caption_joined(line, end):
+        end -= 1
+    kept = line[:end].rstrip()
+    return kept + _CAPTION_ELLIPSIS if kept else None
+
+
+def _caption_says_something(line: str) -> bool:
+    """A line of only dots, dashes or other spacers says nothing (a letter, a digit or a symbol
+    such as an emoji does)."""
+    return any(unicodedata.category(ch)[0] in "LN" or unicodedata.category(ch) == "So" for ch in line)
+
+
+def _caption_first_line_for_model(value: Any) -> str | None:
+    """The model's copy of one `caption_first_line`: the FIRST line (leading blank lines are not
+    a line), cleaned (`_clean_caption_line`) and cut (`_caption_truncated`). If that first line
+    says nothing once cleaned -- only an @handle, a link or a spacer -- the answer is None: a
+    later line is never sent in its place. Spring (CreatorOwnCaption.firstLine) already does
+    exactly this, so its output passes through unchanged; repeating it here means a Spring
+    regression still cannot hand Meera a second line, a link, an e-mail or someone's @handle.
+    None when nothing is left (or `value` is not a string)."""
+    if not isinstance(value, str):
+        return None
+    for raw in _CAPTION_LINE_BREAKS.split(value):
+        if not " ".join(_caption_invisible_removed(raw).split()):
+            continue  # a blank line before the first line is not a line
+        line = _clean_caption_line(raw)
+        if not line or not _caption_says_something(line):
+            return None  # the first line said nothing: never fall through to line 2
+        return _caption_truncated(line)
+    return None
+
+
+def _split_post_captions(items: Any) -> tuple[Any, list[dict[str, Any]]]:
+    """(the posts without their `caption_first_line`, [{post_id, caption_first_line}, ...]).
+
+    Never mutates `items`: every post that carried a caption comes back as a new dict. A post
+    whose caption is neither a string nor null, or whose `post_id` is not a string, is returned
+    UNCHANGED -- the caption key then fails `_TRUSTED_KEYS_CONTENT_POST` and the whole list is
+    wrapped as unclassified, never trusted. A non-list is returned as it is, with no captions."""
+    if not isinstance(items, list):
+        return items, []
+    rest: list[Any] = []
+    captions: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict) or "caption_first_line" not in item:
+            rest.append(item)
+            continue
+        value = item["caption_first_line"]
+        post_id = item.get("post_id")
+        if not (value is None or isinstance(value, str)) or not isinstance(post_id, str):
+            rest.append(item)
+            continue
+        rest.append({k: v for k, v in item.items() if k not in _UNTRUSTED_KEYS_CONTENT_POST})
+        line = _caption_first_line_for_model(value)
+        if line is not None:
+            captions.append({"post_id": post_id, "caption_first_line": line})
+    return rest, captions
+
+
 def _content_evidence_for_model(evidence: Any) -> dict[str, Any] | None:
     """The model's copy of one `Evidence`: `post_ids` dropped, `type` / `sample_size` /
     `baseline_sample_size` kept. None when the shape is not the Java record's (an unknown key,
@@ -1136,7 +1313,9 @@ def _model_copy_of_tool_result(tool_name: str, data: Any) -> str:
     estimate_my_rate's `PackageQuote` carries none, and Block A/B context fields are a separate
     surface this item does not touch). plan_my_week and get_todays_topics wrap editorial text;
     get_my_content_patterns (intelligence v1) is trusted field-for-field and has every
-    `evidence.post_ids` dropped for token control, while the browser's copy keeps them. Every
+    `evidence.post_ids` dropped for token control, while the browser's copy keeps them; its one
+    person-written field, each post's `caption_first_line` (the creator's own caption), is moved
+    into an `<untrusted_creator_captions>` block keyed by post_id. Every
     other tool, and a non-dict payload (an error shape, or `None`), passes through as plain
     `_safe_json` — unchanged from before this fix.
     """
@@ -1182,6 +1361,14 @@ def _model_copy_of_tool_result(tool_name: str, data: Any) -> str:
             _TRUSTED_KEYS_GET_MY_CONTENT_PATTERNS,
             container_keys=frozenset(_CONTENT_PATTERNS_LISTS),
         )
+        # 2026-09-26: the creator's own caption lines leave the posts BEFORE the allow-list check,
+        # so they are never trusted; they go to the model only inside their own wrapper below.
+        captions: dict[str, list[dict[str, Any]]] = {}
+        for key in _CONTENT_CAPTION_LISTS:
+            if key in trusted:
+                trusted[key], found = _split_post_captions(trusted[key])
+                if found:
+                    captions[key] = found
         for key, element_keys in _CONTENT_PATTERNS_LISTS.items():
             if key not in trusted:
                 continue
@@ -1190,13 +1377,18 @@ def _model_copy_of_tool_result(tool_name: str, data: Any) -> str:
                 unclassified[key] = trusted.pop(key)
             else:
                 trusted[key] = cleaned
-        if not unclassified:
-            return _safe_json(trusted)
-        return (
-            _safe_json(trusted)
-            + "\n"
-            + wrap_untrusted("unclassified", _safe_json(_strip_post_ids(unclassified)))
-        )
+        parts = [_safe_json(trusted)]
+        if unclassified:
+            parts.append(
+                wrap_untrusted("unclassified", _safe_json(_strip_post_ids(unclassified)))
+            )
+        if captions:
+            # ensure_ascii=False: a Hindi or emoji caption reaches Meera as its own letters, not
+            # as \u escapes. Line breaks were removed above, so the block stays one JSON line.
+            parts.append(
+                wrap_untrusted("creator_captions", json.dumps(captions, ensure_ascii=False))
+            )
+        return "\n".join(parts)
 
     if tool_name == GET_TODAYS_TOPICS:
         # Everything except the server-computed date goes in the wrapper, `topics` included --

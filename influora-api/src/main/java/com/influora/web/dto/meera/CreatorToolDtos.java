@@ -336,6 +336,16 @@ public final class CreatorToolDtos {
      * One best or weak post against the creator's usual reach. {@code post_type} is REEL | CAROUSEL
      * | POST | OTHER; date and time are IST; {@code engagement_rate} is null when interactions are
      * unknown (never "0.0%").
+     *
+     * <p><b>{@code caption_first_line} is the creator's OWN caption text</b> (ADR
+     * wiki/decisions/2026-09-26-creator-own-caption-to-meera.md, amending the LOCKED 2026-07-06
+     * caption ADR): the first meaningful line only, at most 100 characters, @handles and links
+     * removed, omitted when there is none. This record is the ONE allow-listed caption-bearing
+     * record in {@code web.dto} ({@code NoBrandFacingCaptionExposureTest#CREATOR_ONLY_CAPTION_FIELDS});
+     * {@code CreatorOwnCaptionReachabilityTest} proves it is reachable only from the creator-scoped
+     * {@code /internal/meera/creator/get_my_content_patterns} route and from no brand route or DTO.
+     * It is untrusted text: influora-ai wraps it as data, and the frontend never renders it as HTML.
+     * {@link #toString()} leaves it out so a log line can never carry it.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record PostReading(
@@ -348,7 +358,26 @@ public final class CreatorToolDtos {
             @JsonProperty("reach") String reach,
             @JsonProperty("reach_vs_usual") String reachVsUsual,
             @JsonProperty("engagement_rate") String engagementRate,
-            @JsonProperty("evidence") Evidence evidence) {}
+            @JsonProperty("evidence") Evidence evidence,
+            @JsonProperty("caption_first_line") String captionFirstLine) {
+
+        /** Every component except the caption line, which must never reach a log. */
+        @Override
+        public String toString() {
+            return "PostReading[postId=" + postId
+                    + ", postType=" + postType
+                    + ", postedDate=" + postedDate
+                    + ", postedTime=" + postedTime
+                    + ", window=" + window
+                    + ", permalink=" + permalink
+                    + ", reach=" + reach
+                    + ", reachVsUsual=" + reachVsUsual
+                    + ", engagementRate=" + engagementRate
+                    + ", evidence=" + evidence
+                    + ", captionFirstLine=" + (captionFirstLine == null ? "null" : "<redacted>")
+                    + "]";
+        }
+    }
 
     /**
      * A post type (POST_TYPE) or posting window (POSTING_WINDOW) whose median beat the creator's

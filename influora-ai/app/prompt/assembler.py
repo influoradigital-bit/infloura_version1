@@ -27,6 +27,7 @@ logic — see `app/prompt/untrusted.py`.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -219,6 +220,12 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
     # formats a date. Only rendered when `negotiation_holdout` is true.
     "holdout_until",
     "identity",
+    # Connected account (2026-09-26, Swapnil): which Instagram account this
+    # creator has connected, pre-rendered by Java (MeeraContextService
+    # .buildInstagramAccount) as "@handle", or its exact "not connected" /
+    # "connected, but its username has not arrived yet" text. Rendered as one
+    # Block B line; a value that is none of those three shapes is never echoed.
+    "instagram_account",
     "metrics_summary",
     # Phase B (§2.10, B6): this creator is in the negotiation-coaching control
     # arm. Rendered so Meera withholds counter-coaching rather than silently
@@ -297,6 +304,15 @@ _WEEKDAY_NAMES: dict[int, str] = {
 # iterating its keys.
 _CREATOR_ALLOWED_FIELDS = frozenset(CREATOR_CONTEXT_PAYLOAD_FIELDS)
 _CREATOR_IDENTITY_BOOLEANS = ("kyc_done", "gstin_present")
+
+# Instagram's own username rule: 1-30 of letters, digits, "." and "_", as Java
+# sends it with a leading "@". Java's two explicit texts are passed through word
+# for word (MeeraContextService.INSTAGRAM_ACCOUNT_NOT_CONNECTED / _NOT_YET).
+# Anything else in `instagram_account` is not echoed into a system block at all.
+_INSTAGRAM_HANDLE = re.compile(r"@[A-Za-z0-9._]{1,30}")
+INSTAGRAM_ACCOUNT_NOT_CONNECTED_TEXT = "not connected"
+INSTAGRAM_ACCOUNT_NOT_YET_TEXT = "connected, but its username has not arrived yet"
+INSTAGRAM_ACCOUNT_NOT_AVAILABLE_TEXT = "not available"
 
 
 @dataclass(frozen=True)
@@ -771,6 +787,20 @@ def _creator_goal_line(ctx: dict[str, Any]) -> str:
     return head + " " + " ".join(rest)
 
 
+def _creator_instagram_account(value: Any) -> str:
+    """Java's `instagram_account` when it is an "@username" (Instagram's rule) or
+    one of Java's two explicit texts, else INSTAGRAM_ACCOUNT_NOT_AVAILABLE_TEXT.
+    Never echoes anything else, so no other text can ride into Block B here."""
+    if isinstance(value, str):
+        text = value.strip()
+        if _INSTAGRAM_HANDLE.fullmatch(text) or text in (
+            INSTAGRAM_ACCOUNT_NOT_CONNECTED_TEXT,
+            INSTAGRAM_ACCOUNT_NOT_YET_TEXT,
+        ):
+            return text
+    return INSTAGRAM_ACCOUNT_NOT_AVAILABLE_TEXT
+
+
 def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
     """Per-creator cached block for the CREATOR audience (spec §3.2), keyed by
     (prompt_version, "CREATOR", workspace_id, session_id) via `cache_key_for`.
@@ -820,6 +850,11 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
         lines.append("- Engagement: " + _safe(metrics.get("engagement_rate") or "not available"))
     else:
         lines.append("- Metrics: Instagram not connected yet (no verified numbers)")
+
+    # Connected account (2026-09-26): which Instagram account is connected, so
+    # Meera can answer "which account did I connect?" without guessing. Always a
+    # line; a missing or malformed value is stated as not available.
+    lines.append("- Instagram account: " + _creator_instagram_account(ctx.get("instagram_account")))
 
     # Creator audience knowledge (2026-09-21): who actually watches THIS
     # creator, pre-rendered by Java. Always a line: a missing key is stated as

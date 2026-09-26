@@ -135,6 +135,8 @@ describe('get_creator_knowledge is a local tool, kept apart from the Spring-back
       'framing_comedy_lifestyle',
       'framing_groups',
       'framing_motivational',
+      // Reel formats (2026-09-26, c7f8fec0) come after the framing topics.
+      'reel_formats',
     ]);
   });
 });

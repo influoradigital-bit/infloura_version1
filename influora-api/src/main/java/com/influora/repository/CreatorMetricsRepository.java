@@ -60,6 +60,22 @@ public interface CreatorMetricsRepository extends JpaRepository<CreatorMetric, S
             Pageable pageable);
 
     /**
+     * {@link #findForAccountOrderByTimeDesc} narrowed to ONE data source IN THE QUERY (the F-0961
+     * rule): Meera's connected-account username reads only Meta-synced rows, and filtering after
+     * the LIMIT would let a burst of newer creator-reported rows push every Meta row off the page.
+     */
+    @Query(
+            "select m from CreatorMetric m where m.creatorProfileId = :creatorProfileId"
+                    + " and m.dataSource = :dataSource"
+                    + " and (m.igAccountId is null or m.igAccountId = :igAccountId)"
+                    + " order by m.time desc")
+    List<CreatorMetric> findForAccountAndDataSourceOrderByTimeDesc(
+            @Param("creatorProfileId") String creatorProfileId,
+            @Param("igAccountId") String igAccountId,
+            @Param("dataSource") String dataSource,
+            Pageable pageable);
+
+    /**
      * F-0961 — newest rows of ONE data source. Filtering in the query (not after a LIMIT) means a
      * burst of newer CREATOR_REPORTED rows can never push every Meta-synced row out of the page.
      */

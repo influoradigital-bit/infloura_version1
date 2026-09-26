@@ -1,5 +1,6 @@
 package com.influora.service.creatorcopilot;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.influora.domain.enums.ChallengeDayType;
 import com.influora.domain.enums.CreatorRecommendationSource;
 import com.influora.domain.enums.EvidenceType;
@@ -15,6 +16,10 @@ import java.util.List;
  *
  * <p>Every claim carries an {@link Evidence}: its source type and the ids of the posts it rests
  * on. There is deliberately no confidence number anywhere in this record.
+ *
+ * <p>The one piece of text here is {@link PostStat#captionFirstLine()}: the first line of the
+ * creator's own caption on a best or weak post (ADR 2026-09-26-creator-own-caption-to-meera). It
+ * is redacted from {@code toString()} so logging this record can never log it.
  *
  * @param available false when the creator has no live Instagram connection
  * @param reason {@link CreatorIntelligenceService#REASON_NOT_CONNECTED} when {@code available} is
@@ -88,6 +93,11 @@ public record CreatorIntelligenceProfile(
      *
      * @param type null when Meta's {@code media_type} is not one of the known values
      * @param engagementRate interactions per reach, or null when interactions are unknown (never 0)
+     * @param captionFirstLine the first line of the creator's OWN caption for this post, cleaned by
+     *     {@link CreatorOwnCaption#firstLine} (max 100 chars, no @handles or links), or null when
+     *     there is none. Creator-scoped Meera only (ADR 2026-09-26-creator-own-caption-to-meera):
+     *     never logged, which is why {@link #toString()} leaves it out, never serialised
+     *     ({@code @JsonIgnore}), and never on a brand path.
      */
     public record PostStat(
             String postId,
@@ -98,7 +108,27 @@ public record CreatorIntelligenceProfile(
             long reach,
             double reachRatio,
             Double engagementRate,
-            Evidence evidence) {}
+            Evidence evidence,
+            // Never serialised: only the creator tool DTO PostReading carries the line on the
+            // wire (ADR 2026-09-26-creator-own-caption-to-meera, defence in depth).
+            @JsonIgnore String captionFirstLine) {
+
+        /** Every component except the caption line, which must never reach a log. */
+        @Override
+        public String toString() {
+            return "PostStat[postId=" + postId
+                    + ", type=" + type
+                    + ", postedAt=" + postedAt
+                    + ", window=" + window
+                    + ", permalink=" + permalink
+                    + ", reach=" + reach
+                    + ", reachRatio=" + reachRatio
+                    + ", engagementRate=" + engagementRate
+                    + ", evidence=" + evidence
+                    + ", captionFirstLine=" + (captionFirstLine == null ? "null" : "<redacted>")
+                    + "]";
+        }
+    }
 
     /**
      * A post type or posting window whose median beats the creator's own usual by at least 20%.

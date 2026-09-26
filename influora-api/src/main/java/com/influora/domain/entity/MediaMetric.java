@@ -39,9 +39,11 @@ public class MediaMetric {
     private String mediaType;
 
     /**
-     * V26. Internal BrandSafety pipeline input ONLY — never surface raw caption text via any
-     * brand-facing DTO/response (only derived {@code brand_safety_score}/{@code garm_flags} may
-     * surface) and keep out of logs.
+     * V26 caption (the field below). BrandSafety pipeline input — never surface raw caption text
+     * via any brand-facing DTO/response (only derived {@code brand_safety_score}/{@code garm_flags}
+     * may surface) and keep out of logs. One creator-only exception
+     * (wiki/decisions/2026-09-26-creator-own-caption-to-meera.md): the creator's own Meera may see
+     * the cleaned first line (max 100 chars) of the creator's OWN posts, via CreatorOwnCaption.
      */
 
     /**

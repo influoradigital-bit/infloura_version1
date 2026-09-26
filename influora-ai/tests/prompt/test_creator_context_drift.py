@@ -150,6 +150,8 @@ def test_every_java_field_changes_the_rendered_creator_block():
         "tools_enabled": ["drift_tool_alpha", "drift_tool_beta"],
         # Camera knowledge v5 (2026-09-24): the phone the creator saved.
         "phone_model": "Drift Phone X9",
+        # Connected account (2026-09-26): the connected Instagram account, as "@handle".
+        "instagram_account": "@drift_ig.handle",
         # Goal memory (intelligence v1, 2026-09-25). Fixed codes, not free text: an unknown
         # code is dropped by design, so each distinctive value has to be a REAL code.
         "content_goal": "SELL_PRODUCT",

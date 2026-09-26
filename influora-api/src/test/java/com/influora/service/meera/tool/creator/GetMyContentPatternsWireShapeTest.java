@@ -101,9 +101,23 @@ class GetMyContentPatternsWireShapeTest {
                 .impressions(views)
                 .engagement(interactions)
                 .likes(null)
-                .caption("never read, never sent")
+                .caption(captionFor(mediaId))
                 .permalink("https://www.instagram.com/" + path + "/C" + mediaId.substring(mediaId.length() - 4) + "/")
                 .build();
+    }
+
+    /**
+     * Her own caption: blank lines first (not a line), then a first line carrying an @handle and a
+     * link, then a second line. Only "Post NNNN: my morning routine" may reach the payload (ADR
+     * 2026-09-26-creator-own-caption-to-meera). The UNKNOWN-type post has no caption at all.
+     */
+    private static String captionFor(String mediaId) {
+        if (mediaId.endsWith("0401")) {
+            return null;
+        }
+        return "\n \t\nPost " + mediaId.substring(mediaId.length() - 4)
+                + ": my morning routine @brand.partner https://linktr.ee/someone\n"
+                + "second line never sent #ad";
     }
 
     private static List<MediaMetric> rows() {
@@ -342,7 +356,16 @@ class GetMyContentPatternsWireShapeTest {
                 fresh,
                 "the real wire shape differs from " + FIXTURE + " -- if the change is intended, regenerate with"
                         + " -DupdateContentPatternsFixture=true and update influora-ai + the frontend to match");
-        // Captions never reach the payload.
-        assertTrue(!fresh.contains("never read, never sent"));
+        // Only the cleaned FIRST line of her own caption reaches the payload: never a later line,
+        // an @handle or a link, and a post with no caption has no caption_first_line key.
+        assertTrue(fresh.contains("\"caption_first_line\" : \"Post "), "the first line must be sent");
+        assertTrue(!fresh.contains("never sent"), "a second caption line leaked");
+        assertTrue(!fresh.contains("@brand.partner"), "an @handle leaked");
+        assertTrue(!fresh.contains("linktr.ee"), "a link leaked");
+        assertTrue(
+                result.weakPosts().stream()
+                        .filter(p -> p.postId().endsWith("0401"))
+                        .allMatch(p -> p.captionFirstLine() == null),
+                "a post without a caption carries none");
     }
 }

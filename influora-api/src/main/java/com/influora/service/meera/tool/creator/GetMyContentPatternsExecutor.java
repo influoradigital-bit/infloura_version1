@@ -144,7 +144,10 @@ public class GetMyContentPatternsExecutor {
                 count(post.reach(), locale),
                 vsUsual(post.reachRatio(), locale),
                 post.engagementRate() == null ? null : percent(post.engagementRate(), locale),
-                toEvidence(post.evidence()));
+                toEvidence(post.evidence()),
+                // Her own caption's first line, already cleaned and bounded by CreatorOwnCaption
+                // (ADR 2026-09-26-creator-own-caption-to-meera). Passed through, never logged.
+                post.captionFirstLine());
     }
 
     private static WorkingPattern toWorkingPattern(GroupStat group, Locale locale) {

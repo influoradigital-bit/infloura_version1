@@ -88,10 +88,11 @@ class GetMyContentPatternsExecutorTest {
                 List.of(
                         new PostStat(
                                 "p1", ChallengeDayType.REEL, posted, "weekend evening",
-                                "https://www.instagram.com/reel/p1/", 29760, 2.4, 0.079, ev(List.of("p1"), 12))),
+                                "https://www.instagram.com/reel/p1/", 29760, 2.4, 0.079, ev(List.of("p1"), 12),
+                                "Monsoon skincare in 60 seconds")),
                 List.of(
-                        new PostStat("p2", null, weakPosted, "weekday morning", null, 5580, 0.45, null, ev(List.of("p2"), 12)),
-                        new PostStat("p3", ChallengeDayType.POST, weakPosted, "weekday morning", null, 12400, 1.0, 0.05, ev(List.of("p3"), 12))),
+                        new PostStat("p2", null, weakPosted, "weekday morning", null, 5580, 0.45, null, ev(List.of("p2"), 12), null),
+                        new PostStat("p3", ChallengeDayType.POST, weakPosted, "weekday morning", null, 12400, 1.0, 0.05, ev(List.of("p3"), 12), null)),
                 List.of(
                         new GroupStat(
                                 PatternKind.POST_TYPE, "Reels and videos", 8, 17608.0, 1.42, 0.069, 1.11,
@@ -125,12 +126,16 @@ class GetMyContentPatternsExecutorTest {
         assertEquals("+140%", best.reachVsUsual());
         assertEquals("7.9%", best.engagementRate());
         assertEquals(12, best.evidence().baselineSampleSize());
+        assertEquals("Monsoon skincare in 60 seconds", best.captionFirstLine(), "her own caption line passes through");
+        assertTrue(!best.toString().contains("Monsoon"), "toString must redact the caption line");
 
         PostReading weak = r.weakPosts().get(0);
         assertEquals("OTHER", weak.postType(), "an unknown media type is OTHER, never guessed");
         assertEquals("-55%", weak.reachVsUsual());
         assertEquals("08:05", weak.postedTime());
         assertNull(weak.engagementRate(), "unknown interactions must not render as 0.0%");
+        assertNull(weak.captionFirstLine(), "no caption line: null, omitted from the JSON");
+        assertTrue(!new ObjectMapper().valueToTree(weak).has("caption_first_line"));
         assertEquals("+0%", r.weakPosts().get(1).reachVsUsual());
 
         WorkingPattern group = r.whatWorks().get(0);

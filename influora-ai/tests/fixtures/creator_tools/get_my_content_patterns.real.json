@@ -116,7 +116,8 @@
           "18040000000000103"
         ],
         "baseline_sample_size" : 13
-      }
+      },
+      "caption_first_line" : "Post 0103: my morning routine"
     },
     {
       "post_id" : "18040000000000104",
@@ -135,7 +136,8 @@
           "18040000000000104"
         ],
         "baseline_sample_size" : 13
-      }
+      },
+      "caption_first_line" : "Post 0104: my morning routine"
     },
     {
       "post_id" : "18040000000000101",
@@ -154,7 +156,8 @@
           "18040000000000101"
         ],
         "baseline_sample_size" : 13
-      }
+      },
+      "caption_first_line" : "Post 0101: my morning routine"
     }
   ],
   "weak_posts" : [
@@ -193,7 +196,8 @@
           "18040000000000302"
         ],
         "baseline_sample_size" : 13
-      }
+      },
+      "caption_first_line" : "Post 0302: my morning routine"
     },
     {
       "post_id" : "18040000000000301",
@@ -212,7 +216,8 @@
           "18040000000000301"
         ],
         "baseline_sample_size" : 13
-      }
+      },
+      "caption_first_line" : "Post 0301: my morning routine"
     }
   ],
   "what_works" : [

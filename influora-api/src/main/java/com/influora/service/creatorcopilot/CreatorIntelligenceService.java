@@ -50,7 +50,14 @@ import org.springframework.stereotype.Service;
  * CreatorPostingPatternService#MIN_POSTS_FOR_PATTERN} settled posts nothing is claimed, the baseline
  * included, and no group below 3 posts is ever reported. Medians, never means, so one viral Reel is
  * not "your usual". {@code likes} is never read (hidden-likes accounts), {@code video_views} is never
- * read (retired by Meta; views live in {@code impressions}), and {@code caption} is never read.
+ * read (retired by Meta; views live in {@code impressions}).
+ *
+ * <p><b>Caption: the first line only, of her own posts only</b> (ADR
+ * 2026-09-26-creator-own-caption-to-meera, amending the LOCKED 2026-07-06 caption ADR). The
+ * {@code caption} column is read for one thing: {@link CreatorOwnCaption#firstLine} of each best or
+ * weak post, so Meera knows what the post was about. It is attached only when the row belongs to
+ * the profile resolved from the verified user id (a second check on top of the query's own
+ * {@code creatorProfileId} filter), it is never logged, and it feeds no number.
  *
  * <p>{@code now} is decided by the CALLER, never read here, the same discipline as {@link
  * CreatorPostingPatternService#analyse}.
@@ -114,7 +121,8 @@ public class CreatorIntelligenceService {
             String permalink,
             long reach,
             Long views,
-            Long interactions) {
+            Long interactions,
+            String captionFirstLine) {
 
         /** Interactions per reach, or null when interactions are unknown -- never 0. */
         Double engagementRate() {
@@ -209,7 +217,8 @@ public class CreatorIntelligenceService {
                             row.getPermalink(),
                             reach,
                             row.getImpressions(),
-                            row.getEngagement()));
+                            row.getEngagement(),
+                            ownCaptionFirstLine(profile, row)));
         }
 
         valid.sort(Comparator.comparing(Post::postedAt).reversed().thenComparing(Post::mediaId));
@@ -288,6 +297,18 @@ public class CreatorIntelligenceService {
                 List.copyOf(weak),
                 capped,
                 followed);
+    }
+
+    /**
+     * The cleaned first line of {@code row}'s caption, only when the row is this creator's own:
+     * its {@code creatorProfileId} must equal the profile resolved from the verified user id. A row
+     * of any other profile gets null, whatever the query returned. Never logged.
+     */
+    static String ownCaptionFirstLine(CreatorProfile owner, MediaMetric row) {
+        if (owner == null || owner.getId() == null || !owner.getId().equals(row.getCreatorProfileId())) {
+            return null;
+        }
+        return CreatorOwnCaption.firstLine(row.getCaption());
     }
 
     private CreatorProfile resolveProfile(String creatorUserId) {
@@ -452,7 +473,8 @@ public class CreatorIntelligenceService {
                 post.reach(),
                 ratio,
                 post.engagementRate(),
-                new Evidence(EvidenceType.CREATOR_POST_DATA, List.of(post.mediaId()), baselineN));
+                new Evidence(EvidenceType.CREATOR_POST_DATA, List.of(post.mediaId()), baselineN),
+                post.captionFirstLine());
     }
 
     /**
