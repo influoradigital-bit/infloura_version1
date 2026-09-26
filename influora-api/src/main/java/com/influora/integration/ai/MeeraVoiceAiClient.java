@@ -77,6 +77,10 @@ public class MeeraVoiceAiClient {
     private static final Logger log = LoggerFactory.getLogger(MeeraVoiceAiClient.class);
     private static final String PATH = "/voice/speak";
     private static final String TRANSCRIBE_PATH = "/voice/transcribe";
+    /** Shoot Check Level 2 on influora-ai (app/routes/shoot_check.py). */
+    static final String FRAME_CHECK_PATH = "/ai/shoot-check/frame";
+    /** A vision call is slower than a TTS one, so it gets its own response timeout. */
+    private static final int FRAME_CHECK_RESPONSE_TIMEOUT_SECONDS = 25;
     private static final String CRLF = "\r\n";
 
     private final String baseUrl;
@@ -389,6 +393,126 @@ public class MeeraVoiceAiClient {
                         .getBytes(StandardCharsets.UTF_8));
         out.write(("Content-Type: " + audioContentType + CRLF + CRLF).getBytes(StandardCharsets.UTF_8));
         out.write(audioBytes);
+        out.write(CRLF.getBytes(StandardCharsets.UTF_8));
+
+        out.write(("--" + boundary + "--" + CRLF).getBytes(StandardCharsets.UTF_8));
+        return out.toByteArray();
+    }
+
+    /**
+     * The result of one Shoot Check "Check my frame" forward. {@code ok} only for a 2xx from
+     * influora-ai, whose body is passed through verbatim ({@code {fixes, settings, ok}}).
+     * {@code status} carries influora-ai's code on a failure, for the log only.
+     */
+    public record FrameCheckResult(boolean ok, byte[] jsonBytes, String contentType, int status) {
+        static FrameCheckResult failed(int status) {
+            return new FrameCheckResult(false, null, null, status);
+        }
+    }
+
+    /**
+     * Shoot Check Level 2 -- forwards ONE still to influora-ai {@code POST /ai/shoot-check/frame}.
+     *
+     * <p>Why this exists: that route lives on the AI service and accepts only a service-scoped
+     * token, exactly like {@code /voice/transcribe}. The browser cannot reach it -- the app only
+     * talks to this API -- so without this proxy the frontend's "Check my frame" called a path
+     * that does not exist here and failed on every tap, while every test on both sides passed.
+     *
+     * <p>Same discipline as {@link #transcribe}: a service token minted for the creator's own user
+     * id, the bytes held in memory only, and no payload ever logged -- only the workspace, the
+     * status and the reason.
+     */
+    public FrameCheckResult checkFrame(
+            String workspaceId, byte[] imageBytes, String contentType, String shotLabel) {
+        if (workspaceId == null || workspaceId.isBlank() || imageBytes == null || imageBytes.length == 0) {
+            log.warn("MeeraVoiceAiClient: missing workspaceId/image, skipping frame check call");
+            return FrameCheckResult.failed(0);
+        }
+
+        String token;
+        byte[] body;
+        String boundary = "InfluoraFrameBoundary-" + UUID.randomUUID();
+        try {
+            token = tokenService.mint(workspaceId);
+            body = buildFrameMultipartBody(boundary, workspaceId, imageBytes, contentType, shotLabel);
+        } catch (Exception e) {
+            log.warn(
+                    "MeeraVoiceAiClient: failed to build frame check request for workspace={}: {}",
+                    workspaceId,
+                    e.getMessage());
+            return FrameCheckResult.failed(0);
+        }
+
+        HttpPost request = new HttpPost(baseUrl + FRAME_CHECK_PATH);
+        request.setHeader("Authorization", "Bearer " + token);
+        request.setConfig(
+                RequestConfig.custom()
+                        .setConnectTimeout(Timeout.ofSeconds(connectTimeoutSeconds))
+                        .setResponseTimeout(Timeout.ofSeconds(FRAME_CHECK_RESPONSE_TIMEOUT_SECONDS))
+                        .build());
+        request.setEntity(new ByteArrayEntity(body, ContentType.parse("multipart/form-data; boundary=" + boundary)));
+
+        RawResponse response;
+        try {
+            response = execute(request);
+        } catch (Exception e) {
+            log.warn(
+                    "MeeraVoiceAiClient: transport failure calling {} for workspace={}: {}",
+                    FRAME_CHECK_PATH,
+                    workspaceId,
+                    e.getMessage());
+            return FrameCheckResult.failed(0);
+        }
+
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            log.warn(
+                    "MeeraVoiceAiClient: non-2xx response from {} for workspace={}, status={}",
+                    FRAME_CHECK_PATH,
+                    workspaceId,
+                    response.statusCode());
+            return FrameCheckResult.failed(response.statusCode());
+        }
+
+        String responseType = response.contentType() == null || response.contentType().isBlank()
+                ? "application/json"
+                : response.contentType();
+        return new FrameCheckResult(true, response.body(), responseType, response.statusCode());
+    }
+
+    /**
+     * The multipart body influora-ai's frame route reads with {@code form.get(...)}:
+     * {@code workspace_id}, {@code image} and the optional {@code shot_label}. These three names
+     * are pinned against the Python route by {@code tests/routes/test_shoot_check_java_seam.py}.
+     */
+    static byte[] buildFrameMultipartBody(
+            String boundary, String workspaceId, byte[] imageBytes, String contentType, String shotLabel)
+            throws IOException {
+        String imageContentType =
+                (contentType == null || contentType.isBlank()) ? "image/jpeg" : contentType;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        out.write(("--" + boundary + CRLF).getBytes(StandardCharsets.UTF_8));
+        out.write(
+                ("Content-Disposition: form-data; name=\"workspace_id\"" + CRLF + CRLF)
+                        .getBytes(StandardCharsets.UTF_8));
+        out.write(workspaceId.getBytes(StandardCharsets.UTF_8));
+        out.write(CRLF.getBytes(StandardCharsets.UTF_8));
+
+        if (shotLabel != null && !shotLabel.isBlank()) {
+            out.write(("--" + boundary + CRLF).getBytes(StandardCharsets.UTF_8));
+            out.write(
+                    ("Content-Disposition: form-data; name=\"shot_label\"" + CRLF + CRLF)
+                            .getBytes(StandardCharsets.UTF_8));
+            out.write(shotLabel.getBytes(StandardCharsets.UTF_8));
+            out.write(CRLF.getBytes(StandardCharsets.UTF_8));
+        }
+
+        out.write(("--" + boundary + CRLF).getBytes(StandardCharsets.UTF_8));
+        out.write(
+                ("Content-Disposition: form-data; name=\"image\"; filename=\"frame.jpg\"" + CRLF)
+                        .getBytes(StandardCharsets.UTF_8));
+        out.write(("Content-Type: " + imageContentType + CRLF + CRLF).getBytes(StandardCharsets.UTF_8));
+        out.write(imageBytes);
         out.write(CRLF.getBytes(StandardCharsets.UTF_8));
 
         out.write(("--" + boundary + "--" + CRLF).getBytes(StandardCharsets.UTF_8));

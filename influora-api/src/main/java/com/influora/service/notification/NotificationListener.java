@@ -22,6 +22,7 @@ import com.influora.service.notification.event.ContractPendingSignatureEvent;
 import com.influora.service.notification.event.CreatorConnectionRequestedEvent;
 import com.influora.service.notification.event.ContractReadyForEscrowEvent;
 import com.influora.service.notification.event.ContractSignedEvent;
+import com.influora.service.notification.event.CreatorChallengeDayDueEvent;
 import com.influora.service.notification.event.CreatorFirstMessageEvent;
 import com.influora.service.notification.event.CreatorNotConnectedEvent;
 import com.influora.service.notification.event.CreditsExhaustedEvent;
@@ -868,5 +869,52 @@ public class NotificationListener {
                 event.toEmail(),
                 "creator.connect_account",
                 Map.of("user_name", event.userName(), "connect_url", event.connectUrl()));
+    }
+
+    // ========== Creator 7-day challenge (35, CHALLENGE-SPEC.md) ==========
+
+    /**
+     * Both channels (in-app + email), same as every ordinary domain event -- unlike {@code
+     * creator.not_connected}, this event does NOT re-fire daily for the same day (see the event's
+     * own javadoc: {@code entityId} already encodes the date), so there is no reason to route it
+     * in-app-only the way {@code NotificationService.EMAIL_ONLY_EVENTS}/{@code IN_APP_ONLY_EVENTS}
+     * special-case a couple of others.
+     *
+     * <p>Plain {@code @EventListener}, not {@code @TransactionalEventListener} -- same reason as
+     * {@link #on(CreatorNotConnectedEvent)}: the publisher is a scheduled job with no surrounding
+     * transaction, so an AFTER_COMMIT listener would never fire.
+     *
+     * <p>Round 2 fix: {@link #humanChallengeType} turns the event's raw {@code plannedType}
+     * ({@code REEL}/{@code CAROUSEL}/{@code POST}) into the words a creator actually reads --
+     * "a reel"/"a carousel"/"a photo post" -- both in the in-app body and the
+     * {@code planned_type} template variable {@code EmailTemplateRegistry} substitutes into the
+     * email. The raw enum never reaches either surface.
+     */
+    @EventListener
+    public void on(CreatorChallengeDayDueEvent event) {
+        String humanType = humanChallengeType(event.plannedType());
+        notificationService.notify(
+                event,
+                "Today's challenge task",
+                String.format("Today's task: %s — %s.", humanType, event.windowText()),
+                event.link(),
+                event.toEmail(),
+                "creator.challenge_day_due",
+                Map.of(
+                        "user_name", event.creatorName(),
+                        "planned_type", humanType,
+                        "window_text", event.windowText(),
+                        "challenge_url", webBaseUrl + event.link()));
+    }
+
+    /** Round 2 fix -- {@code ChallengeDayType} name -> the words a creator reads. Never the raw
+     * enum in any creator-facing copy. */
+    private static String humanChallengeType(String plannedType) {
+        return switch (plannedType) {
+            case "REEL" -> "a reel";
+            case "CAROUSEL" -> "a carousel";
+            case "POST" -> "a photo post";
+            default -> "a post";
+        };
     }
 }

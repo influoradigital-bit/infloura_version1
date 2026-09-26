@@ -39,7 +39,14 @@ public final class MeeraBriefAiDtos {
     public record ExtractRequest(
             @JsonProperty("creator_profile_id") String creatorProfileId,
             @JsonProperty("raw_text") String rawText,
-            @JsonProperty("creator_language") String creatorLanguage) {}
+            @JsonProperty("creator_language") String creatorLanguage,
+            /**
+             * T-CREATOR-CREDITS-V2 (SPEC.md B20, C22) — the $12.00 brief-extract USD backstop,
+             * sent only when {@code CREATOR_CREDITS_ENABLED} is on; omitted (NON_NULL) when it is
+             * off, so influora-ai falls through to its own process-wide {@code
+             * BRIEF_EXTRACT_MONTHLY_CAP_USD} default exactly as before this field existed.
+             */
+            @JsonProperty("brief_monthly_cap_usd") java.math.BigDecimal briefMonthlyCapUsd) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ExtractResponse(

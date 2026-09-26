@@ -76,7 +76,24 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.21.3"
+PROMPT_VERSION = "meera-2026.09.24.10"
+# ^ bumped when merging feature/creator-content-knowledge into launch (2026-09-24). Both lines
+# had moved on separately and BOTH used meera-2026.09.24.1 for different prompts, so the merged
+# prompt (launch: account insights, the Phase C review card; content-knowledge: knowledge
+# v3/v4, script format, daily topics, week plan, frame check, audit lane B) takes .10, a number
+# neither line has used, leaving .3-.9 free for work still landing on the content-knowledge
+# branch. A version must name exactly one prompt text (cache_key_for starts with it).
+#
+# Launch-side history:
+# (.24.2 on launch) bumped when merging feat/meera-creator-design into launch (2026-09-24): the persona now
+# carries BOTH the account-insights rule (.1) and Phase C's SCRIPT / REVIEW reply contracts,
+# a prompt no earlier version was ever served as.
+# Previous: meera-2026.09.24.1 --
+# ^ bumped for account insights (Swapnil 2026-09-24): Block B gained the "Your
+# account (from Instagram)" line (the creator's own last-28-day reach, views,
+# interactions, accounts engaged and profile-link taps), the persona gained the
+# rule for using it, and get_my_metrics' persona line names the new numbers.
+# Previous: meera-2026.09.21.3 --
 # ^ bumped for the go-live creator knowledge additions (Swapnil 2026-09-21):
 # video_content_concepts.jsonl gained 5 brand_deal_practice rows (ad label,
 # endorse only what you used, the Influora draft-to-payment flow, disclosed
@@ -97,7 +114,94 @@ PROMPT_VERSION = "meera-2026.09.21.3"
 # content advice, one goal question when the goal is not clear from the conversation, at most
 # three questions, never re-asking what the context already holds (Swapnil 2026-09-21).
 #
-# Previously (.2): bumped for creator audience knowledge (feature/creator-content-knowledge,
+#
+# Content-knowledge-side history (its .24.1 is NOT launch's .24.1):
+# ^ bumped for the creator-AI audit fixes, lane B (audit 2026-09-24, ai.md H1 and M1-M10):
+# the week plan now shows each festival on ONE day (its post day, with post_by the festival's
+# own date) and the persona's week-plan rule says so; KEEP IT SHORT names the week plan as an
+# exception next to the full script; the two hook templates that open with a comment ask are
+# marked CTA RULE in the knowledge block (content_knowledge.py) so the ask moves to the last
+# beat or the caption; the intake no longer offers "carousel" (short video only, said
+# plainly); "saved as a draft, tap to send" now rides in the draft_reply bullet, rendered only
+# when that tool is offered; with no tool giving the date Meera says she cannot see it and
+# asks; and four knowledge rows no longer model invented statistics or invented first-person
+# results, with a persona rule against scripting results the creator has not told her.
+# BRAND prompt unchanged.
+#
+# Previously (.23.3):
+# ^ bumped for the Level 2 "frame check" route (T-SHOOTCHECK-L2, one photo in,
+# three fixes out -- app/routes/shoot_check.py, app/prompt/frame_check.py): a
+# NEW cached system block (`build_system_prompt` in frame_check.py) reaches
+# the model for the first time on this bump, and `prompt_version` is a
+# component of `cache_key_for` (assembler.py) / every `ai_spend` log line, so
+# without this bump the frame-check route's own turns would be logged/cached
+# under a version number that, until now, only ever meant the chat/voice
+# persona text. This route is independent of the chat Block A/B/C persona
+# (it never touches assembler.py), but PROMPT_VERSION is service-global per
+# this file's own rule above (see the .09.20.1 entry: "the version is global,
+# so brand cache keys roll over too") -- one file's prompt content changing
+# means the constant that names "which prompt text is live" must move,
+# regardless of which route owns that content.
+#
+# Previously (.23.2):
+# ^ bumped for plan_my_week (Swapnil 2026-09-23): a 7-day plan built from the server's dates,
+# the festival calendar in app/planner/events.jsonl, today's topics and the creator's own
+# posting pattern. The plan format forbids inventing a date or a festival day, and says the
+# timing is a suggestion until their own posts support it. BRAND prompt unchanged.
+#
+# Previously (.23.1):
+# ^ bumped for get_todays_topics (Swapnil 2026-09-23): admin-curated daily topics reach
+# creator Meera through a tool, never the cached prompt. Two rails land with it, both from
+# Ash's AI review (wiki/ai-review/daily-topics-week-plan-ai-review.md): the model is told it
+# does NOT know the date and must read it from the tool, and topic text rides inside
+# `<untrusted_editorial>` because it is typed straight into the database. BRAND prompt
+# unchanged.
+#
+# Previously (.22.6):
+# ^ bumped for the script review (Swapnil 2026-09-22): one call to action
+# matched to the goal, no absolute promises, hashtags optional (at most 2),
+# and the plan names the on-camera action (with a hands-only fallback) and
+# what success looks like. BRAND prompt unchanged.
+#
+# Previously (.22.5):
+# ^ bumped for content knowledge v4 (Swapnil 2026-09-22): 109 entries (+11
+# actions to film per category, +6 lengths per goal, +8 situation -> structure
+# rules, the two undefined structures mapped onto PAS and Three-act) and the
+# full script format in creator_persona.py (plain-text beats, only on request).
+# BRAND prompt unchanged.
+#
+# Previously (.22.4):
+# ^ bumped because the .22.3 numeric rule was too broad: it also restricted the
+# creator's own durations ("sirf [duration] minute") and tip counts ("Ye
+# [number] galtiyan"). It now restricts only invented statistics and claims
+# about other people's results (STATISTIC RULE marker, has_statistic_slot in
+# content_knowledge.py). BRAND prompt unchanged.
+#
+# Previously (.22.3):
+# ^ bumped for content knowledge v3 (Swapnil 2026-09-22): 84 entries (17 from
+# his v3 + 5 narrative principles), the no-invented-number rule made GENERIC
+# (any [number]/[statistic]/[duration]-style slot, detected by slot name in
+# content_knowledge.py), a never-suggest-TikTok rule (banned in India) and an
+# ideas-only guard on outrage/status content. The .22.2 question-first intake
+# is unchanged. BRAND prompt unchanged.
+#
+# Previously (.22.2):
+# ^ bumped because Swapnil (2026-09-22) wants creator Meera to ask before she
+# ideates, like a manager: the content section's "Content idea intake" asks at
+# most 3 questions in one round (goal, format, past work; plus category when
+# there are several), never asks what the context already holds, and has a
+# skip / "jaldi batao" override that answers at once on defaults. It replaces
+# .22.1's "do not ask them to pick a category first". BRAND prompt unchanged.
+#
+# Previously (.22.1):
+# ^ bumped because creator Meera refused a content-idea request (Swapnil
+# 2026-09-22: "content ideas nahi deti"). creator_persona.py's opening now says
+# content help is part of her job with a no-refusal rule, and the content section
+# gained the audience-not-available-still-answer, several-categories and
+# no-follower-count-put-down rules. BRAND prompt text unchanged.
+#
+# Previously (.21.2):
+# ^ bumped for creator audience knowledge (feature/creator-content-knowledge,
 # Swapnil 2026-09-21): the CREATOR Block B now renders a "Your audience" line
 # from the new `audience_summary` context field (the creator's OWN audience,
 # rendered by Java, or an explicit "not available"), and creator_persona.py
@@ -266,6 +370,17 @@ BRIEF_EXTRACT_MODEL = os.getenv("BRIEF_EXTRACT_MODEL", TRENDSPARK_MODEL)
 # proven, not assumed. Do not point this at a Haiku-class model without that
 # eval. Overridable via env for that future (evaluated) bump.
 BRAND_SAFETY_MODEL = os.getenv("BRAND_SAFETY_MODEL", CLAUDE_MODEL)
+
+# Level 2 "frame check" (T-SHOOTCHECK-L2, POST /ai/shoot-check/frame) — the
+# first route in this service that sends an IMAGE to a model
+# (`ClaudeProvider.complete_with_image`). Defaults to the full CLAUDE_MODEL
+# (Sonnet), not a Haiku-class model: judging framing/light/background from a
+# photo and staying inside the appearance/identity rules in
+# app/prompt/frame_check.py needs real vision quality, and unlike
+# TREND_TAG_MODEL/BRAND_SAFETY_MODEL/CREATOR_COPILOT_MODEL this is not yet
+# evaluated against a cheaper model at all -- overridable via env for a future
+# (evaluated) bump, same pattern as BRAND_SAFETY_MODEL above.
+SHOOT_CHECK_MODEL = os.getenv("SHOOT_CHECK_MODEL", CLAUDE_MODEL)
 
 # India / approved regions only (Kabir guardrail #3) — informational; enforced by
 # provider client base URLs / region config below.
@@ -662,6 +777,32 @@ class Settings:
     # configured — see that function and SPEC §14.4.b trap 2.
     brief_extract_monthly_cap_usd: float = field(
         default_factory=lambda: _get_float("BRIEF_EXTRACT_MONTHLY_CAP_USD", 0.25)
+    )
+
+    # --- Level 2 "frame check" (T-SHOOTCHECK-L2, POST /ai/shoot-check/frame) ---
+    # Upload cap per the route spec: reject an image over this many bytes
+    # BEFORE it reaches the model. 1.5 MB is generous for a phone-camera JPEG
+    # a creator is checking before filming, and keeps one call's base64
+    # payload (~1.33x the raw bytes) comfortably inside a normal request body.
+    shoot_check_max_image_bytes: int = field(
+        default_factory=lambda: _get_int("SHOOT_CHECK_MAX_IMAGE_BYTES", 1_500_000)
+    )
+    shoot_check_max_tokens: int = field(
+        default_factory=lambda: _get_int("SHOOT_CHECK_MAX_TOKENS", 1024)
+    )
+    # Swapnil has not yet ruled on whether a frame check costs a creator a
+    # credit (creator turns currently charge zero across the board --
+    # `creditsCharged(0)` is hard-coded on the creator path in
+    # `influora-api/.../MeeraSessionService.java`). This route METERS every
+    # check (see app/routes/shoot_check.py's `_log_frame_check_metered`) but
+    # does NOT charge anything itself -- there is no credit-debit call
+    # anywhere in this route. `shoot_check_credit_cost_credits` is read into
+    # every metering log line purely so that WHEN Swapnil rules, wiring a real
+    # charge is a config flip plus the (separate, not-yet-built) charge call,
+    # not a re-plumb of this route. A value of 0 (the default) means exactly
+    # what it says today: this check is free.
+    shoot_check_credit_cost_credits: int = field(
+        default_factory=lambda: _get_int("SHOOT_CHECK_CREDIT_COST_CREDITS", 0)
     )
 
     # --- Voice language defaults (A5) ---

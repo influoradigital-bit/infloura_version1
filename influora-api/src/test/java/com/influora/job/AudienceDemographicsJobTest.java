@@ -1,6 +1,7 @@
 package com.influora.job;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -15,9 +16,7 @@ import com.influora.domain.entity.MetaAuthPath;
 import com.influora.domain.entity.AudienceDemographics;
 import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.integration.meta.client.InstagramInsightsClient;
-import com.influora.integration.meta.dto.AudienceDemographicsResponse;
-import com.influora.integration.meta.dto.AudienceDemographicsResponse.DemographicBreakdown;
-import com.influora.integration.meta.dto.AudienceDemographicsResponse.DemographicValue;
+import com.influora.integration.meta.dto.AudienceBreakdowns;
 import com.influora.integration.meta.exception.MetaApiException;
 import com.influora.integration.meta.exception.MetaRateLimitException;
 import com.influora.integration.meta.oauth.MetaTokenStorage;
@@ -25,6 +24,7 @@ import com.influora.integration.meta.service.MetaRateLimitTracker;
 import com.influora.repository.AudienceDemographicsRepository;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
+import com.influora.service.creatorcopilot.CreatorMetaConnectedEvent;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
@@ -85,25 +85,11 @@ class AudienceDemographicsJobTest {
         when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
 
-        AudienceDemographicsResponse response =
-                new AudienceDemographicsResponse(
-                        List.of(
-                                new DemographicBreakdown(
-                                        "audience_gender_age",
-                                        "lifetime",
-                                        List.of(new DemographicValue(Map.of("F.25-34", 400L), null))),
-                                new DemographicBreakdown(
-                                        "audience_country",
-                                        "lifetime",
-                                        List.of(new DemographicValue(Map.of("US", 1200L), null))),
-                                new DemographicBreakdown(
-                                        "audience_city",
-                                        "lifetime",
-                                        List.of(new DemographicValue(Map.of("New York, NY", 210L), null))),
-                                new DemographicBreakdown(
-                                        "audience_locale",
-                                        "lifetime",
-                                        List.of(new DemographicValue(Map.of("en_US", 900L), null)))));
+        AudienceBreakdowns response =
+                new AudienceBreakdowns(
+                        Map.of("25-34_female", 400L),
+                        Map.of("IN", 1200L),
+                        Map.of("Mumbai, Maharashtra", 210L));
         when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN)).thenReturn(response);
 
         job.pollDemographics();
@@ -114,10 +100,11 @@ class AudienceDemographicsJobTest {
         AudienceDemographics saved = captor.getValue();
         assertEquals(CREATOR_ID, saved.getCreatorProfileId());
         assertEquals("INSTAGRAM", saved.getPlatform());
-        assertTrue(saved.getAgeGenderBreakdownJson().contains("F.25-34"));
-        assertTrue(saved.getCountryBreakdownJson().contains("US"));
-        assertTrue(saved.getCityBreakdownJson().contains("New York"));
-        assertTrue(saved.getLocaleBreakdownJson().contains("en_US"));
+        assertTrue(saved.getAgeGenderBreakdownJson().contains("\"25-34_female\":400"));
+        assertTrue(saved.getCountryBreakdownJson().contains("\"IN\":1200"));
+        assertTrue(saved.getCityBreakdownJson().contains("Mumbai, Maharashtra"));
+        // Meta has no language breakdown any more: never a fabricated one.
+        assertNull(saved.getLocaleBreakdownJson());
 
         verify(auditLog)
                 .recordToolCall(
@@ -154,7 +141,7 @@ class AudienceDemographicsJobTest {
         when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(0);
         when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
-                .thenReturn(new AudienceDemographicsResponse(Collections.emptyList()));
+                .thenReturn(new AudienceBreakdowns(Map.of(), Map.of(), Map.of()));
 
         job.pollDemographics();
 
@@ -245,12 +232,7 @@ class AudienceDemographicsJobTest {
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
         when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(
-                        new AudienceDemographicsResponse(
-                                List.of(
-                                        new DemographicBreakdown(
-                                                "audience_country",
-                                                "lifetime",
-                                                List.of(new DemographicValue(Map.of("US", 500L), null))))));
+                        new AudienceBreakdowns(Map.of(), Map.of("US", 500L), Map.of()));
 
         job.pollDemographics();
 
@@ -271,12 +253,7 @@ class AudienceDemographicsJobTest {
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
         when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(
-                        new AudienceDemographicsResponse(
-                                List.of(
-                                        new DemographicBreakdown(
-                                                "audience_country",
-                                                "lifetime",
-                                                List.of(new DemographicValue(Map.of("US", 500L), null))))));
+                        new AudienceBreakdowns(Map.of(), Map.of("US", 500L), Map.of()));
 
         job.pollDemographics();
 
@@ -362,12 +339,7 @@ class AudienceDemographicsJobTest {
         when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
         when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(
-                        new AudienceDemographicsResponse(
-                                List.of(
-                                        new DemographicBreakdown(
-                                                "audience_country",
-                                                "lifetime",
-                                                List.of(new DemographicValue(Map.of("US", 500L), null))))));
+                        new AudienceBreakdowns(Map.of(), Map.of("US", 500L), Map.of()));
 
         Thread thread1 = new Thread(() -> job.pollDemographics());
         thread1.start();
@@ -385,6 +357,49 @@ class AudienceDemographicsJobTest {
         verify(tokenStorage, times(1)).getValidCreatorToken(CREATOR_ID);
         verify(auditLog, times(1))
                 .recordToolCall(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("connecting Instagram fetches that creator's audience at once, not next Sunday")
+    void connectTriggersAnImmediateFetch() {
+        MetaOAuthToken token = createTestToken(null, CREATOR_ID);
+        when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_ID))
+                .thenReturn(Optional.of(token));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
+                .thenReturn(new AudienceBreakdowns(Map.of("18-24_female", 90L), Map.of("IN", 150L), Map.of()));
+
+        job.onCreatorConnected(new CreatorMetaConnectedEvent(CREATOR_ID));
+
+        ArgumentCaptor<AudienceDemographics> captor = ArgumentCaptor.forClass(AudienceDemographics.class);
+        verify(demographicsRepository).save(captor.capture());
+        assertEquals(CREATOR_ID, captor.getValue().getCreatorProfileId());
+    }
+
+    @Test
+    @DisplayName("connect-triggered fetch with no live token does nothing and never throws")
+    void connectWithoutLiveTokenIsANoOp() {
+        when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_ID))
+                .thenReturn(Optional.empty());
+
+        job.onCreatorConnected(new CreatorMetaConnectedEvent(CREATOR_ID));
+
+        verify(instagramClient, never()).getAudienceDemographics(anyString(), anyString(), any());
+        verify(demographicsRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("connect-triggered fetch swallows a Meta failure: the weekly run is the guarantee")
+    void connectFailureNeverEscapes() {
+        MetaOAuthToken token = createTestToken(null, CREATOR_ID);
+        when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_ID))
+                .thenReturn(Optional.of(token));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenThrow(new RuntimeException("boom"));
+
+        job.onCreatorConnected(new CreatorMetaConnectedEvent(CREATOR_ID));
+
+        verify(demographicsRepository, never()).save(any());
     }
 
     private MetaOAuthToken createTestToken(String workspaceId, String creatorProfileId) {

@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Sparkles } from 'lucide-react';
 
 import { CreatorLayout } from '@/components/creator/creator-layout';
+import { ChallengeCard } from '@/components/creator/challenge/ChallengeCard';
 import { CopilotPreviewCard } from '@/components/creator/copilot/CopilotPreviewCard';
 import { DailySuggestionSection } from '@/components/creator/copilot/DailySuggestionSection';
 import { PasteBriefCard } from '@/components/creator/copilot/PasteBriefCard';
@@ -10,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { ConsentScreen } from '@/components/meera/ConsentScreen';
 import { MeeraCopilotChat } from '@/components/creator/MeeraCopilotChat';
 import { MeeraHero } from '@/components/creator/meera/MeeraHero';
+import { HeroCreditsChip } from '@/components/creator/credits/HeroCreditsChip';
 import { api, ApiError } from '@/lib/api';
 import { getCreatorSession } from '@/lib/auth-session';
 
@@ -62,6 +64,14 @@ export default function CreatorCopilotPage() {
   const [checkingConsent, setCheckingConsent] = React.useState(false);
   const [showConsent, setShowConsent] = React.useState(false);
   const [chatOpen, setChatOpen] = React.useState(false);
+  // 2026-09-22 — the chat's "Analyse a brief" button: bring the brief card below into view and put
+  // the cursor in its paste box. The card keeps its own flow and its own 3-credit charge.
+  const focusBriefCard = React.useCallback(() => {
+    const el = document.getElementById('paste-brief');
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.querySelector('textarea')?.focus({ preventScroll: true });
+  }, []);
   // Swapnil 2026-09-23: English by default; the creator's stored creator_language wins as
   // soon as preferences load, and Meera follows the language they write in.
   const [language, setLanguage] = React.useState('en-IN');
@@ -220,6 +230,16 @@ export default function CreatorCopilotPage() {
           <p className="text-muted-foreground">Your AI content partner</p>
         </div>
 
+        {/* Creator 7-day challenge (CHALLENGE-SPEC.md, 2026-09-23, Frontend §7) — top of the
+            Co-pilot page. "Write the script" / "Give me an idea" reuse this same
+            `openMeeraWithPrompt`, PREFILL-ONLY (ruling R-U1) — never sends on the creator's
+            behalf, same contract as "Ask Meera about this brief" below. */}
+        <ChallengeCard
+          language={language}
+          onAskMeera={(prompt) => void openMeeraWithPrompt(prompt)}
+          className="mb-6"
+        />
+
         {/* T-MEERA-CREATOR-PHASE-A (A10) — Meera chat entry. Conversational only in Phase A:
             deals/earnings/metrics Q&A, no drafting or sending on the creator's behalf.
             Gate review fix (item 3): MEERA_CREATOR_ENABLED off replaces this entirely with a
@@ -240,19 +260,25 @@ export default function CreatorCopilotPage() {
           </Card>
         ) : (
           <Card className="mb-6">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary" />
-                <CardTitle className="text-base">Talk to Meera</CardTitle>
-              </div>
-              <CardDescription>Your AI manager — ask about deals, earnings, and metrics.</CardDescription>
-            </CardHeader>
+            {/* Round 2 QA — the chat panel has its own "Meera" header once open (dark band,
+                orb, live status line); showing this outer title/description above it duplicated
+                the same heading. Kept for the hero (closed) state, where it is the only heading. */}
+            {!chatOpen && (
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  <CardTitle className="text-base">Talk to Meera</CardTitle>
+                </div>
+                <CardDescription>Your AI manager — ask about deals, earnings, and metrics.</CardDescription>
+              </CardHeader>
+            )}
             <CardContent>
               {chatOpen ? (
                 <MeeraCopilotChat
                   firstName={firstName}
                   language={language}
                   prefillMessage={prefillMessage}
+                  onAnalyseBrief={focusBriefCard}
                   onClose={() => {
                     setChatOpen(false);
                     setPrefillMessage(null);
@@ -270,6 +296,7 @@ export default function CreatorCopilotPage() {
                   onOpen={openMeera}
                   busy={checkingConsent}
                   error={consentLoadError}
+                  topRight={<HeroCreditsChip language={language} />}
                 />
               )}
             </CardContent>
@@ -282,6 +309,7 @@ export default function CreatorCopilotPage() {
             the ANALYSE action, not the card: a creator who has not consented still sees what
             the feature is, and pressing Analyse opens the consent screen instead of sending. */}
         {featureDisabled !== true && (
+          <div id="paste-brief" className="scroll-mt-20">
           <PasteBriefCard
             className="mb-6"
             needsConsent={consentAccepted === false}
@@ -290,6 +318,7 @@ export default function CreatorCopilotPage() {
             language={language}
             onAskMeeraAboutBrief={askMeeraAboutBrief}
           />
+          </div>
         )}
 
         <ConsentScreen

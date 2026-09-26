@@ -346,3 +346,63 @@ def test_a_creator_with_hindi_on_file_still_gets_hindi():
 def test_persona_tells_meera_to_switch_when_the_creator_switches():
     persona = get_creator_persona(_ctx())
     assert "asks you to switch" in persona
+
+
+# --- Phase C (2026-09-23): the two replies the app renders as cards ---
+
+
+def _assert_lines_in_order(persona: str, patterns: list[str]) -> None:
+    """Every pattern matches a WHOLE LINE, and they appear in this order.
+
+    Substring checks are not enough here: "SCRIPT" and "REVIEW" also occur in ordinary prose, so
+    `"SCRIPT" in persona` still passes when the literal first line of the block has been replaced
+    (proved by mutating that line to "A SCRIPT FOR YOU" - the old test stayed green)."""
+    import re
+
+    at = -1
+    for pattern in patterns:
+        match = re.search(pattern, persona[at + 1:], re.M)
+        assert match, f"{pattern} missing or out of order"
+        at = at + 1 + match.start()
+
+
+def test_persona_states_the_script_contract():
+    """The frontend parser (src/lib/meera-result-cards.ts) can only draw a card if Meera writes
+    scripts in one fixed layout. Since the 2026-09-24 merge that is the content-knowledge "Full
+    script format" (Swapnil: the rich format, shown as a card). If it changes here, the parser
+    must change too."""
+    persona = get_creator_persona(_ctx())
+    _assert_lines_in_order(
+        persona,
+        [r"^\s*Idea:", r"^\s*Plan:", r"^\s*Action:", r"^\s*Success looks like:", r"^\s*Script:",
+         r'^\s*"0-3s\. Shot:', r"^\s*Caption:", r"^\s*Before you shoot:", r"^\s*Why this works:"],
+    )
+    assert "Use exactly this layout, one item per" in " ".join(persona.split())
+
+
+def test_persona_states_the_profile_review_contract():
+    persona = get_creator_persona(_ctx())
+    _assert_lines_in_order(
+        persona,
+        [r"^\s*REVIEW\s*$", r"^\s*Working:", r"^\s*Not working:", r"^\s*Next 1:",
+         r"^\s*Next 2:", r"^\s*Next 3:"],
+    )
+
+
+def test_the_card_keys_stay_english_for_a_hindi_creator():
+    persona = " ".join(get_creator_persona(_ctx(creator_language="hi-IN")).split())
+    # Both card layouts: the review's key words and the script's labels.
+    assert "(REVIEW, Working, Not working, Next 1/2/3) stay in English even when you write in Hindi" in persona
+    assert (
+        "The labels Idea, Plan, Action, Success looks like, Script, Caption, Before you shoot and"
+        " Why this works, and the Shot / Say / On screen markers in each beat, stay in English even"
+        " when you write in Hindi"
+    ) in persona
+
+
+def test_the_fixed_shapes_are_only_for_replies_the_creator_asked_for():
+    persona = get_creator_persona(_ctx())
+    assert "Full script format (only when asked):" in persona
+    assert "Profile review format (only when asked to review their profile):" in persona
+    # The short-reply rail still stands for everything else.
+    assert "KEEP IT SHORT" in persona

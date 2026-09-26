@@ -145,6 +145,38 @@ class EmailTemplateRegistryTest {
     }
 
     /**
+     * Round 2 fix (CHALLENGE-SPEC.md, coordinator feedback) — the challenge-day reminder must read
+     * in human words ("a reel"/"a carousel"/"a photo post"), never the raw {@code ChallengeDayType}
+     * enum, and must show a natural time window ("this evening, 5–10 pm"), never "17:00-22:00".
+     * {@code NotificationListener#humanChallengeType} is what supplies the {@code planned_type}
+     * value under test here; {@code CreatorChallengeDailyEmailJob#windowText} supplies {@code
+     * window_text} the same way in production — this test pins the registry's rendering of both,
+     * exactly as {@code NotificationListener.on(CreatorChallengeDayDueEvent)} calls it.
+     */
+    @Test
+    @DisplayName("creator.challenge_day_due renders human words, never the raw REEL/CAROUSEL/POST enum")
+    void challengeDayDueRendersHumanWordsNotRawEnum() {
+        EmailTemplateRegistry.Rendered r =
+                EmailTemplateRegistry.render(
+                        "creator.challenge_day_due",
+                        Map.of(
+                                "user_name", "Asha",
+                                "planned_type", "a reel", // as NotificationListener#humanChallengeType produces
+                                "window_text", "this evening, 5–10 pm", // as the job's windowText() produces
+                                "challenge_url", "https://app.influora.in/creator/copilot"),
+                        null);
+
+        assertEquals("Today's challenge task", r.subject());
+        assertEquals(
+                "Hi Asha, today's challenge task is a reel — this evening, 5–10 pm.\n\n"
+                        + "Open Influora: https://app.influora.in/creator/copilot",
+                r.plainText());
+        assertFalse(r.plainText().contains("REEL"), "raw enum leaked into the email");
+        assertTrue(r.html().contains("a reel — this evening, 5–10 pm"));
+        assertTrue(r.html().contains("href=\"https://app.influora.in/creator/copilot\""));
+    }
+
+    /**
      * Both workspace-invite templates used to be body-only: they named the workspace, the role and
      * the expiry, and gave the recipient no link, so an invite could never be redeemed. The link
      * has to reach BOTH parts of the email — the button in the HTML and the bare URL in plain text.

@@ -15,6 +15,7 @@
  */
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MeeraCopilotChat } from './MeeraCopilotChat';
@@ -129,8 +130,12 @@ async function openPanelAndSend(history: Array<{ id: string; role: string; conte
     reply: null,
   });
 
+  // MEERA-CHAT-DESIGN-SPEC.md Part B added `MeeraDesk` inside this panel's own empty state, and
+  // its tiles are real `react-router-dom` `Link`s — they throw outside a Router context.
   render(
-    <MeeraCopilotChat firstName="Asha" language="en-IN" onClose={vi.fn()} onConsentRequired={vi.fn()} />,
+    <MemoryRouter>
+      <MeeraCopilotChat firstName="Asha" language="en-IN" onClose={vi.fn()} onConsentRequired={vi.fn()} />
+    </MemoryRouter>,
   );
   await waitFor(() => expect(startSessionMock).toHaveBeenCalled());
 

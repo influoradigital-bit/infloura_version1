@@ -37,6 +37,11 @@ vi.mock('@/components/creator/copilot/CopilotPreviewCard', () => ({
 vi.mock('@/hooks/useDailySuggestion', () => ({
   useDailySuggestion: () => ({ status: 'idle' }),
 }));
+// Reads via react-query (useCreatorChallenge), which needs a QueryClientProvider this page's
+// own tests don't set up — mocked away same as DailySuggestionSection above.
+vi.mock('@/components/creator/challenge/ChallengeCard', () => ({
+  ChallengeCard: () => <div data-testid="challenge-card" />,
+}));
 
 const { getPreferences, recordConsent, pasteMock, sendTurnMock } = vi.hoisted(() => ({
   getPreferences: vi.fn(),

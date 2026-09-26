@@ -74,6 +74,7 @@ class CreatorBriefServiceRealRiskRulesTest {
     private CampaignRepository campaignRepository;
     private DealMessageRepository dealMessageRepository;
     private CreatorProfileRepository creatorProfileRepository;
+    private com.influora.service.credits.CreatorCreditService creatorCreditService;
 
     // The real DealRiskService's OWN extra dependencies (not shared with CreatorBriefService).
     private WorkspaceRepository workspaceRepository;
@@ -93,6 +94,20 @@ class CreatorBriefServiceRealRiskRulesTest {
         campaignRepository = mock(CampaignRepository.class);
         dealMessageRepository = mock(DealMessageRepository.class);
         creatorProfileRepository = mock(CreatorProfileRepository.class);
+        creatorCreditService = mock(com.influora.service.credits.CreatorCreditService.class);
+        lenient()
+                .when(
+                        creatorCreditService.charge(
+                                org.mockito.ArgumentMatchers.any(),
+                                org.mockito.ArgumentMatchers.any(),
+                                org.mockito.ArgumentMatchers.any()))
+                .thenReturn(
+                        new com.influora.service.credits.ChargeResult(
+                                com.influora.service.credits.ChargeResult.Outcome.DISABLED,
+                                com.influora.domain.enums.ChargeKind.BRIEF,
+                                3,
+                                0,
+                                0));
         workspaceRepository = mock(WorkspaceRepository.class);
         deliverableRepository = mock(DeliverableRepository.class);
         auditLogService = mock(AuditLogService.class);
@@ -124,7 +139,8 @@ class CreatorBriefServiceRealRiskRulesTest {
                         dealMessageRepository,
                         creatorProfileRepository,
                         new ObjectMapper(),
-                        new CreatorSuggestionAiProperties());
+                        new CreatorSuggestionAiProperties(),
+                        creatorCreditService);
 
         profile = mock(CreatorProfile.class);
         lenient().when(profile.getId()).thenReturn(CREATOR_PROFILE_ID);

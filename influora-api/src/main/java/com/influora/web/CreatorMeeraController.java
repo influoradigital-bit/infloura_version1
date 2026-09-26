@@ -10,9 +10,11 @@ import com.influora.domain.entity.CreatorAgentPreferences;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.enums.UserType;
 import com.influora.integration.ai.MeeraVoiceAiClient;
+import com.influora.config.CreatorCreditProperties;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.CreatorContextService;
+import com.influora.service.credits.CreatorCreditService;
 import com.influora.service.meera.MeeraSessionService;
 import com.influora.web.dto.meera.MeeraDtos.CreditsSummary;
 import com.influora.web.dto.meera.MeeraDtos.MessageHistoryItem;
@@ -72,6 +74,10 @@ public class CreatorMeeraController {
      * guard, same silent-fallback-not-413 contract, applied to the CREATOR-audience upload leg.
      */
     private static final long MAX_VOICE_CLIP_BYTES = 10L * 1024 * 1024;
+    /** Matches influora-ai's SHOOT_CHECK_MAX_IMAGE_BYTES default; the app sends a ~150 KB JPEG. */
+    static final long MAX_FRAME_BYTES = 1_500_000L;
+    /** A shot label is a few words from the script ("static overhead, 15s"), never an essay. */
+    private static final int MAX_SHOT_LABEL_CHARS = 120;
 
     private final MeeraSessionService sessionService;
     private final CreatorContextService creatorContext;
@@ -79,6 +85,8 @@ public class CreatorMeeraController {
     private final CreatorAgentPreferencesService preferencesService;
     private final MeeraVoiceAiClient voiceAiClient;
     private final MeeraCreatorFeatureProperties featureProperties;
+    private final CreatorCreditService creatorCreditService;
+    private final CreatorCreditProperties creditProperties;
 
     public CreatorMeeraController(
             MeeraSessionService sessionService,
@@ -86,13 +94,17 @@ public class CreatorMeeraController {
             MeeraStreamProperties streamProperties,
             CreatorAgentPreferencesService preferencesService,
             MeeraVoiceAiClient voiceAiClient,
-            MeeraCreatorFeatureProperties featureProperties) {
+            MeeraCreatorFeatureProperties featureProperties,
+            CreatorCreditService creatorCreditService,
+            CreatorCreditProperties creditProperties) {
         this.sessionService = sessionService;
         this.creatorContext = creatorContext;
         this.streamProperties = streamProperties;
         this.preferencesService = preferencesService;
         this.voiceAiClient = voiceAiClient;
         this.featureProperties = featureProperties;
+        this.creatorCreditService = creatorCreditService;
+        this.creditProperties = creditProperties;
     }
 
     /**
@@ -191,7 +203,8 @@ public class CreatorMeeraController {
                         UserType.CREATOR,
                         conversationId,
                         body.content(),
-                        idempotencyKey);
+                        idempotencyKey,
+                        body.creatorChargeKind());
 
         var response =
                 new SendTurnResponse(
@@ -199,9 +212,10 @@ public class CreatorMeeraController {
                         result.assistantMessageId(),
                         result.streamToken(),
                         streamProperties.getPublicChatUrl(),
-                        // No AI-credit concept for a creator turn (see class javadoc) -- 0 is not
-                        // "credits remaining", it is simply unused on this audience.
-                        0,
+                        // T-CREATOR-CREDITS-V2 (SPEC.md B7): the real remaining balance when the
+                        // flag is on; the literal 0 (byte-identical to before this field existed)
+                        // when it is off — result.creditsRemaining() is null in that case.
+                        result.creditsRemaining() != null ? result.creditsRemaining() : 0,
                         result.placeholderReply(),
                         creatorUserId,
                         result.onBehalfToken());
@@ -250,8 +264,34 @@ public class CreatorMeeraController {
         String creatorUserId = profile.getUserId();
         requireConsent(creatorUserId);
 
+        // T-CREATOR-CREDITS-V2 (SPEC.md B11, K-06) — with the flag on, a real Sarvam call requires
+        // an OWNED, unrefunded tts:<turnId> debit (hasVoiceCharge already scopes this to the
+        // caller's own turn) AND a free slot under the per-turn speak cap (claimVoiceSpeak). Either
+        // guard failing falls back silently — no Sarvam call, no charge, no 4xx (C6) — so free
+        // browser TTS keeps working exactly as it always has.
+        String turnId = body.turnId();
+        boolean creditsApply = creditProperties.isEnabled() && turnId != null && !turnId.isBlank();
+        if (creditProperties.isEnabled()) {
+            boolean allowed =
+                    creditsApply
+                            && creatorCreditService.hasVoiceCharge(creatorUserId, turnId)
+                            && creatorCreditService.claimVoiceSpeak(creatorUserId, turnId);
+            if (!allowed) {
+                return ResponseEntity.ok(Map.of("fallback", true));
+            }
+        }
+
         MeeraVoiceAiClient.SpeakResult result = voiceAiClient.speak(creatorUserId, body.text(), body.lang());
         if (result.ok()) {
+            // K-15/round-2 review finding #3 fix — record, under the account lock (via
+            // CreatorCreditService#markVoiceDelivered), that this turn's paid voice surcharge was
+            // actually delivered BEFORE returning, so a later failed retry for the SAME turnId
+            // never refunds a surcharge that already bought a real, delivered reply. Persisted on
+            // CreatorVoiceSpeak, not a process-local map (see releaseVoiceIfUndelivered's javadoc
+            // for the concurrent-claim race this closes).
+            if (creditsApply) {
+                creatorCreditService.markVoiceDelivered(creatorUserId, turnId);
+            }
             MediaType mediaType;
             try {
                 mediaType =
@@ -264,6 +304,17 @@ public class CreatorMeeraController {
             return ResponseEntity.ok().contentType(mediaType).body(result.audioBytes());
         }
 
+        // A Sarvam failure on an otherwise-paid voice turn refunds only the tts: surcharge (R1:
+        // the creator still paid 1 for the text itself, which she received). K-15/round-2 review
+        // finding #3 fix — the decision of WHETHER to refund now happens entirely inside
+        // CreatorCreditService#releaseVoiceIfUndelivered, under the account lock, against the
+        // persisted CreatorVoiceSpeak row: it declines the refund if some attempt for this turn
+        // already delivered real audio, if it was already refunded once, or if more than one claim
+        // exists for this turn (a possibly-still-in-flight concurrent attempt) — see that method's
+        // javadoc for the full race this closes.
+        if (creditsApply) {
+            creatorCreditService.releaseVoiceIfUndelivered(creatorUserId, turnId);
+        }
         return ResponseEntity.ok(Map.of("fallback", true));
     }
 
@@ -274,6 +325,64 @@ public class CreatorMeeraController {
      * 4xx/5xx for a provider/transport hiccup). Same {@link #MAX_VOICE_CLIP_BYTES} DoS/OOM guard
      * (Kabir H-1) and the same identity/consent discipline as {@link #speak} above.
      */
+    /**
+     * Shoot Check Level 2 -- "Check my frame": one still in, up to three fixes out.
+     *
+     * <p>A proxy, like {@link #transcribe}: the vision route lives on influora-ai and accepts only a
+     * service token, so the browser cannot call it directly. Before this route existed the app
+     * posted to {@code /ai/shoot-check/frame} on THIS server, which has no such path -- every tap
+     * failed in production while both services' tests passed.
+     *
+     * <p>Same identity and consent discipline as {@link #transcribe}: the creator is resolved from
+     * the verified principal (never the request body), consent is checked before any byte leaves
+     * this server, and the image is held in memory for this request only -- never stored, never
+     * logged. Failures are a non-2xx on purpose: the app shows "couldn't check your frame right
+     * now" for any of them and never retries.
+     */
+    @PostMapping(value = "/shoot-check/frame", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> checkFrame(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(value = "image", required = false) MultipartFile image,
+            @RequestParam(value = "shot_label", required = false) String shotLabel) {
+        requireFeatureEnabled();
+        CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
+        String creatorUserId = profile.getUserId();
+        requireConsent(creatorUserId);
+
+        if (image == null || image.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("code", "FRAME_MISSING"));
+        }
+        if (image.getSize() > MAX_FRAME_BYTES) {
+            return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(Map.of("code", "FRAME_TOO_LARGE"));
+        }
+
+        byte[] imageBytes;
+        try {
+            imageBytes = image.getBytes();
+        } catch (IOException e) {
+            return ResponseEntity.badRequest().body(Map.of("code", "FRAME_UNREADABLE"));
+        }
+
+        String label = shotLabel == null ? null : shotLabel.strip();
+        if (label != null && label.length() > MAX_SHOT_LABEL_CHARS) {
+            label = label.substring(0, MAX_SHOT_LABEL_CHARS);
+        }
+
+        MeeraVoiceAiClient.FrameCheckResult result =
+                voiceAiClient.checkFrame(creatorUserId, imageBytes, image.getContentType(), label);
+        if (!result.ok()) {
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("code", "FRAME_CHECK_UNAVAILABLE"));
+        }
+
+        MediaType mediaType;
+        try {
+            mediaType = MediaType.parseMediaType(result.contentType());
+        } catch (Exception e) {
+            mediaType = MediaType.APPLICATION_JSON;
+        }
+        return ResponseEntity.ok().contentType(mediaType).body(result.jsonBytes());
+    }
+
     @PostMapping(value = "/voice/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> transcribe(
             @AuthenticationPrincipal AuthPrincipal principal,
@@ -316,7 +425,11 @@ public class CreatorMeeraController {
         return ResponseEntity.ok(Map.of("fallback", true));
     }
 
-    /** Request body for {@link #speak} — identical shape to {@link MeeraController.VoiceSpeakRequest}. */
+    /**
+     * Request body for {@link #speak}. T-CREATOR-CREDITS-V2 (SPEC.md B11) adds {@code turnId} —
+     * the server-minted {@code messageId} of the turn whose reply this speaks; required to claim a
+     * paid voice turn's Sarvam call when the flag is on, ignored when it is off.
+     */
     public record VoiceSpeakRequest(
-            @NotBlank @Size(max = 1000) String text, @Size(max = 20) String lang) {}
+            @NotBlank @Size(max = 1000) String text, @Size(max = 20) String lang, @Size(max = 40) String turnId) {}
 }

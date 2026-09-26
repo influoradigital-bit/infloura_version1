@@ -139,7 +139,7 @@ describe('PasteBriefCard', () => {
     pasteMock.mockResolvedValue(analysis());
     await pasteAndAnalyse();
 
-    expect(pasteMock).toHaveBeenCalledWith(BRIEF_TEXT);
+    expect(pasteMock).toHaveBeenCalledWith(BRIEF_TEXT, expect.any(String));
     expect(await screen.findByText('Glow Labs wants 2 reels for a serum.')).toBeInTheDocument();
     expect(screen.getAllByTestId('brief-summary-line')).toHaveLength(2);
 
@@ -350,7 +350,7 @@ describe('PasteBriefCard', () => {
     await user.click(screen.getByRole('button', { name: 'Analyse with Meera' }));
 
     // The paste really was sent — this is the server's refusal, not the client short-circuit.
-    expect(pasteMock).toHaveBeenCalledWith(BRIEF_TEXT);
+    expect(pasteMock).toHaveBeenCalledWith(BRIEF_TEXT, expect.any(String));
     await waitFor(() => expect(onConsentRequired).toHaveBeenCalledTimes(1));
     expect(await screen.findByRole('alert')).toHaveTextContent('Meera needs your consent');
     expect(screen.queryByTestId('brief-card')).not.toBeInTheDocument();

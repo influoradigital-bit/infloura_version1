@@ -89,7 +89,15 @@ export interface UseVoiceOutputResult {
    * for mock-mode/scripted lines and browser-STT turns that never produced a
    * detection, in which case the backend's own default applies.
    */
-  speak: (text: string, lang?: string) => void
+  /**
+   * T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F4) — `turnId` (the assistant message id the reply
+   * belongs to) is forwarded to `meeraApi.speak` as its own new 4th argument, so a
+   * `CREATOR_CREDITS_ENABLED` backend can bind this Sarvam call to the paid `tts:` half of that
+   * turn (SPEC.md §7.2). Optional and additive — omitting it (every brand call site, and any
+   * creator call made before the turn response is known) reproduces today's exact behaviour; the
+   * server falls back silently (never a thrown error) when it is absent or flag-off.
+   */
+  speak: (text: string, lang?: string, turnId?: string) => void
   /**
    * Speak an ordered list of sentences back-to-back, synthesizing the NEXT
    * while the current one plays, and calling `onSentenceStart(i)` at the moment
@@ -207,7 +215,7 @@ export function useVoiceOutput(role: 'brand' | 'creator' = 'brand'): UseVoiceOut
   }, [supported, releaseAudio])
 
   const speak = useCallback(
-    (rawText: string, lang?: string) => {
+    (rawText: string, lang?: string, turnId?: string) => {
       // Text has already rendered by the time this is ever called — speaking
       // is purely additive from here. If unsupported or disabled, no-op.
       if (!supported || !enabled || !rawText) return
@@ -251,7 +259,7 @@ export function useVoiceOutput(role: 'brand' | 'creator' = 'brand'): UseVoiceOut
       // Kick off the server-TTS attempt but never await it before
       // returning — speak() itself must stay synchronous/instant.
       meeraApi
-        .speak(text, lang, role)
+        .speak(text, lang, role, turnId)
         .then((blob) => {
           if (speakTokenRef.current !== token) return // superseded — discard
           if (!blob) {

@@ -105,7 +105,11 @@ def test_persona_states_the_audience_rule():
         'For growth, content, hook and script questions, use the "Your audience" line'
         " in your context alongside the content knowledge"
     ) in text
-    assert 'pick the hook language and the "Unity" or "Buyer persona targeting" framing' in text
+    assert 'pick the "Unity" or "Buyer persona targeting" framing' in text
+    # Hooks follow the reply language (Ash, merge review 2026-09-24): the audience no longer
+    # picks a Hinglish hook for an English conversation.
+    assert "pick the hook language" not in text
+    assert "hooks included: a Hinglish and an English template of the same type are the same hook" in text
     assert 'If the audience is "not available", say so plainly and suggest they connect Instagram' in text
     assert "Never state an audience fact that is not in that line" in text
 
@@ -115,6 +119,7 @@ def test_persona_audience_rule_reaches_the_creator_system_prompt():
 
 
 def test_prompt_version_bumped_for_audience_knowledge():
-    # At least the audience-knowledge bump (.2); later bumps (.3 go-live knowledge) keep it true.
+    # .21.2 introduced the audience rule; every later bump (go-live knowledge, knowledge v3/v4,
+    # script format, daily topics, week plan, account insights, the 2026-09-24 merges) keeps it true.
     date, _, n = PROMPT_VERSION.removeprefix("meera-").rpartition(".")
     assert (date, int(n)) >= ("2026.09.21", 2)

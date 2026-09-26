@@ -36,6 +36,7 @@ import com.influora.repository.UtmCampaignRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.service.analytics.AnalyticsService;
 import com.influora.service.scoring.CreatorTiers;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorAccountInsightsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.ContextResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse;
@@ -118,6 +119,9 @@ public class MeeraContextService {
     private final AnalyticsService analyticsService;
     private final MetaOAuthTokenRepository metaOAuthTokenRepository;
 
+    /** T-CREATOR-CREDITS-V2 (SPEC.md B20) — the USD backstop override, emitted only when the flag is on. */
+    private final com.influora.config.CreatorCreditProperties creatorCreditProperties;
+
     /**
      * Creator Meera audience knowledge (Swapnil 2026-09-21) - the explicit value {@code
      * audience_summary} carries when this creator has no audience snapshot (Instagram not
@@ -126,6 +130,13 @@ public class MeeraContextService {
      */
     public static final String AUDIENCE_NOT_AVAILABLE =
             "not available (Instagram not connected, or no audience snapshot yet)";
+
+    /**
+     * What {@code account_insights_summary} carries when there are no account numbers for this
+     * creator (Instagram not connected, or AccountInsightsJob has not fetched any yet). Never zeros.
+     */
+    public static final String ACCOUNT_INSIGHTS_NOT_AVAILABLE =
+            "not available (Instagram not connected, or no account numbers fetched yet)";
 
     private static final int AUDIENCE_TOP_AGE_BANDS = 2;
     private static final int AUDIENCE_TOP_CITIES = 3;
@@ -149,7 +160,8 @@ public class MeeraContextService {
             CreatorAgentPreferencesRepository creatorAgentPreferencesRepository,
             CreatorMetricsRepository creatorMetricsRepository,
             AnalyticsService analyticsService,
-            MetaOAuthTokenRepository metaOAuthTokenRepository) {
+            MetaOAuthTokenRepository metaOAuthTokenRepository,
+            com.influora.config.CreatorCreditProperties creatorCreditProperties) {
         this.workspaceRepository = workspaceRepository;
         this.brandProfileRepository = brandProfileRepository;
         this.templateRepository = templateRepository;
@@ -165,6 +177,7 @@ public class MeeraContextService {
         this.creatorMetricsRepository = creatorMetricsRepository;
         this.analyticsService = analyticsService;
         this.metaOAuthTokenRepository = metaOAuthTokenRepository;
+        this.creatorCreditProperties = creatorCreditProperties;
     }
 
     /**
@@ -285,6 +298,7 @@ public class MeeraContextService {
         // Keyed off THIS creator's own resolved profile id only - the same id every other read in
         // this method uses, never a caller-supplied creator id. The BRAND path never calls this.
         String audienceSummary = buildAudienceSummary(profile.getId(), locale);
+        String accountInsightsSummary = buildAccountInsightsSummary(profile.getId(), locale);
 
         List<Collaboration> collaborations = collaborationRepository.findByCreatorId(creatorUserId);
         Map<String, Object> dealsSummary = buildDealsSummary(collaborations, locale);
@@ -333,6 +347,7 @@ public class MeeraContextService {
                 floors,
                 metricsSummary,
                 audienceSummary,
+                accountInsightsSummary,
                 dealsSummary,
                 approvalLevel,
                 represented,
@@ -348,7 +363,7 @@ public class MeeraContextService {
                 identity,
                 prefs != null && prefs.isConsentAccepted(),
                 prefs != null ? prefs.getConsentVersion() : null,
-                prefs != null ? formatCapUsd(prefs.getAiMonthlyCapUsd(), locale) : null,
+                resolveAiMonthlyCapUsd(prefs, locale),
                 negotiationHoldout,
                 // Rendered by Java, never by Python (SPEC.md §3.6). Rendered.date returns null for
                 // a null date, and the record is @JsonInclude(NON_NULL), so a creator who is not
@@ -392,6 +407,55 @@ public class MeeraContextService {
      * ageGender} below) degrades to the not-available summary instead of failing the whole CREATOR
      * context — logged with the creator profile id only, never any breakdown data.
      */
+    /**
+     * The creator's own account numbers for the last 28 full days, as one line Meera can quote:
+     * "Last 28 days (26 Aug 2026 to 22 Sep 2026): 12,400 accounts reached, 48,210 views, ...".
+     * Same rules as {@link #buildAudienceSummary}: only with a live Meta connection, a failed read
+     * degrades to {@link #ACCOUNT_INSIGHTS_NOT_AVAILABLE}, and a number Meta did not return is left
+     * out rather than shown as 0.
+     */
+    private String buildAccountInsightsSummary(String creatorProfileId, Locale locale) {
+        if (!hasLiveMetaConnection(creatorProfileId)) {
+            return ACCOUNT_INSIGHTS_NOT_AVAILABLE;
+        }
+        CreatorAccountInsightsResponse insights;
+        try {
+            insights = analyticsService.getCreatorAccountInsightsForProfile(creatorProfileId);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "MeeraContextService: account insights read failed for creator profile {};"
+                            + " falling back to the not-available summary",
+                    creatorProfileId,
+                    e);
+            return ACCOUNT_INSIGHTS_NOT_AVAILABLE;
+        }
+        if (insights == null || !insights.hasData()) {
+            return ACCOUNT_INSIGHTS_NOT_AVAILABLE;
+        }
+        List<String> parts = new ArrayList<>();
+        addCount(parts, insights.reach(), "accounts reached", locale);
+        addCount(parts, insights.views(), "views", locale);
+        addCount(parts, insights.totalInteractions(), "interactions", locale);
+        addCount(parts, insights.accountsEngaged(), "accounts engaged", locale);
+        addCount(parts, insights.profileLinksTaps(), "profile-link taps", locale);
+        if (parts.isEmpty()) {
+            return ACCOUNT_INSIGHTS_NOT_AVAILABLE;
+        }
+        return "Last 28 days ("
+                + Rendered.date(insights.periodStart(), locale)
+                + " to "
+                + Rendered.date(insights.periodEnd(), locale)
+                + "): "
+                + String.join(", ", parts)
+                + ".";
+    }
+
+    private static void addCount(List<String> parts, Long value, String label, Locale locale) {
+        if (value != null) {
+            parts.add(Rendered.money(BigDecimal.valueOf(value), locale) + " " + label);
+        }
+    }
+
     private String buildAudienceSummary(String creatorProfileId, Locale locale) {
         if (!hasLiveMetaConnection(creatorProfileId)) {
             return AUDIENCE_NOT_AVAILABLE;
@@ -422,14 +486,12 @@ public class MeeraContextService {
         if (ageGender != null) {
             for (Map.Entry<String, ?> entry : ageGender.entrySet()) {
                 long count = countOf(entry.getValue());
-                String key = entry.getKey();
-                int dot = key == null ? -1 : key.indexOf('.');
-                // Meta's audience_gender_age keys are "F.25-34" / "M.18-24" / "U.35-44".
-                if (count <= 0 || dot <= 0 || dot == key.length() - 1) {
+                String[] genderAndAge = splitAgeGenderKey(entry.getKey());
+                if (count <= 0 || genderAndAge == null) {
                     continue;
                 }
-                genderTotals.merge(key.substring(0, dot), count, Long::sum);
-                ageTotals.merge(key.substring(dot + 1), count, Long::sum);
+                genderTotals.merge(genderAndAge[0], count, Long::sum);
+                ageTotals.merge(genderAndAge[1], count, Long::sum);
                 ageGenderTotal += count;
             }
         }
@@ -525,6 +587,33 @@ public class MeeraContextService {
                 .toList();
     }
 
+    /**
+     * {gender code, age band} for one age/gender key, or null. AudienceDemographicsJob stores
+     * {@code "18-24_female"} (from {@code follower_demographics}, 2026-09-24), the form every screen
+     * reads; Meta's removed {@code audience_gender_age} metric used {@code "F.18-24"}, still accepted
+     * here so an older row reads the same.
+     */
+    static String[] splitAgeGenderKey(String key) {
+        if (key == null) {
+            return null;
+        }
+        int underscore = key.lastIndexOf('_');
+        if (underscore > 0 && underscore < key.length() - 1) {
+            String gender =
+                    switch (key.substring(underscore + 1).toLowerCase(Locale.ROOT)) {
+                        case "female" -> "F";
+                        case "male" -> "M";
+                        default -> "U";
+                    };
+            return new String[] {gender, key.substring(0, underscore)};
+        }
+        int dot = key.indexOf('.');
+        if (dot > 0 && dot < key.length() - 1) {
+            return new String[] {key.substring(0, dot), key.substring(dot + 1)};
+        }
+        return null;
+    }
+
     private static String genderLabel(String metaCode) {
         return switch (metaCode) {
             case "F" -> "women";
@@ -547,6 +636,28 @@ public class MeeraContextService {
         format.setMinimumFractionDigits(2);
         format.setMaximumFractionDigits(2);
         return format.format(capUsd);
+    }
+
+    /**
+     * T-CREATOR-CREDITS-V2 (SPEC.md B20, C22) — with the flag on, {@code ai_monthly_cap_usd} is
+     * ALWAYS present and is at least {@code creator-credits.usd-backstop-monthly} (default 25.00):
+     * 30 credits/day * 31 days costs at most ~$0.74/day in real spend, which the pre-existing
+     * $0.75/mo default ({@code AI_CREATOR_MONTHLY_CAP_USD}) would otherwise cut off within the
+     * FIRST paid day. With the flag off this is byte-identical to the pre-B20 behaviour (locale-
+     * formatted, {@code null}/omitted when the creator has no override).
+     *
+     * <p>Rendered in {@link Locale#US} (a plain {@code "25.00"}, never grouped), NOT the creator's
+     * own locale — influora-ai's {@code spend_tracker.creator_monthly_cap_usd} does {@code
+     * Decimal(str(override))}, which must never see a grouping separator or a comma decimal point.
+     */
+    private String resolveAiMonthlyCapUsd(CreatorAgentPreferences prefs, Locale locale) {
+        if (!creatorCreditProperties.isEnabled()) {
+            return prefs != null ? formatCapUsd(prefs.getAiMonthlyCapUsd(), locale) : null;
+        }
+        BigDecimal override = prefs != null ? prefs.getAiMonthlyCapUsd() : null;
+        BigDecimal backstop = creatorCreditProperties.getUsdBackstopMonthly();
+        BigDecimal effective = (override != null && override.compareTo(backstop) > 0) ? override : backstop;
+        return effective.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
     }
 
     /** A8 — every number the CREATOR context carries leaves this class as a locale-formatted string, never a raw numeric type. */

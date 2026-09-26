@@ -8,9 +8,11 @@ import { EngagementRateGauge } from '@/components/analytics/EngagementRateGauge'
 import { FakeFollowerIndicator } from '@/components/analytics/FakeFollowerIndicator';
 import { QualityScoreDisplay } from '@/components/analytics/QualityScoreDisplay';
 import { BrandSafetyBadge } from '@/components/analytics/BrandSafetyBadge';
+import { AccountInsightsCard } from '@/components/analytics/AccountInsightsCard';
 import { AudienceDemographicsPanel } from '@/components/analytics/AudienceDemographicsPanel';
 import { ContentPerformancePanel } from '@/components/analytics/ContentPerformancePanel';
 import { CreatorReceivedReviews } from '@/components/creator/creator-received-reviews';
+import { useCreatorAccountInsights } from '@/hooks/creator/useCreatorAccountInsights';
 import { useCreatorOwnMedia } from '@/hooks/creator/useCreatorOwnMedia';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -105,6 +107,12 @@ export default function CreatorAnalyticsPage() {
     error: myMediaError,
     reload: reloadMyMedia,
   } = useCreatorOwnMedia();
+  // Account insights (2026-09-24): reach, views, interactions for the last 28 full days.
+  const {
+    data: accountInsights,
+    loading: accountInsightsLoading,
+    error: accountInsightsError,
+  } = useCreatorAccountInsights();
 
   // C27: scoresError no longer fires for a 404 SCORE_NOT_FOUND (useCreatorScores
   // treats that as an honest empty state via `notFound`) — only a real load
@@ -287,6 +295,12 @@ export default function CreatorAnalyticsPage() {
                 loading={scoresLoading}
               />
             </div>
+
+            <AccountInsightsCard
+              data={accountInsights}
+              loading={accountInsightsLoading}
+              error={accountInsightsError}
+            />
 
             <AudienceDemographicsPanel
               data={demographics}

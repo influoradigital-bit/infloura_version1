@@ -88,7 +88,10 @@ class MeeraContextServiceTest {
                         creatorAgentPreferencesRepository,
                         creatorMetricsRepository,
                         org.mockito.Mockito.mock(com.influora.service.analytics.AnalyticsService.class),
-                        org.mockito.Mockito.mock(com.influora.repository.MetaOAuthTokenRepository.class));
+                        org.mockito.Mockito.mock(com.influora.repository.MetaOAuthTokenRepository.class),
+                        new com.influora.config.CreatorCreditProperties(
+                                false, 1, 1, 3, 30, 40, 15, 90, "Asia/Kolkata",
+                                new java.math.BigDecimal("25.00"), new java.math.BigDecimal("12.00"), 3));
     }
 
     @Test
@@ -291,11 +294,32 @@ class MeeraContextServiceTest {
     }
 
     /**
-     * SPEC.md &sect;3.1 catalogue order, and the five tools that have a route TODAY. Declared here
-     * as a literal rather than read from {@code CreatorToolScopes} -- a test that imported the
-     * production list would agree with it no matter what it said.
+     * SPEC.md &sect;3.1 catalogue order, plus {@code get_todays_topics} (T-CONTENT-TOPICS, outside
+     * SPEC.md 3.1) and {@code plan_my_week} (T-PLAN-MY-WEEK, also outside SPEC.md 3.1) -- the seven
+     * tools that have a route TODAY. Declared here as a literal rather than read from {@code
+     * CreatorToolScopes} -- a test that imported the production list would agree with it no matter
+     * what it said.
      */
     private static final List<String> WIRED_CREATOR_TOOLS =
+            List.of(
+                    "get_my_deals",
+                    "get_brief",
+                    "estimate_my_rate",
+                    "get_my_metrics",
+                    "check_deal_risks",
+                    "get_todays_topics",
+                    "plan_my_week");
+
+    /**
+     * The represented-creator variant of {@link #WIRED_CREATOR_TOOLS}: {@code
+     * CreatorToolScopes.SCOPE_REPRESENTED} was deliberately NOT given {@code get_todays_topics} or
+     * {@code plan_my_week} (both were added only to {@code SCOPE_LEVEL_0} and {@code
+     * WIRED_TOOL_NAMES}), so a represented creator's offered set is still exactly the original five
+     * -- this is that original list, kept as its own constant so a future SCOPE_REPRESENTED
+     * widening has to change this literal deliberately rather than by drifting alongside
+     * {@link #WIRED_CREATOR_TOOLS}.
+     */
+    private static final List<String> WIRED_CREATOR_TOOLS_REPRESENTED =
             List.of(
                     "get_my_deals",
                     "get_brief",
@@ -396,9 +420,11 @@ class MeeraContextServiceTest {
                 creatorContext.toolsEnabled(),
                 "tools_enabled disagrees with the approval_level/represented/holdout it ships beside");
 
-        // An agency-represented creator is on the reads-only scope, and all five wired tools are
-        // reads (get_brief included), so she is still offered all five -- representation must not
-        // silently blank or shorten the tool list.
+        // An agency-represented creator is on the reads-only scope. All five original wired tools
+        // are reads (get_brief included), so she is still offered all five -- representation must
+        // not silently blank or shorten the tool list. get_todays_topics and plan_my_week are NOT
+        // among them: both were deliberately added only to SCOPE_LEVEL_0/WIRED_TOOL_NAMES, not to
+        // SCOPE_REPRESENTED (see WIRED_CREATOR_TOOLS_REPRESENTED's javadoc above).
         com.influora.domain.entity.CreatorAgentPreferences representedPrefs =
                 mock(com.influora.domain.entity.CreatorAgentPreferences.class);
         when(representedPrefs.getBrandTone()).thenReturn("FRIENDLY");
@@ -412,7 +438,7 @@ class MeeraContextServiceTest {
                 (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
                         service.assemble(WORKSPACE_ID, "CREATOR");
         assertTrue(representedContext.represented());
-        assertEquals(WIRED_CREATOR_TOOLS, representedContext.toolsEnabled());
+        assertEquals(WIRED_CREATOR_TOOLS_REPRESENTED, representedContext.toolsEnabled());
     }
 
     /**

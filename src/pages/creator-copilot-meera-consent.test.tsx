@@ -30,6 +30,11 @@ vi.mock('@/components/creator/copilot/CopilotPreviewCard', () => ({
 vi.mock('@/hooks/useDailySuggestion', () => ({
   useDailySuggestion: () => ({ status: 'idle' }),
 }));
+// Reads via react-query (useCreatorChallenge), which needs a QueryClientProvider this page's
+// own tests don't set up — mocked away same as DailySuggestionSection above.
+vi.mock('@/components/creator/challenge/ChallengeCard', () => ({
+  ChallengeCard: () => <div data-testid="challenge-card" />,
+}));
 
 function renderPage() {
   return render(
@@ -70,6 +75,9 @@ describe('CreatorCopilotPage — Meera consent gate (A6/A10)', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
+    // The composer placeholder is bilingual (Round 2 QA). The demo creator's language is
+    // 'en-IN' since 2026-09-23 (English is the default), so the English one renders here;
+    // the Hindi one is covered in MeeraCopilotChat's own tests.
     expect(await screen.findByPlaceholderText(/ask meera/i)).toBeInTheDocument();
   });
 });

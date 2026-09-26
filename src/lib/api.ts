@@ -5139,6 +5139,37 @@ export const analytics = {
 // Creator self analytics (CreatorAnalyticsController @ /creator/analytics/me)
 // ---------------------------------------------------------------------------
 
+/**
+ * `AnalyticsDtos.CreatorAccountInsightsResponse` — GET /creator/analytics/me/account-insights.
+ * The creator's account over `periodStart..periodEnd` (the last 28 full days, IST dates). Every
+ * number is `null` when Instagram did not report it (never 0); `hasData: false` means nothing has
+ * been fetched yet. Pinned field-for-field by `AccountInsightsContractSeamTest` on the Java side.
+ */
+export interface CreatorAccountInsights {
+  hasData: boolean;
+  periodStart: string | null;
+  periodEnd: string | null;
+  reach: number | null;
+  views: number | null;
+  totalInteractions: number | null;
+  accountsEngaged: number | null;
+  profileLinksTaps: number | null;
+  fetchedAt: string | null;
+}
+
+/** Demo-mode numbers only (the "Demo data" badge is on screen whenever these are used). */
+const mockAccountInsights: CreatorAccountInsights = {
+  hasData: true,
+  periodStart: '2026-08-27',
+  periodEnd: '2026-09-23',
+  reach: 12400,
+  views: 48210,
+  totalInteractions: 1930,
+  accountsEngaged: 822,
+  profileLinksTaps: 64,
+  fetchedAt: '2026-09-24T00:00:00Z',
+};
+
 export const creatorAnalytics = {
   /** GET /creator/analytics/me/metrics?startDate=&endDate= (CreatorAnalyticsController.java:35) */
   getMyMetrics: (startDate?: string, endDate?: string) =>
@@ -5159,6 +5190,15 @@ export const creatorAnalytics = {
     isLive()
       ? http.request<CreatorDemographics>('GET', '/creator/analytics/me/demographics', { role: 'creator' })
       : mockOr<CreatorDemographics>(mockDemographics),
+
+  /**
+   * GET /creator/analytics/me/account-insights — the creator's own account numbers over the last
+   * 28 full days (CreatorAnalyticsController, 2026-09-24). `hasData: false` until the first fetch.
+   */
+  getMyAccountInsights: (): Promise<CreatorAccountInsights> =>
+    isLive()
+      ? http.request<CreatorAccountInsights>('GET', '/creator/analytics/me/account-insights', { role: 'creator' })
+      : mockOr<CreatorAccountInsights>(mockAccountInsights),
 
   /**
    * GET /creator/analytics/me/media — the authenticated creator's own per-post content
@@ -6941,6 +6981,263 @@ export const creatorAgentPrefs = {
 };
 
 // ---------------------------------------------------------------------------
+// Creator 7-day challenge (CHALLENGE-SPEC.md, 2026-09-23) — GET/POST /creator/challenge,
+// POST /creator/challenge/:id/end. Contract frozen for this build: backend (Vikram) and
+// frontend (Ananya) both build against the shapes below, in the same worktree, at the same
+// time — do not change these without updating the spec.
+// ---------------------------------------------------------------------------
+
+export type ChallengePlannedType = 'REEL' | 'CAROUSEL' | 'POST' | 'REST';
+
+/** `MISSED` never renders red per the honesty rules (CHALLENGE-SPEC.md "Facts already
+ *  verified" / Frontend §6) — a muted dash, same register as a rest day, not a failure state. */
+export type ChallengeDayStatus = 'DONE' | 'TODAY' | 'UPCOMING' | 'CHECKING' | 'MISSED' | 'REST';
+
+/** `your_posts` = drawn from the creator's own posting pattern; `suggestion` = not enough data
+ *  yet. The UI must say "suggested", never "your best time", whenever this is `suggestion`
+ *  (spec Frontend §4) — never invert or default this away. */
+export type ChallengeWindowSource = 'your_posts' | 'suggestion';
+
+export interface ChallengeWindow {
+  label: string;
+  from: string;
+  to: string;
+}
+
+export interface ChallengeDay {
+  dayIndex: number;
+  date: string; // ISO date, Asia/Kolkata
+  plannedType: ChallengePlannedType;
+  /** Null on a REST day. */
+  window: ChallengeWindow | null;
+  /** Null on a REST day (no window to source). */
+  windowSource: ChallengeWindowSource | null;
+  status: ChallengeDayStatus;
+  /** Only meaningful once the day is DONE; null otherwise. A DONE day with `matchedType: false`
+   *  still shows `postedType` — the creator gets credit for posting, honestly labelled. */
+  matchedType: boolean | null;
+  /** Raw `MediaMetric.mediaType` the day was ticked off by (`IMAGE` | `VIDEO` | `CAROUSEL_ALBUM`
+   *  | `REELS`), or null until DONE. */
+  postedType: string | null;
+  permalink: string | null;
+}
+
+export interface ActiveChallenge {
+  id: string;
+  startedOn: string;
+  /** 1-based ("day 3 of 7"), derived from today vs. `startedOn` — not necessarily
+   *  `days.findIndex(TODAY) + 1` once the challenge runs past day 7 into COMPLETED. */
+  dayNumber: number;
+  streak: number;
+  days: ChallengeDay[];
+}
+
+export interface LastCompletedChallenge {
+  id: string;
+  startedOn: string;
+  daysDone: number;
+  daysPlanned: number;
+}
+
+export interface ChallengeWeekStats {
+  from: string;
+  to: string;
+  posts: number;
+  /** Posts at least 48h old at request time — the only posts `reach`/`engagementRate` are
+   *  computed from (Instagram numbers still grow for ~2 days). */
+  settledPosts: number;
+  reach: number;
+  engagementRate: string;
+}
+
+export interface ChallengeComparison {
+  thisWeek: ChallengeWeekStats;
+  lastWeek: ChallengeWeekStats;
+  /** Null unless `enoughToCompare` — never a percentage computed from a zero base. */
+  reachChangePercent: number | null;
+  engagementChangePoints: number | null;
+  /** False unless BOTH weeks have >= 2 settled posts. The UI must hide every %/point figure and
+   *  show `note` instead when this is false (spec Frontend §5) — and never use the word
+   *  "growing" regardless of this value. */
+  enoughToCompare: boolean;
+  note: string | null;
+}
+
+export interface ChallengeState {
+  instagramConnected: boolean;
+  /** Null when there is no active challenge. */
+  active: ActiveChallenge | null;
+  /** Null when none has ever completed. */
+  lastCompleted: LastCompletedChallenge | null;
+  /** Always present, even with no challenge at all (spec: "comparison is always present"). */
+  comparison: ChallengeComparison;
+}
+
+/** Mock-only date helper — plain local-time offset from today, formatted `YYYY-MM-DD`. Not an
+ *  Asia/Kolkata-correct conversion (the mock doesn't need one); the live backend owns real IST
+ *  date math. */
+function mockIsoDateOffset(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Demo creator mock — day 3 of an active challenge (CHALLENGE-SPEC.md Frontend §1): two DONE
+ *  days behind them (a 2-day streak), today is a REST day is deliberately NOT day 3 so the
+ *  "today's task" card has something to show, one UPCOMING day sourced from a `suggestion`
+ *  window to exercise the "suggested" copy path in mock mode too, and `enoughToCompare: false`
+ *  so the comparison row's honest fallback (`note`, no %) is what a fresh demo account sees by
+ *  default. */
+const MOCK_CHALLENGE_STATE: ChallengeState = {
+  instagramConnected: true,
+  active: {
+    id: '01J_MOCK_CHALLENGE',
+    startedOn: mockIsoDateOffset(-2),
+    dayNumber: 3,
+    streak: 2,
+    days: [
+      {
+        dayIndex: 0,
+        date: mockIsoDateOffset(-2),
+        plannedType: 'REEL',
+        window: { label: 'evening', from: '17:00', to: '22:00' },
+        windowSource: 'your_posts',
+        status: 'DONE',
+        matchedType: true,
+        postedType: 'VIDEO',
+        permalink: 'https://www.instagram.com/p/mock_day0/',
+      },
+      {
+        dayIndex: 1,
+        date: mockIsoDateOffset(-1),
+        plannedType: 'CAROUSEL',
+        window: { label: 'afternoon', from: '12:00', to: '17:00' },
+        windowSource: 'your_posts',
+        status: 'DONE',
+        // Honesty rule exercised in mock mode too: posted, but not the planned type.
+        matchedType: false,
+        postedType: 'VIDEO',
+        permalink: 'https://www.instagram.com/p/mock_day1/',
+      },
+      {
+        dayIndex: 2,
+        date: mockIsoDateOffset(0),
+        plannedType: 'POST',
+        window: { label: 'evening', from: '17:00', to: '22:00' },
+        windowSource: 'suggestion',
+        status: 'TODAY',
+        matchedType: null,
+        postedType: null,
+        permalink: null,
+      },
+      {
+        dayIndex: 3,
+        date: mockIsoDateOffset(1),
+        plannedType: 'REEL',
+        window: { label: 'morning', from: '05:00', to: '12:00' },
+        windowSource: 'your_posts',
+        status: 'UPCOMING',
+        matchedType: null,
+        postedType: null,
+        permalink: null,
+      },
+      {
+        dayIndex: 4,
+        date: mockIsoDateOffset(2),
+        plannedType: 'REST',
+        window: null,
+        windowSource: null,
+        status: 'REST',
+        matchedType: null,
+        postedType: null,
+        permalink: null,
+      },
+      {
+        dayIndex: 5,
+        date: mockIsoDateOffset(3),
+        plannedType: 'CAROUSEL',
+        window: { label: 'evening', from: '17:00', to: '22:00' },
+        windowSource: 'suggestion',
+        status: 'UPCOMING',
+        matchedType: null,
+        postedType: null,
+        permalink: null,
+      },
+      {
+        dayIndex: 6,
+        date: mockIsoDateOffset(4),
+        plannedType: 'REEL',
+        window: { label: 'evening', from: '17:00', to: '22:00' },
+        windowSource: 'your_posts',
+        status: 'UPCOMING',
+        matchedType: null,
+        postedType: null,
+        permalink: null,
+      },
+    ],
+  },
+  lastCompleted: null,
+  comparison: {
+    thisWeek: {
+      from: mockIsoDateOffset(-6),
+      to: mockIsoDateOffset(0),
+      posts: 2,
+      settledPosts: 1,
+      reach: 4200,
+      engagementRate: '4.3%',
+    },
+    lastWeek: {
+      from: mockIsoDateOffset(-13),
+      to: mockIsoDateOffset(-7),
+      posts: 1,
+      settledPosts: 1,
+      reach: 3100,
+      engagementRate: '3.8%',
+    },
+    reachChangePercent: null,
+    engagementChangePoints: null,
+    enoughToCompare: false,
+    note: 'Not enough settled posts in both weeks to compare yet.',
+  },
+};
+
+export const creatorChallenge = {
+  /** GET /creator/challenge — always 200 with a `ChallengeState`, even with no challenge ever
+   *  started (spec: "comparison is always present"). */
+  get: (): Promise<ChallengeState> =>
+    isLive()
+      ? http.request<ChallengeState>('GET', '/creator/challenge', { role: 'creator' })
+      : mockOr(MOCK_CHALLENGE_STATE),
+
+  /** POST /creator/challenge — starts one. 409 `CHALLENGE_ALREADY_ACTIVE` if one is already
+   *  active, 409 `INSTAGRAM_NOT_CONNECTED` if not connected; both surface via `ApiError.code`,
+   *  same as every other endpoint. Returns the new `ChallengeState`. */
+  start: (): Promise<ChallengeState> =>
+    isLive()
+      ? http.request<ChallengeState>('POST', '/creator/challenge', { role: 'creator' })
+      : mockOr(MOCK_CHALLENGE_STATE),
+
+  /** POST /creator/challenge/:id/end — ends it early (status ENDED server-side). 404 if not
+   *  theirs. Returns the updated `ChallengeState` (`active: null`). */
+  end: (id: string): Promise<ChallengeState> =>
+    isLive()
+      ? http.request<ChallengeState>('POST', `/creator/challenge/${id}/end`, { role: 'creator' })
+      : mockOr<ChallengeState>({
+          instagramConnected: true,
+          active: null,
+          lastCompleted: MOCK_CHALLENGE_STATE.active
+            ? {
+                id: MOCK_CHALLENGE_STATE.active.id,
+                startedOn: MOCK_CHALLENGE_STATE.active.startedOn,
+                daysDone: 2,
+                daysPlanned: 6,
+              }
+            : null,
+          comparison: MOCK_CHALLENGE_STATE.comparison,
+        }),
+};
+
+// ---------------------------------------------------------------------------
 // Meera Phase B0 "Paste and Read" — creator brief, quote, deal-risk, draft and
 // campaign-fit contract types (T-MEERA-CREATOR-PHASE-B SPEC.md §8.1, B0-16).
 // Types only — no namespace methods here; those land with a later wave.
@@ -7278,12 +7575,26 @@ export interface CampaignFit {
  * real reading of the creator's text.
  */
 export const creatorBriefs = {
-  /** POST /creator/briefs — 201, body `{ text }` (`PasteBriefRequest`, `@NotBlank @Size(max = 8000)`). */
-  paste: (text: string): Promise<BriefAnalysisResponse> =>
+  /**
+   * POST /creator/briefs — 201, body `{ text }` (`PasteBriefRequest`, `@NotBlank @Size(max =
+   * 8000)`).
+   *
+   * T-CREATOR-CREDITS-V2 (SPEC.md §9.2, F2/C20) — with `CREATOR_CREDITS_ENABLED` on, the server
+   * requires an `Idempotency-Key` header (≤64 chars) and charges 3 credits per analysis
+   * (`CreatorBriefController.paste` L122-129). `idempotencyKey` is optional here so a caller that
+   * mints ONE key per paste action (e.g. on the button click, not on every re-render) can pass the
+   * SAME key if it ever retries that exact action; omitting it mints a fresh one, which keeps every
+   * existing call site (and the flag-off path, where the server ignores the header) unchanged. A
+   * 402 `CREATOR_CREDITS_EXHAUSTED` or 429 `CREATOR_DAILY_CAP_REACHED` surfaces to the caller as an
+   * ordinary `ApiError` (code + server-templated `message`) — this method does not special-case
+   * them, exactly like every other `ApiError` this client throws.
+   */
+  paste: (text: string, idempotencyKey?: string): Promise<BriefAnalysisResponse> =>
     isLive()
       ? http.request<BriefAnalysisResponse>('POST', '/creator/briefs', {
           role: 'creator',
           body: { text },
+          idempotencyKey: idempotencyKey ?? safeRandomUUID(),
         })
       : Promise.reject(new ApiError('NOT_AVAILABLE', 'Brief analysis is not available in mock mode')),
 
@@ -7320,6 +7631,184 @@ export const creatorBriefs = {
         })
       : mockOr(undefined),
 
+};
+
+// ---------------------------------------------------------------------------
+// Creator AI credits (T-CREATOR-CREDITS-V2, SPEC.md §8/§9.2, F2) — behind
+// `CREATOR_CREDITS_ENABLED` server-side. Every type below is the Java DTO
+// (`CreatorCreditDtos`, `web/dto/credits/CreatorCreditDtos.java`) field-for-field — no field this
+// client declares that the server does not actually send, per the "FE type asserts missing DTO
+// field" house rule (a TS field the server never populates renders as `undefined` and tsc cannot
+// catch a Java-vs-TS shape mismatch).
+// ---------------------------------------------------------------------------
+
+/** `CreatorCreditDtos.WelcomeInfo`. */
+export interface CreatorCreditWelcomeInfo {
+  eligible: boolean;
+  granted: boolean;
+  /** `Instant`, ISO-8601. Nullable on the DTO (ungranted yet) but the record itself is not
+   *  `@JsonInclude(NON_NULL)`, so this key is always present, `null` when ungranted. */
+  grantedAt: string | null;
+}
+
+/** `CreatorCreditDtos.MonthlyInfo`. */
+export interface CreatorCreditMonthlyInfo {
+  /** `YearMonth.toString()`, e.g. `"2026-09"`. */
+  period: string | null;
+  granted: boolean;
+}
+
+/** `CreatorCreditDtos.PendingInfo` — credits a `balance()` projection shows as "about to land"
+ *  without having written anything (SPEC.md §6). */
+export interface CreatorCreditPendingInfo {
+  welcome: number;
+  monthly: number;
+}
+
+/** `CreatorCreditDtos.PaidExpiringItem`. */
+export interface CreatorCreditPaidExpiringItem {
+  credits: number;
+  /** `Instant`, ISO-8601. */
+  expiresAt: string;
+}
+
+/** `CreatorCreditDtos.PackInfo` — v1 ships exactly one active pack, `PACK_60`. */
+export interface CreatorCreditPackInfo {
+  code: string;
+  credits: number;
+  pricePaise: number;
+  gstInclusive: boolean;
+}
+
+/** `CreatorCreditDtos.CostsInfo` — SPEC.md R1 (1 / 2 / 3 credits). */
+export interface CreatorCreditCostsInfo {
+  turn: number;
+  voiceTurn: number;
+  brief: number;
+  /** "Write a script" / "Review my profile" buttons (2026-09-22). Absent from older servers. */
+  script?: number;
+  profileReview?: number;
+}
+
+/**
+ * `CreatorCreditDtos.BalanceResponse` — `GET /creator/credits`. `@JsonInclude(NON_NULL)` at the
+ * class level: with the flag OFF the server sends only `{enabled:false}` and every other key is
+ * OMITTED from the wire (not sent as `null`), hence every field below but `enabled` is optional.
+ * `BalanceResponse.disabled()` is the server's exact flag-off shape — see that factory in the
+ * Java DTO for the authoritative "what ships when off" list.
+ */
+export interface CreatorCreditBalance {
+  enabled: boolean;
+  total?: number;
+  free?: number;
+  paid?: number;
+  dailyUsed?: number;
+  dailyCap?: number;
+  /** `Instant`, ISO-8601 — next Asia/Kolkata midnight. */
+  dailyResetsAt?: string;
+  /** `Instant`, ISO-8601 — the 1st of the next Asia/Kolkata month. */
+  nextMonthlyGrantAt?: string;
+  welcome?: CreatorCreditWelcomeInfo;
+  monthly?: CreatorCreditMonthlyInfo;
+  pending?: CreatorCreditPendingInfo;
+  paidExpiring?: CreatorCreditPaidExpiringItem[];
+  pack?: CreatorCreditPackInfo;
+  costs?: CreatorCreditCostsInfo;
+}
+
+/** `CreatorCreditDtos.CreateOrderResponse` — `POST /creator/credits/orders`. */
+export interface CreatorCreditCreateOrderResponse {
+  orderId: string;
+  razorpayOrderId: string;
+  amountPaise: number;
+  currency: string;
+  credits: number;
+  /** Razorpay's PUBLISHABLE key id — never a secret (see `src/lib/razorpay.ts`'s own doc note). */
+  keyId: string;
+}
+
+/** `CreatorCreditDtos.VerifyOrderResponse` — `POST /creator/credits/orders/{id}/verify`. Per
+ *  SPEC.md K-11/C10, `CREDITED` here is the ONLY thing a caller may treat as "credits landed";
+ *  Razorpay Checkout's own `onSuccess` callback is never sufficient on its own. */
+export interface CreatorCreditVerifyOrderResponse {
+  status: 'CREDITED' | 'PENDING';
+  balance: number;
+}
+
+/** `CreatorCreditDtos.OrderHistoryItem` — `GET /creator/credits/orders`. `@JsonInclude(NON_NULL)`:
+ *  every nullable Java field is OMITTED (not `null`) until it has a real value, hence optional. */
+export interface CreatorCreditOrderHistoryItem {
+  orderId: string;
+  credits: number;
+  amountPaise: number;
+  status: 'PENDING' | 'CREDITED' | 'FAILED';
+  /** `Instant`, ISO-8601. Absent until the order is paid. */
+  paidAt?: string;
+  /** Absent on every order today — the controller always passes `null` for this argument
+   *  (`CreatorCreditController.orders`); kept typed for when a future backend build populates it. */
+  expiresAt?: string;
+  invoiceNumber?: string;
+  taxablePaise?: number;
+  cgstPaise?: number;
+  sgstPaise?: number;
+  igstPaise?: number;
+}
+
+/**
+ * `web/CreatorCreditController` (SPEC.md §8, B18). Identity is always the caller's own creator
+ * profile — no creator id is ever accepted from a client argument here, matching the server's own
+ * K-21 rule (a brand principal 403s, an unauthenticated request 401s).
+ */
+export const creatorCredits = {
+  /** GET /creator/credits — read-only, always 200. Flag off (or mock mode): `{enabled:false}`,
+   *  never a 404 — this route itself always exists. */
+  get: (): Promise<CreatorCreditBalance> =>
+    isLive()
+      ? http.request<CreatorCreditBalance>('GET', '/creator/credits', { role: 'creator' })
+      : mockOr<CreatorCreditBalance>({ enabled: false }),
+
+  /**
+   * POST /creator/credits/orders — mints a real Razorpay order for the one pack (`PACK_60`, 60
+   * credits, ₹249 incl. GST). Requires `Idempotency-Key` (≤64 chars); the server prices and sizes
+   * the order itself from the DB pack row — `packCode` is the only thing this client sends, never
+   * an amount or a credit count (K-09/K-25). Mock mode has no Razorpay order to mint, so this
+   * rejects there rather than fabricating a fake `razorpayOrderId` a real Checkout call would choke
+   * on.
+   */
+  createOrder: (packCode: string, idempotencyKey: string): Promise<CreatorCreditCreateOrderResponse> =>
+    isLive()
+      ? http.request<CreatorCreditCreateOrderResponse>('POST', '/creator/credits/orders', {
+          role: 'creator',
+          body: { packCode },
+          idempotencyKey,
+        })
+      : Promise.reject(new ApiError('NOT_AVAILABLE', 'Buying credits is not available in mock mode')),
+
+  /**
+   * POST /creator/credits/orders/{orderId}/verify — the ONLY call that may report `CREDITED`
+   * (SPEC.md K-11/C10). `razorpayPaymentId`/`razorpaySignature` are Razorpay Checkout's own
+   * `handler` callback fields, forwarded verbatim; the server independently re-verifies the HMAC
+   * signature and re-fetches the payment state from Razorpay before crediting anything — this
+   * client never decides "paid" on its own.
+   */
+  verify: (
+    orderId: string,
+    razorpayPaymentId: string,
+    razorpaySignature: string,
+  ): Promise<CreatorCreditVerifyOrderResponse> =>
+    isLive()
+      ? http.request<CreatorCreditVerifyOrderResponse>(
+          'POST',
+          `/creator/credits/orders/${encodeURIComponent(orderId)}/verify`,
+          { role: 'creator', body: { razorpayPaymentId, razorpaySignature } },
+        )
+      : Promise.reject(new ApiError('NOT_AVAILABLE', 'Verifying a payment is not available in mock mode')),
+
+  /** GET /creator/credits/orders — the caller's own orders, newest first. */
+  listOrders: (): Promise<CreatorCreditOrderHistoryItem[]> =>
+    isLive()
+      ? http.request<CreatorCreditOrderHistoryItem[]>('GET', '/creator/credits/orders', { role: 'creator' })
+      : mockOr<CreatorCreditOrderHistoryItem[]>([]),
 };
 
 // ---------------------------------------------------------------------------
@@ -7606,7 +8095,9 @@ export const api = {
   trendspark,
   creatorCopilot,
   creatorAgentPrefs,
+  creatorChallenge,
   creatorBriefs,
+  creatorCredits,
   publicCreators,
   clientErrors,
   festivalEnquiry,

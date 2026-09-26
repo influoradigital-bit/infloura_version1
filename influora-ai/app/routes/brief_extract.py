@@ -2772,12 +2772,25 @@ async def brief_extract(request: Request, authorization: str | None = Header(def
     # must be > 0 because the gate treats <= 0 as "cap disabled" — two ways this
     # silently enforces nothing if either argument drifts (§14.4.b traps 1-2).
     spend_key = f"{creator_profile_id}:brief"
+    # T-CREATOR-CREDITS-V2 (SPEC.md B20, C22, A38/A45): with CREATOR_CREDITS_ENABLED on, Spring
+    # passes `brief_monthly_cap_usd` (the $12.00 backstop, sized so 10 briefs/day x 31 days never
+    # trips the OLD $0.25/mo default within the first paid day). `max(...)` so a lower/absent value
+    # can never LOWER the process-wide default -- this is a floor-raise, never a floor-lower.
+    provided_cap = body.get("brief_monthly_cap_usd")
+    effective_cap_usd = settings.brief_extract_monthly_cap_usd
+    if provided_cap is not None:
+        try:
+            effective_cap_usd = max(effective_cap_usd, float(provided_cap))
+        except (TypeError, ValueError):
+            logger.warning(
+                "brief_extract: ignoring unparseable brief_monthly_cap_usd override %r", provided_cap
+            )
     try:
         reservation = await check_creator_spend_gate(
             spend_key,
             "CREATOR",
             reserve_usd=settings.ai_reservation_per_call_usd or None,
-            cap_usd=settings.brief_extract_monthly_cap_usd,
+            cap_usd=effective_cap_usd,
         )
     except SpendCapExceeded:
         log_event(

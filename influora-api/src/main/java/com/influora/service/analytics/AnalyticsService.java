@@ -4,10 +4,12 @@ import com.influora.common.ApiException;
 import com.influora.common.CreatorScoreMath;
 import com.influora.common.JsonLists;
 import com.influora.domain.entity.AudienceDemographics;
+import com.influora.domain.entity.CreatorAccountInsight;
 import com.influora.domain.entity.CreatorMetric;
 import com.influora.domain.entity.CreatorScore;
 import com.influora.domain.entity.MediaMetric;
 import com.influora.repository.AudienceDemographicsRepository;
+import com.influora.repository.CreatorAccountInsightRepository;
 import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.CreatorScoreRepository;
 import com.influora.repository.MediaMetricsRepository;
@@ -15,6 +17,7 @@ import com.influora.security.AuthPrincipal;
 import com.influora.service.BrandContextService;
 import com.influora.service.MetricsAuthorizationService;
 import com.influora.web.dto.analytics.AnalyticsDtos.ContentPerformanceResponse;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorAccountInsightsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorMetricsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorScoresResponse;
@@ -61,6 +64,7 @@ public class AnalyticsService {
     private final CreatorScoreRepository creatorScoreRepository;
     private final AudienceDemographicsRepository audienceDemographicsRepository;
     private final MediaMetricsRepository mediaMetricsRepository;
+    private final CreatorAccountInsightRepository accountInsightRepository;
 
     public AnalyticsService(
             BrandContextService brandContext,
@@ -68,13 +72,41 @@ public class AnalyticsService {
             CreatorMetricsRepository creatorMetricsRepository,
             CreatorScoreRepository creatorScoreRepository,
             AudienceDemographicsRepository audienceDemographicsRepository,
-            MediaMetricsRepository mediaMetricsRepository) {
+            MediaMetricsRepository mediaMetricsRepository,
+            CreatorAccountInsightRepository accountInsightRepository) {
         this.brandContext = brandContext;
         this.metricsAuthorizationService = metricsAuthorizationService;
         this.creatorMetricsRepository = creatorMetricsRepository;
         this.creatorScoreRepository = creatorScoreRepository;
         this.audienceDemographicsRepository = audienceDemographicsRepository;
         this.mediaMetricsRepository = mediaMetricsRepository;
+        this.accountInsightRepository = accountInsightRepository;
+    }
+
+    /**
+     * Creator-self account insights (last 28 full days), from the newest snapshot
+     * AccountInsightsJob wrote. Same no-brand-gate reasoning as
+     * {@link #getCreatorDemographicsForProfile}: the caller already resolved the profile to the
+     * authenticated creator's own. No snapshot, or one with no numbers, is an honest empty state.
+     */
+    @Transactional(readOnly = true)
+    public CreatorAccountInsightsResponse getCreatorAccountInsightsForProfile(String creatorProfileId) {
+        return accountInsightRepository
+                .findFirstByCreatorProfileIdOrderByFetchedAtDesc(creatorProfileId)
+                .filter(CreatorAccountInsight::hasAnyMetric)
+                .map(
+                        s ->
+                                new CreatorAccountInsightsResponse(
+                                        true,
+                                        s.getPeriodStart(),
+                                        s.getPeriodEnd(),
+                                        s.getReach(),
+                                        s.getViews(),
+                                        s.getTotalInteractions(),
+                                        s.getAccountsEngaged(),
+                                        s.getProfileLinksTaps(),
+                                        s.getFetchedAt()))
+                .orElseGet(CreatorAccountInsightsResponse::empty);
     }
 
     /**

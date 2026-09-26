@@ -9,13 +9,17 @@ import static org.mockito.ArgumentMatchers.any;
 
 import com.influora.domain.entity.MetaAuthPath;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.influora.integration.meta.dto.AudienceDemographicsResponse;
+import com.influora.integration.meta.dto.AccountInsightsResponse;
+import com.influora.integration.meta.dto.AudienceBreakdowns;
+import com.influora.integration.meta.dto.FollowerDemographicsResponse;
 import com.influora.integration.meta.dto.InstagramInsightsResponse;
 import com.influora.integration.meta.dto.InstagramMediaResponse;
 import com.influora.integration.meta.dto.InstagramUserResponse;
+import com.influora.integration.meta.exception.MetaApiException;
 import com.influora.integration.meta.exception.MetaRateLimitException;
 import com.influora.integration.meta.exception.MetaTokenExpiredException;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +30,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import java.util.List;
 
 /**
  * Unit tests for InstagramInsightsClient (KAVYA_QA_TEST_PLAN §2.4, Instagram API client).
@@ -142,40 +147,18 @@ class InstagramInsightsClientTest {
     }
 
     @Test
-    @DisplayName("getAudienceDemographics: requests correct AUDIENCE_METRICS with lifetime period")
-    void testGetAudienceDemographicsRequestsCorrectFields() {
-        AudienceDemographicsResponse mockResponse = new AudienceDemographicsResponse(null);
-
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(AudienceDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
-                .thenReturn(mockResponse);
-
-        client.getAudienceDemographics(IG_USER_ID, ACCESS_TOKEN);
-
-        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(AudienceDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
-        String path = pathCaptor.getValue();
-
-        assertTrue(path.contains("/" + IG_USER_ID + "/insights"));
-        assertTrue(path.contains("metric="));
-        assertTrue(path.contains("audience_city"));
-        assertTrue(path.contains("audience_country"));
-        assertTrue(path.contains("audience_gender_age"));
-        assertTrue(path.contains("audience_locale"));
-        assertTrue(path.contains("period=lifetime"));
-    }
-
-    @Test
     @DisplayName("getAccountInsights: includes date range parameters")
     void testGetAccountInsightsIncludesDateRange() {
-        InstagramInsightsResponse mockResponse = new InstagramInsightsResponse(null);
+        AccountInsightsResponse mockResponse = new AccountInsightsResponse(null);
         long sinceEpoch = 1704067200L; // 2024-01-01
         long untilEpoch = 1706745600L; // 2024-02-01
 
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(AccountInsightsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(mockResponse);
 
         client.getAccountInsights(IG_USER_ID, ACCESS_TOKEN, sinceEpoch, untilEpoch);
 
-        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
+        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(AccountInsightsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
         String path = pathCaptor.getValue();
 
         assertTrue(path.contains("/" + IG_USER_ID + "/insights"));
@@ -229,12 +212,90 @@ class InstagramInsightsClientTest {
         assertThrows(MetaTokenExpiredException.class, () -> client.getMediaInsights(MEDIA_ID, ACCESS_TOKEN, BUSINESS_ACCOUNT_ID));
     }
 
+    // --- follower demographics (2026-09-24) -------------------------------------------------
+
+    private static FollowerDemographicsResponse oneBreakdown(List<String> keys, List<String> values, long n) {
+        return new FollowerDemographicsResponse(
+                List.of(
+                        new FollowerDemographicsResponse.Metric(
+                                "follower_demographics",
+                                "lifetime",
+                                new FollowerDemographicsResponse.TotalValue(
+                                        List.of(
+                                                new FollowerDemographicsResponse.Breakdown(
+                                                        keys,
+                                                        List.of(new FollowerDemographicsResponse.Result(values, n))))))));
+    }
+
     @Test
-    @DisplayName("getAudienceDemographics: propagates rate limit exception")
-    void testGetAudienceDemographicsThrowsRateLimitException() {
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(AudienceDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+    @DisplayName(
+            "getAudienceDemographics asks for follower_demographics (lifetime, total_value, this_month)"
+                    + " by age+gender, country and city, and never the audience_* metrics Meta removed")
+    void audienceDemographicsUsesFollowerDemographics() {
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenReturn(new FollowerDemographicsResponse(List.of()));
+
+        client.getAudienceDemographics(IG_USER_ID, ACCESS_TOKEN);
+
+        verify(apiClient, times(3))
+                .get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
+        List<String> paths = pathCaptor.getAllValues();
+        for (String path : paths) {
+            assertTrue(path.startsWith("/" + IG_USER_ID + "/insights?"), path);
+            assertTrue(path.contains("metric=follower_demographics"), path);
+            assertTrue(path.contains("period=lifetime"), path);
+            assertTrue(path.contains("metric_type=total_value"), path);
+            assertTrue(path.contains("timeframe=this_month"), path);
+            assertFalse(path.contains("audience_"), path);
+        }
+        assertEquals(
+                List.of("breakdown=age,gender", "breakdown=country", "breakdown=city"),
+                paths.stream().map(p -> p.replaceAll(".*(breakdown=[a-z,]+).*", "$1")).toList());
+    }
+
+    @Test
+    @DisplayName("getAudienceDemographics turns Meta's rows into the keys every screen reads")
+    void audienceDemographicsMapsToStoredKeys() {
+        when(apiClient.get(org.mockito.ArgumentMatchers.contains("breakdown=age,gender"), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenReturn(oneBreakdown(List.of("age", "gender"), List.of("18-24", "F"), 120));
+        when(apiClient.get(org.mockito.ArgumentMatchers.contains("breakdown=country"), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenReturn(oneBreakdown(List.of("country"), List.of("IN"), 300));
+        when(apiClient.get(org.mockito.ArgumentMatchers.contains("breakdown=city"), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenReturn(oneBreakdown(List.of("city"), List.of("Pune, Maharashtra"), 80));
+
+        AudienceBreakdowns result = client.getAudienceDemographics(IG_USER_ID, ACCESS_TOKEN);
+
+        assertEquals(java.util.Map.of("18-24_female", 120L), result.ageGender());
+        assertEquals(java.util.Map.of("IN", 300L), result.country());
+        assertEquals(java.util.Map.of("Pune, Maharashtra", 80L), result.city());
+    }
+
+    @Test
+    @DisplayName("a rate limit is never retried: it propagates on the first call")
+    void audienceDemographicsRateLimitPropagates() {
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenThrow(new MetaRateLimitException("Too many requests"));
 
         assertThrows(MetaRateLimitException.class, () -> client.getAudienceDemographics(IG_USER_ID, ACCESS_TOKEN));
+        verify(apiClient, times(1))
+                .get(any(String.class), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
+    }
+
+    @Test
+    @DisplayName("if Meta rejects the timeframe parameter, the breakdown is asked once more without it")
+    void audienceDemographicsRetriesWithoutTimeframe() {
+        String withTimeframe = "/" + IG_USER_ID + "/insights?metric=follower_demographics&period=lifetime"
+                + "&metric_type=total_value&breakdown=country&timeframe=this_month";
+        String without = "/" + IG_USER_ID + "/insights?metric=follower_demographics&period=lifetime"
+                + "&metric_type=total_value&breakdown=country";
+        when(apiClient.get(eq(withTimeframe), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenThrow(new MetaApiException("(#100) timeframe is not supported"));
+        when(apiClient.get(eq(without), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenReturn(oneBreakdown(List.of("country"), List.of("IN"), 42));
+
+        FollowerDemographicsResponse response =
+                client.followerDemographics(IG_USER_ID, ACCESS_TOKEN, MetaAuthPath.FACEBOOK_LOGIN, "country");
+
+        assertEquals(42L, response.data().get(0).totalValue().breakdowns().get(0).results().get(0).value());
     }
 }

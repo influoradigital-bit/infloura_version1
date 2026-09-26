@@ -97,6 +97,7 @@ class CreatorBriefServiceTest {
     private CampaignRepository campaignRepository;
     private DealMessageRepository dealMessageRepository;
     private CreatorProfileRepository creatorProfileRepository;
+    private com.influora.service.credits.CreatorCreditService creatorCreditService;
 
     private CreatorBriefService service;
 
@@ -144,6 +145,23 @@ class CreatorBriefServiceTest {
         campaignRepository = mock(CampaignRepository.class);
         dealMessageRepository = mock(DealMessageRepository.class);
         creatorProfileRepository = mock(CreatorProfileRepository.class);
+        creatorCreditService = mock(com.influora.service.credits.CreatorCreditService.class);
+        // T-CREATOR-CREDITS-V2 (SPEC.md B12): DISABLED by default -- neither refused nor charged
+        // -- so every pre-existing test in this file keeps its pre-existing, uncharged behavior.
+        // Tests that specifically exercise the charge/refund wiring override this per-test.
+        lenient()
+                .when(
+                        creatorCreditService.charge(
+                                org.mockito.ArgumentMatchers.any(),
+                                org.mockito.ArgumentMatchers.any(),
+                                org.mockito.ArgumentMatchers.any()))
+                .thenReturn(
+                        new com.influora.service.credits.ChargeResult(
+                                com.influora.service.credits.ChargeResult.Outcome.DISABLED,
+                                com.influora.domain.enums.ChargeKind.BRIEF,
+                                3,
+                                0,
+                                0));
 
         service =
                 new CreatorBriefService(
@@ -163,7 +181,8 @@ class CreatorBriefServiceTest {
                         dealMessageRepository,
                         creatorProfileRepository,
                         new ObjectMapper(),
-                        new CreatorSuggestionAiProperties());
+                        new CreatorSuggestionAiProperties(),
+                        creatorCreditService);
 
         profile = mock(CreatorProfile.class);
         lenient().when(profile.getId()).thenReturn(CREATOR_PROFILE_ID);
@@ -651,7 +670,8 @@ class CreatorBriefServiceTest {
                         dealMessageRepository,
                         creatorProfileRepository,
                         new ObjectMapper(),
-                        tightProps);
+                        tightProps,
+                        creatorCreditService);
         // 1s connect + 1s request + 10s slack = 12s tightened budget. 15s old is past it, but
         // still well inside the DEFAULT 30s budget -- proving the ceiling actually moved.
         CreatorBrief stuck = CreatorBrief.paste(BRIEF_ID, CREATOR_PROFILE_ID, RAW_BRIEF);
