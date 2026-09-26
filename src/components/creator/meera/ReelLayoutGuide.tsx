@@ -166,6 +166,9 @@ export function ReelLayoutGuide({ photo, layout, lang, className, createCanvas }
       <h3 id={titleId} className="text-sm font-semibold text-foreground">
         {t('reel_layout_title')}
       </h3>
+      <p data-testid="reel-layout-viewer-note" className="text-xs text-muted-foreground">
+        {t('viewer_view_note')}
+      </p>
 
       <div
         data-testid="reel-layout-visual"

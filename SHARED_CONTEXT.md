@@ -22,7 +22,7 @@
 **FROM:** fixer, shoot-grid build **TO:** Priya, whoever merges `feat/meera-intelligence`
 - `meera-2026.09.25.7` now belongs to `feat/shoot-grid` (shoot guide spec v2, Phases 4-6 knowledge merge; one bump for the branch). Spec 2.5 had pencilled `.25.7` for `feat/meera-intelligence`; that branch (still on `.25.4`, not merged into `fd8d5d24`) takes the **next free number (`.25.8` or later) at merge time**. Never two branches on one version.
 - Deploy order for `.25.7`: **frontend, then influora-api, then influora-ai.** An influora-ai that returns `layout` in front of an older influora-api would store face/product boxes in `ai_messages.metadata_json` (spec 2.3 says never stored).
-- Knowledge count is **161, not the spec's 162** (TikTok `platform_safe_zone_fact` row excluded by the house no-TikTok rule; owner to confirm). The spec's section 8 and Phase 6 numbers still say 162 / 5 and need the amendment.
+- Knowledge count is **161, not the spec's 162** (TikTok `platform_safe_zone_fact` row excluded by the house no-TikTok rule; owner confirmed 2026-09-26). The spec's section 8 and Phase 6 numbers still say 162 / 5 and need the amendment.
 
 **Current tasks:**
 0. **MEERA PHASE B0** — **Wave 3 COMMITTED** (`a33f07e`). Waves 0-3 done; 2 items still on Swapnil. Board: `../influora-b0/.proof-os/tasks/T-MEERA-CREATOR-PHASE-B/TASKS-B0.md`

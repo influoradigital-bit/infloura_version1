@@ -106,6 +106,17 @@ describe('ReelLayoutGuide', () => {
     expect(URL.createObjectURL).not.toHaveBeenCalled();
   });
 
+  it('shows the photo as viewers see the posted Reel: never mirrored, and says so', () => {
+    render(<ReelLayoutGuide photo={PHOTO} layout={LAYOUT} lang="en-IN" />);
+    loadPhoto();
+    expect(screen.getByTestId('reel-layout-viewer-note')).toHaveTextContent(en('viewer_view_note'));
+    const visual = screen.getByTestId('reel-layout-visual');
+    for (const el of [visual, ...Array.from(visual.querySelectorAll('*'))]) {
+      expect(el.getAttribute('class') ?? '').not.toMatch(/scale-x-|-scale-x/);
+      expect((el as HTMLElement).style?.transform ?? '').not.toMatch(/scale|rotateY/);
+    }
+  });
+
   it('shows the titled guide: aria-hidden picture, numbered legend, placement lines and both notes', () => {
     render(<ReelLayoutGuide photo={PHOTO} layout={LAYOUT} lang="en-IN" />);
     loadPhoto();

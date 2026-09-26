@@ -152,6 +152,13 @@ export const GUIDE_COPY = {
   // Reel layout guide (Phase 4)
   reel_layout_tab: { 'en-IN': 'Reel layout', 'hi-IN': 'Reel लेआउट' },
   reel_layout_title: { 'en-IN': 'Influora’s Reel layout guide', 'hi-IN': 'Influora की Reel लेआउट गाइड' },
+  // Owner ruling 2026-09-26: the guide shows the photo the way viewers see the posted Reel (never
+  // mirrored, even for a front-camera still), because the safe zones and quick checks are about the
+  // posted video.
+  viewer_view_note: {
+    'en-IN': 'Shown the way your viewers will see your Reel.',
+    'hi-IN': 'जैसे आपके दर्शक आपकी Reel देखेंगे, वैसे ही दिखाया गया है।',
+  },
   face_keep_clear: { 'en-IN': 'Face: keep clear', 'hi-IN': 'चेहरा: इस पर कुछ न रखें' },
   product_label: { 'en-IN': 'Your product', 'hi-IN': 'आपका प्रोडक्ट' },
   slot_hook: { 'en-IN': 'Hook text', 'hi-IN': 'हुक टेक्स्ट' },
