@@ -309,7 +309,8 @@ class MeeraContextServiceTest {
                     "check_deal_risks",
                     "get_todays_topics",
                     "plan_my_week",
-                    "get_my_content_patterns");
+                    "get_my_content_patterns",
+                    "get_my_audience");
 
     /**
      * The represented-creator variant of {@link #WIRED_CREATOR_TOOLS}: {@code
@@ -329,7 +330,9 @@ class MeeraContextServiceTest {
                     "get_my_metrics",
                     "check_deal_risks",
                     // Meera intelligence v1 (spec Q1) -- a read of her own post results.
-                    "get_my_content_patterns");
+                    "get_my_content_patterns",
+                    // 2026-09-26 -- a read of her OWN audience.
+                    "get_my_audience");
 
     @Test
     @DisplayName(

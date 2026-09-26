@@ -127,6 +127,8 @@ const TOOL_PENDING_LABELS: Record<CreatorToolName, string> = {
   plan_my_week: 'Planning your week…',
   // Meera intelligence v1 (spec §4.6).
   get_my_content_patterns: 'Looking at your posts…',
+  // Owner decision F (2026-09-26).
+  get_my_audience: 'Checking your audience…',
 };
 
 const PHOTO_CHECK_PENDING: BilingualText = {

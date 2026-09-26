@@ -30,6 +30,7 @@ import com.influora.service.meera.tool.creator.GetBriefExecutor;
 import com.influora.service.meera.tool.creator.GetMyDealsExecutor;
 import com.influora.service.meera.tool.creator.GetMyMetricsExecutor;
 import com.influora.service.meera.tool.creator.GetMyContentPatternsExecutor;
+import com.influora.service.meera.tool.creator.GetMyAudienceExecutor;
 import com.influora.service.meera.tool.creator.GetPlanMyWeekExecutor;
 import com.influora.service.meera.tool.creator.GetTodaysTopicsExecutor;
 import com.influora.web.dto.meera.CreatorToolDtos.CheckDealRisksResult;
@@ -41,6 +42,8 @@ import com.influora.web.dto.meera.CreatorToolDtos.GetTodaysTopicsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.MetricsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.PatternResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyContentPatternsResult;
+import com.influora.web.dto.meera.CreatorToolDtos.AudienceSection;
+import com.influora.web.dto.meera.CreatorToolDtos.GetMyAudienceResult;
 import com.influora.web.dto.meera.CreatorToolDtos.PlanMyWeekResult;
 import com.influora.web.dto.meera.CreatorToolDtos.PackageQuote;
 import com.influora.web.dto.meera.CreatorToolDtos.RiskFlag;
@@ -86,6 +89,7 @@ class CreatorMeeraToolControllerTest {
     @Mock private GetTodaysTopicsExecutor getTodaysTopicsExecutor;
     @Mock private GetPlanMyWeekExecutor getPlanMyWeekExecutor;
     @Mock private GetMyContentPatternsExecutor getMyContentPatternsExecutor;
+    @Mock private GetMyAudienceExecutor getMyAudienceExecutor;
 
     private CreatorMeeraToolController controller;
 
@@ -105,7 +109,8 @@ class CreatorMeeraToolControllerTest {
                         getBriefExecutor,
                         getTodaysTopicsExecutor,
                         getPlanMyWeekExecutor,
-                        getMyContentPatternsExecutor);
+                        getMyContentPatternsExecutor,
+                        getMyAudienceExecutor);
         lenient().when(featureProperties.isCreatorEnabled()).thenReturn(true);
     }
 
@@ -783,6 +788,88 @@ class CreatorMeeraToolControllerTest {
         assertNoAllowedRow();
     }
 
+    // =====================================================================================
+    // get_my_audience (Swapnil 2026-09-26)
+    // =====================================================================================
+
+    @Test
+    @DisplayName(
+            "get_my_audience happy path: the executor runs with the JWT-verified user id only, the"
+                    + " resolver is asked for get_my_audience's OWN scope, and an ALLOWED R-tier row is written")
+    void testMyAudienceHappyPath() {
+        stubResolverFor(CreatorToolName.get_my_audience, creatorContext());
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
+        when(creatorToolCallValidator.validateAndResolve("get_my_audience", CREATOR_USER_ID))
+                .thenReturn(CreatorToolName.get_my_audience);
+        when(creatorToolCallValidator.tierOf(CreatorToolName.get_my_audience)).thenReturn(MeeraToolTier.R);
+        GetMyAudienceResult expected =
+                new GetMyAudienceResult(
+                        AudienceSection.notAvailable("Instagram is not connected"),
+                        AudienceSection.notAvailable("Instagram is not connected"));
+        when(getMyAudienceExecutor.execute(CREATOR_USER_ID, BODY)).thenReturn(expected);
+
+        ResponseEntity<ApiResponse<GetMyAudienceResult>> response = controller.getMyAudience(JWT, BODY);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(expected, response.getBody().data());
+        verify(onBehalfAuthResolver).resolveForWorkspaceRequiringScope(JWT, CREATOR_USER_ID, "get_my_audience");
+        verify(auditLogService)
+                .recordToolCall(
+                        eq(CREATOR_USER_ID),
+                        eq("get_my_audience"),
+                        eq("R"),
+                        eq(AuditLogService.OUTCOME_ALLOWED),
+                        eq((String) null),
+                        eq((String) null),
+                        eq((BigDecimal) null),
+                        any());
+    }
+
+    @Test
+    @DisplayName(
+            "get_my_audience with ANOTHER creator's workspace_id is ON_BEHALF_WORKSPACE_MISMATCH,"
+                    + " audited against the probed id, and no audience is read")
+    void testMyAudienceOtherCreatorIsRefused() {
+        String victim = "01HVICTIMCREATOR98765";
+        Map<String, Object> probe = Map.of("workspace_id", victim);
+        when(onBehalfAuthResolver.resolveForWorkspaceRequiringScope(JWT, victim, "get_my_audience"))
+                .thenThrow(new ApiException("ON_BEHALF_WORKSPACE_MISMATCH", "nope", HttpStatus.FORBIDDEN));
+
+        ApiException ex = assertThrows(ApiException.class, () -> controller.getMyAudience(JWT, probe));
+
+        assertEquals("ON_BEHALF_WORKSPACE_MISMATCH", ex.getCode());
+        verifyNoInteractions(getMyAudienceExecutor);
+        assertRejectionRow(victim, "get_my_audience", "ON_BEHALF_WORKSPACE_MISMATCH");
+        assertNoAllowedRow();
+    }
+
+    @Test
+    @DisplayName("a token whose scope does not name get_my_audience is ON_BEHALF_SCOPE_INSUFFICIENT and the executor never runs")
+    void testMyAudienceScopeMissingIsRefused() {
+        when(onBehalfAuthResolver.resolveForWorkspaceRequiringScope(JWT, CREATOR_USER_ID, "get_my_audience"))
+                .thenThrow(new ApiException("ON_BEHALF_SCOPE_INSUFFICIENT", "nope", HttpStatus.FORBIDDEN));
+
+        ApiException ex = assertThrows(ApiException.class, () -> controller.getMyAudience(JWT, BODY));
+
+        assertEquals("ON_BEHALF_SCOPE_INSUFFICIENT", ex.getCode());
+        verifyNoInteractions(getMyAudienceExecutor);
+        assertRejectionRow(CREATOR_USER_ID, "get_my_audience", "ON_BEHALF_SCOPE_INSUFFICIENT");
+        assertNoAllowedRow();
+    }
+
+    @Test
+    @DisplayName("an unconsented creator is 403 CONSENT_REQUIRED on get_my_audience, before the executor runs")
+    void testMyAudienceUnconsentedCreatorIs403() {
+        stubResolverFor(CreatorToolName.get_my_audience, creatorContext());
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(false);
+
+        ApiException ex = assertThrows(ApiException.class, () -> controller.getMyAudience(JWT, BODY));
+
+        assertEquals("CONSENT_REQUIRED", ex.getCode());
+        verifyNoInteractions(getMyAudienceExecutor);
+        assertRejectionRow(CREATOR_USER_ID, "get_my_audience", "CONSENT_REQUIRED");
+    }
+
     @Test
     @DisplayName("T17: an unconsented creator is 403 CONSENT_REQUIRED on get_my_content_patterns, before the executor runs")
     void testContentPatternsUnconsentedCreatorIs403() {
@@ -1056,7 +1143,8 @@ class CreatorMeeraToolControllerTest {
                                 "check_deal_risks",
                                 "get_todays_topics",
                                 "plan_my_week",
-                                "get_my_content_patterns")),
+                                "get_my_content_patterns",
+                                "get_my_audience")),
                 routes);
         verifyNoInteractions(
                 getMyDealsExecutor,
@@ -1066,7 +1154,8 @@ class CreatorMeeraToolControllerTest {
                 getBriefExecutor,
                 getTodaysTopicsExecutor,
                 getPlanMyWeekExecutor,
-                getMyContentPatternsExecutor);
+                getMyContentPatternsExecutor,
+                getMyAudienceExecutor);
         verify(preferencesService, never()).isConsentAccepted(anyString());
         assertNoAllowedRow();
     }

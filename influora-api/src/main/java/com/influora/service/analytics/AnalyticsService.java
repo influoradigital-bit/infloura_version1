@@ -20,6 +20,7 @@ import com.influora.service.MetricsAuthorizationService;
 import com.influora.web.dto.analytics.AnalyticsDtos.ContentPerformanceResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorAccountInsightsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorSelfDemographicsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorMetricsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorScoresResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.MetricDataPoint;
@@ -332,14 +333,55 @@ public class AnalyticsService {
      * no brand-authorization gate applies here (the caller already resolved {@code
      * creatorProfileId} to the authenticated creator's own profile). Mirrors the {@code
      * PortfolioService#loadTopAudienceCities} pattern for decoding the raw JSON breakdown columns.
+     *
+     * <p>Engaged audience (2026-09-26): the creator's own read also carries who engaged with her
+     * content this month ({@link CreatorSelfDemographicsResponse}). The brand-facing {@link
+     * #getCreatorDemographics} never does: it returns {@link CreatorDemographicsResponse}, which
+     * has no engaged field.
      */
     @Transactional(readOnly = true)
-    public CreatorDemographicsResponse getCreatorDemographicsForProfile(String creatorProfileId) {
-        return buildDemographicsResponse(creatorProfileId);
+    public CreatorSelfDemographicsResponse getCreatorDemographicsForProfile(String creatorProfileId) {
+        AudienceDemographics snapshot =
+                audienceDemographicsRepository
+                        .findFirstByCreatorProfileIdOrderByTimeDesc(creatorProfileId)
+                        .orElse(null);
+        if (snapshot == null) {
+            return CreatorSelfDemographicsResponse.empty();
+        }
+        boolean engagedAvailable = AudienceDemographics.ENGAGED_AVAILABLE.equals(snapshot.getEngagedStatus());
+        Map<String, Long> engagedAgeGender =
+                engagedAvailable ? nullIfEmpty(breakdownFromJson(snapshot.getEngagedAgeGenderBreakdownJson())) : null;
+        Map<String, Long> engagedCountry =
+                engagedAvailable ? nullIfEmpty(breakdownFromJson(snapshot.getEngagedCountryBreakdownJson())) : null;
+        Map<String, Long> engagedCity =
+                engagedAvailable ? nullIfEmpty(breakdownFromJson(snapshot.getEngagedCityBreakdownJson())) : null;
+        boolean anyEngaged = engagedAgeGender != null || engagedCountry != null || engagedCity != null;
+        return new CreatorSelfDemographicsResponse(
+                true,
+                breakdownFromJson(snapshot.getAgeGenderBreakdownJson()),
+                breakdownFromJson(snapshot.getCountryBreakdownJson()),
+                breakdownFromJson(snapshot.getCityBreakdownJson()),
+                breakdownFromJson(snapshot.getLocaleBreakdownJson()),
+                snapshot.getFetchedAt(),
+                engagedAgeGender,
+                engagedCountry,
+                engagedCity,
+                anyEngaged ? snapshot.getEngagedFetchedAt() : null,
+                // AVAILABLE with every dimension empty cannot be written by the job; if a row
+                // ever says so, it is reported as below the threshold rather than as available.
+                engagedAvailable && !anyEngaged
+                        ? AudienceDemographics.ENGAGED_BELOW_THRESHOLD
+                        : snapshot.getEngagedStatus());
+    }
+
+    private static Map<String, Long> nullIfEmpty(Map<String, Long> map) {
+        return map == null || map.isEmpty() ? null : map;
     }
 
     /**
-     * [SEC: Vikram, P5 fix] Shared by both the brand-facing and creator-self demographics reads.
+     * [SEC: Vikram, P5 fix] The brand-facing demographics read (the creator-self read has its own
+     * builder in {@link #getCreatorDemographicsForProfile} since 2026-09-26, so the engaged audience
+     * it carries can never reach this one).
      * Previously threw {@code DEMOGRAPHICS_NOT_FOUND} (404) when no snapshot had been computed yet
      * (e.g. Meta not connected, polling job hasn't run) — inconsistent with {@link
      * CreatorDemographicsResponse}'s own designed graceful-empty ({@code hasData=false}) contract,
@@ -476,12 +518,31 @@ public class AnalyticsService {
                 .divide(BigDecimal.valueOf(reach), 2, RoundingMode.HALF_UP);
     }
 
-    /** Raw {@code {bucket: count}} JSON -> Map, same unchecked-raw-type convention as {@code
-     * PortfolioService#loadTopAudienceCities}. Never null — empty map when absent. */
+    /**
+     * Raw {@code {bucket: count}} JSON -> Map. Never null — empty map when absent.
+     *
+     * <p>Every value is copied into a real {@code Long} (2026-09-26). The raw {@code Map.class}
+     * decode puts an {@code Integer} behind the declared {@code Long} for any count under 2^31, and
+     * Jackson serialises a {@code Map<String, Long>} record component with its static {@code Long}
+     * serializer ({@code Long} is final), so the first non-empty snapshot threw
+     * {@code ClassCastException: Integer cannot be cast to Long} while the demographics response was
+     * being written — on the brand route and the creator's own route alike. A non-numeric value is
+     * dropped, never turned into a number.
+     */
     @SuppressWarnings("unchecked")
     private static Map<String, Long> breakdownFromJson(String json) {
-        Map<String, Long> map = JsonLists.objectFromJson(json, Map.class);
-        return map == null ? Map.of() : map;
+        Map<String, Object> raw = JsonLists.objectFromJson(json, Map.class);
+        if (raw == null || raw.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Long> counts = new java.util.LinkedHashMap<>();
+        raw.forEach(
+                (key, value) -> {
+                    if (key != null && value instanceof Number number) {
+                        counts.put(key, number.longValue());
+                    }
+                });
+        return counts;
     }
 
     private static long nz(Long value) {

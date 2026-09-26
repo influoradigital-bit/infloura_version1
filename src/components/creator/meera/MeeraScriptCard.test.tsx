@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MeeraScriptCard } from './MeeraScriptCard';
-import { SHOT_CARD_KEYS, type ParsedMeeraScript, type ShotCard } from '@/lib/meera-result-cards';
+import { parseMeeraScript, SHOT_CARD_KEYS, type ParsedMeeraScript, type ShotCard } from '@/lib/meera-result-cards';
 
 const SCRIPT: ParsedMeeraScript = {
   idea: '3 saffron mistakes to avoid',
@@ -209,6 +209,55 @@ describe('MeeraScriptCard — the optional Set-up line (persona 2026-09-25)', ()
   it('has no Set-up row for an older script without that line', () => {
     render(<MeeraScriptCard script={SCRIPT} rawText={RAW_TEXT} language="en-IN" />);
     expect(screen.queryByTestId('script-card-setup')).toBeNull();
+  });
+});
+
+describe('MeeraScriptCard — the optional Made for line (owner decision B, 2026-09-26)', () => {
+  const MADE_FOR =
+    'your followers - mostly women, 18-24, Mumbai (Instagram) · Topic: Mumbai street breakfast (your best-performing topic) · Goal: grow followers';
+
+  it('shows Made for as the very first line of the card, above the Idea', () => {
+    render(<MeeraScriptCard script={{ ...SCRIPT, madeFor: MADE_FOR }} rawText={RAW_TEXT} language="en-IN" />);
+    const card = screen.getByTestId('meera-script-card');
+    const row = screen.getByTestId('script-card-made-for');
+    expect(card.firstElementChild).toBe(row);
+    expect(row).toHaveTextContent(`Made for: ${MADE_FOR}`);
+    const idea = screen.getByTestId('script-card-idea');
+    expect(row.compareDocumentPosition(idea) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('renders the value as plain text: markup in it is shown literally, never as HTML', () => {
+    const hostile = '<b>bold</b> <img src=x onerror=alert(1)> **stars**';
+    render(<MeeraScriptCard script={{ ...SCRIPT, madeFor: hostile }} rawText={RAW_TEXT} language="en-IN" />);
+    const row = screen.getByTestId('script-card-made-for');
+    expect(row).toHaveTextContent(hostile);
+    expect(row.querySelector('b, img, strong')).toBeNull();
+  });
+
+  it('has no Made for row for an older script without that line', () => {
+    render(<MeeraScriptCard script={SCRIPT} rawText={RAW_TEXT} language="en-IN" />);
+    expect(screen.queryByTestId('script-card-made-for')).toBeNull();
+    expect(screen.getByTestId('meera-script-card').firstElementChild).toBe(screen.getByTestId('script-card-idea'));
+  });
+
+  it('labels the line in Devanagari for a Hindi creator', () => {
+    render(<MeeraScriptCard script={{ ...SCRIPT, madeFor: MADE_FOR }} rawText={RAW_TEXT} language="hi-IN" />);
+    expect(screen.getByTestId('script-card-made-for')).toHaveTextContent(`किसके लिए: ${MADE_FOR}`);
+  });
+
+  it('a real reply with the line parses and renders it, and Copy keeps the line', async () => {
+    const lines = RAW_TEXT.split('\n');
+    lines.splice(1, 0, `Made for: ${MADE_FOR}`);
+    const raw = lines.join('\n');
+    const parsed = parseMeeraScript(raw);
+    expect(parsed?.madeFor).toBe(MADE_FOR);
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<MeeraScriptCard script={parsed!} rawText={raw} language="en-IN" />);
+    expect(screen.getByTestId('script-card-made-for')).toHaveTextContent(MADE_FOR);
+    await user.click(screen.getByTestId('script-card-copy'));
+    expect(writeText).toHaveBeenCalledWith(raw);
   });
 });
 

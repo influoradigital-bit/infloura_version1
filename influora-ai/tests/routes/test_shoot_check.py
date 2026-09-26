@@ -507,10 +507,14 @@ async def test_happy_path_returns_code_written_steps_and_the_legacy_lists():
 
     assert result["fallback"] is False
     # Every older key is still here with its type (Java passes the bytes through; the app reads
-    # these keys); lang and retake are additive (PROMPT_VERSION .25.4).
+    # these keys); lang and retake are additive (PROMPT_VERSION .25.4), and so is setup_seen
+    # (owner decision C, 2026-09-26: words only, from the validated scene, present here because
+    # SCENE names a place, a light and a phone height).
     assert set(result) == {
         "what_i_see", "steps", "ok", "cant_tell", "ask", "fixes", "settings", "lang", "retake", "fallback",
+        "setup_seen",
     }
+    assert set(result["setup_seen"]) == {"light", "light_side", "place", "phone_height", "product_side"}
     assert result["lang"] == "en" and result["retake"] is False
     assert result["what_i_see"] == _what_i_see(SCENE) and result["what_i_see"]
     assert [s["kind"] for s in result["steps"]] == ["move_you", "move_phone", "settings"]

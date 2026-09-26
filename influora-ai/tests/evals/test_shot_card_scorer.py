@@ -7,6 +7,7 @@ old reply without the block (the "before" extractor), and replies that break eac
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 from collections import Counter
@@ -66,11 +67,13 @@ OLD_REPLY = HEAD + TAIL  # the "before" shape: no Shot cards block
 X8 = "OPPO Find X8 Ultra"
 ALL_FACTS = ["can_move", "on_camera", "prop_ready", "sit_or_walk", "window_side"]
 # The tapped answers behind GOOD_REPLY's facts, and a request that names the place and where the
-# serum sits (no coach answer names a place or a prop side: only the chat can).
+# serum sits. Owner decision D (2026-09-26) gave can_move and prop_ready answers that CAN name a
+# place or a surface; these defaults are the ones that name neither a place nor a side
+# ("Somewhere else", "In my hand" names only the surface), so the chat still has to.
 DEFAULT_ANSWERS = {
-    "can_move": "Yes, I can move",
+    "can_move": "Somewhere else",
     "on_camera": "Face on camera",
-    "prop_ready": "Yes, it's with me",
+    "prop_ready": "In my hand",
     "sit_or_walk": "Sitting",
     "window_side": "In front of me",
 }
@@ -218,8 +221,9 @@ def test_a_light_side_the_answer_does_not_name_is_a_guessed_fact():
 
 
 def test_a_place_or_prop_side_the_chat_never_named_is_a_guessed_fact():
-    """can_move and prop_ready answers never name a place, a side or a surface: only what the
-    creator said in the chat does. prop=none on a beat without the product needs prop_ready."""
+    """can_move "Somewhere else" names no place and prop_ready "In my hand" names no side: only
+    what the creator said in the chat does. prop=none on a beat without the product needs
+    prop_ready."""
     score = sc.score_reply(GOOD_REPLY, case(request=QUIET_REQUEST))
     assert Counter(g.split(".")[1] for g in score.guessed) == {"place": 3, "prop": 2}
     assert "S3.prop" not in score.guessed  # prop=none, and prop_ready was answered
@@ -230,8 +234,10 @@ def test_a_place_or_prop_side_the_chat_never_named_is_a_guessed_fact():
 
 
 def test_guessing_on_the_dataset_case_is_vetoed_not_rewarded():
-    """Priya's repro on sc-01 (can_move "Yes, I can move", window_side "To my side", prop_ready
-    "Yes, it's with me"): the guessed card was +16 points and never a guessed fact."""
+    """Priya's repro on sc-01 (now can_move "By the window", window_side "To my side", prop_ready
+    "In my hand" after owner decision D): the guessed card was +16 points and never a guessed
+    fact. "By the window" supports a window place, never "Bedroom desk"; "In my hand" supports
+    the surface, never the side."""
     expected = next(c["expected"] for c in run_eval.load_dataset("shot_card_plan") if c["id"].startswith("sc-01"))
     sc01 = sc.ShotCardCase.from_expected(expected)
     honest = GOOD_REPLY.replace("light=window-front", "light=window").replace(
@@ -247,6 +253,109 @@ def test_guessing_on_the_dataset_case_is_vetoed_not_rewarded():
     assert invented_score.F < 100.0 and invented_score.P == honest_score.P
     _, failures = sc.aggregate([invented_score.as_metrics()])
     assert any("guessed creator fact" in f for f in failures)
+
+
+def test_a_tapped_option_that_names_a_place_or_a_prop_spot_supports_it():
+    """Owner decision D: can_move "By the window" / "At my desk" / "Outside" name the place, and
+    prop_ready "In my hand" / "On a table" plus product_side "Left" / "Centre" / "Right" name the
+    prop spot -- in the tapped words, so the value is the creator's, not a guess."""
+    answers = {**DEFAULT_ANSWERS, "can_move": "By the window", "product_side": "Right"}
+    tapped = case(answers=answers, request=QUIET_REQUEST)
+    reply = GOOD_REPLY.replace("place=Vanity by the window", "place=By the window")
+    assert sc.score_reply(reply, tapped).guessed_facts == 0
+    # The side needs product_side (or the chat): without it the same card guesses the side.
+    no_side = case(answers={k: v for k, v in answers.items() if k != "product_side"}, request=QUIET_REQUEST)
+    assert {g.split(".")[1] for g in sc.score_reply(reply, no_side).guessed} == {"prop"}
+    # A table is not a hand: the tapped surface decides.
+    on_table = case(answers={**answers, "prop_ready": "On a table"}, request=QUIET_REQUEST)
+    assert {g.split(".")[1] for g in sc.score_reply(reply, on_table).guessed} == {"prop"}
+    assert sc.score_reply(reply.replace("prop=right-hand", "prop=right-table"), on_table).guessed_facts == 0
+    # "At my desk" does not support a window.
+    desk = case(answers={**answers, "can_move": "At my desk"}, request=QUIET_REQUEST)
+    assert {g.split(".")[1] for g in sc.score_reply(reply, desk).guessed} == {"place"}
+
+
+# --------------------------------------------------------------------------- the Made for line
+
+
+MADE_FOR_AVAILABLE = "18-24 61%, 25-34 27%; women 72%, men 26%; top cities Mumbai, Pune (as of 2026-09-20)"
+
+
+def with_made_for(reply: str, value: str) -> str:
+    return reply.replace("\n", "\nMade for: " + value + "\n", 1)
+
+
+def test_made_for_audience_facts_from_the_audience_line_keep_c():
+    good = with_made_for(
+        GOOD_REPLY,
+        "your followers - mostly women, 18-24, Mumbai (Instagram) \u00b7 Topic: Mumbai street "
+        "breakfast (your best-performing topic) \u00b7 Goal: grow followers",
+    )
+    assert sc.made_for_lines(good) and sc.parse_meera_script(good).made_for
+    score = sc.score_reply(good, dataclasses.replace(case(), audience_summary=MADE_FOR_AVAILABLE))
+    assert score.C == 100.0 and score.contradictions == ()
+
+
+@pytest.mark.parametrize(
+    "value, reason",
+    [
+        ("your followers - mostly women, 35-44 (Instagram) \u00b7 Topic: serum \u00b7 Goal: sell", "made_for_age:35-44"),
+        ("your followers - 80% women \u00b7 Topic: serum \u00b7 Goal: sell", "made_for_share:80%"),
+        ("your followers - mostly men, Mumbai \u00b7 Topic: serum \u00b7 Goal: sell", None),
+        ("your followers in Delhi \u00b7 Topic: serum \u00b7 Goal: sell", "made_for_city:delhi"),
+    ],
+)
+def test_a_made_for_audience_fact_the_line_does_not_hold_breaks_c(value, reason):
+    """Every fact is checked against the case's own audience line: an age band, a share or a city
+    it does not hold is a contradiction. ("men" IS in that line: 26%.)"""
+    reply = with_made_for(GOOD_REPLY, value)
+    score = sc.score_reply(reply, dataclasses.replace(case(), audience_summary=MADE_FOR_AVAILABLE))
+    if reason is None:
+        assert score.C == 100.0, score.contradictions
+    else:
+        assert score.C == 0.0 and reason in score.contradictions
+
+
+def test_without_an_audience_every_made_for_audience_fact_is_a_guess():
+    """No audience line (or a "not available" one): gender, age and city are all guesses -- the
+    persona's rule "never guess gender/age from a name or a photo" -- while the honest
+    not-available wording, with a city only in the TOPIC, keeps C."""
+    guessed = with_made_for(GOOD_REPLY, "your followers - mostly women, 18-24, Mumbai \u00b7 Topic: serum")
+    for summary in (None, "not available: Instagram is connected, but audience details have not arrived yet"):
+        score = sc.score_reply(guessed, dataclasses.replace(case(), audience_summary=summary))
+        assert set(score.contradictions) >= {"made_for_gender:women", "made_for_age:18-24", "made_for_city:mumbai"}
+    honest = with_made_for(
+        GOOD_REPLY,
+        "your audience data isn't available yet, so this is written for a general audience \u00b7 "
+        "Topic: Mumbai street breakfast (your pick) \u00b7 Goal: grow followers",
+    )
+    assert sc.score_reply(honest, case()).C == 100.0
+
+
+def test_a_hindi_made_for_line_is_judged_the_same_way():
+    hindi = with_made_for(
+        GOOD_REPLY,
+        "\u0906\u092a\u0915\u0947 followers - \u092e\u0939\u093f\u0932\u093e\u090f\u0901, "
+        "\u0926\u093f\u0932\u094d\u0932\u0940 \u00b7 Topic: \u0915\u0947\u0938\u0930",
+    )
+    score = sc.score_reply(hindi, dataclasses.replace(case(), audience_summary=MADE_FOR_AVAILABLE))
+    assert "made_for_city:\u0926\u093f\u0932\u094d\u0932\u0940" in score.contradictions
+    assert not any(r.startswith("made_for_gender") for r in score.contradictions)
+
+
+def test_the_made_for_check_reaches_the_dataset_cases():
+    """The dataset carries an available and a not-available audience line, and the live run's
+    creator context sends the line the scorer judges against (one source for both)."""
+    cases = {c["id"]: c for c in run_eval.load_dataset("shot_card_plan")}
+    with_line = [c for c in cases.values() if c["input"].get("audience_summary")]
+    assert any(sc.audience_available(c["input"]["audience_summary"]) for c in with_line)
+    assert any(not sc.audience_available(c["input"]["audience_summary"]) for c in with_line)
+    for c in with_line:
+        assert c["expected"]["audience_summary"] == c["input"]["audience_summary"], c["id"]
+        assert sc.build_creator_context(c["input"])["audience_summary"] == c["input"]["audience_summary"]
+        assert sc.ShotCardCase.from_expected(c["expected"]).audience_summary == c["input"]["audience_summary"]
+    plain = next(c for c in cases.values() if not c["input"].get("audience_summary"))
+    assert "audience_summary" not in sc.build_creator_context(plain["input"])
 
 
 def test_every_creator_fact_maps_to_real_coach_questions():

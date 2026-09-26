@@ -402,6 +402,120 @@ class AudienceDemographicsJobTest {
         verify(demographicsRepository, never()).save(any());
     }
 
+    // --- engaged audience (2026-09-26) ------------------------------------------------------
+
+    private AudienceDemographics pollWithEngaged(org.mockito.stubbing.Answer<AudienceBreakdowns> engaged) {
+        MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
+        when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class))).thenReturn(List.of(token));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
+                .thenReturn(new AudienceBreakdowns(
+                        Map.of("25-34_female", 400L), Map.of("IN", 1200L), Map.of("Mumbai, Maharashtra", 210L)));
+        when(instagramClient.getEngagedAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
+                .thenAnswer(engaged);
+
+        job.pollDemographics();
+
+        ArgumentCaptor<AudienceDemographics> captor = ArgumentCaptor.forClass(AudienceDemographics.class);
+        verify(demographicsRepository).save(captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    @DisplayName("engaged audience returned: stored on the same row as AVAILABLE, with its own fetched-at")
+    void engagedAudienceIsStoredAvailable() {
+        AudienceDemographics saved =
+                pollWithEngaged(inv -> new AudienceBreakdowns(
+                        Map.of("18-24_female", 70L), Map.of("IN", 95L), Map.of("Pune, Maharashtra", 40L)));
+
+        assertEquals("AVAILABLE", saved.getEngagedStatus());
+        assertTrue(saved.getEngagedAgeGenderBreakdownJson().contains("\"18-24_female\":70"));
+        assertTrue(saved.getEngagedCountryBreakdownJson().contains("\"IN\":95"));
+        assertTrue(saved.getEngagedCityBreakdownJson().contains("Pune, Maharashtra"));
+        assertTrue(saved.getEngagedFetchedAt() != null);
+        // The follower breakdowns are untouched by the engaged ones.
+        assertTrue(saved.getAgeGenderBreakdownJson().contains("\"25-34_female\":400"));
+    }
+
+    @Test
+    @DisplayName(
+            "Meta returns no engaged audience (under 100 engagements this month): BELOW_THRESHOLD,"
+                    + " no engaged maps, no engaged fetched-at, and the follower row is still written")
+    void emptyEngagedIsBelowThresholdNotAnError() {
+        AudienceDemographics saved = pollWithEngaged(inv -> new AudienceBreakdowns(Map.of(), Map.of(), Map.of()));
+
+        assertEquals("BELOW_THRESHOLD", saved.getEngagedStatus());
+        assertNull(saved.getEngagedAgeGenderBreakdownJson());
+        assertNull(saved.getEngagedCountryBreakdownJson());
+        assertNull(saved.getEngagedCityBreakdownJson());
+        assertNull(saved.getEngagedFetchedAt());
+        assertTrue(saved.getAgeGenderBreakdownJson().contains("\"25-34_female\":400"));
+    }
+
+    @Test
+    @DisplayName("an engaged Meta error never costs the follower snapshot: the row is written with FETCH_FAILED")
+    void engagedErrorKeepsFollowerRow() {
+        AudienceDemographics saved =
+                pollWithEngaged(inv -> {
+                    throw new MetaApiException("(#100) engaged_audience_demographics is not available");
+                });
+
+        assertEquals("FETCH_FAILED", saved.getEngagedStatus());
+        assertNull(saved.getEngagedAgeGenderBreakdownJson());
+        assertNull(saved.getEngagedFetchedAt());
+        assertTrue(saved.getCountryBreakdownJson().contains("\"IN\":1200"));
+    }
+
+    @Test
+    @DisplayName("an engaged rate limit marks the account limited (igBusinessAccountId key) and keeps the follower row")
+    void engagedRateLimitMarksLimitedAndKeepsRow() {
+        AudienceDemographics saved =
+                pollWithEngaged(inv -> {
+                    throw new MetaRateLimitException("Too many requests");
+                });
+
+        assertEquals("FETCH_FAILED", saved.getEngagedStatus());
+        verify(rateLimitTracker).markLimited(IG_BUSINESS_ACCOUNT_ID);
+    }
+
+    @Test
+    @DisplayName("no follower demographics: the engaged call is never made (no row is written, no budget spent)")
+    void noFollowerDemographicsSkipsEngagedCall() {
+        MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
+        when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class))).thenReturn(List.of(token));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
+                .thenReturn(new AudienceBreakdowns(Map.of(), Map.of(), Map.of()));
+
+        job.pollDemographics();
+
+        verify(instagramClient, never()).getEngagedAudienceDemographics(anyString(), anyString(), any());
+        verify(demographicsRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("the connect-triggered fetch stores the engaged audience too")
+    void connectFetchStoresEngaged() {
+        MetaOAuthToken token = createTestToken(null, CREATOR_ID);
+        when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_ID))
+                .thenReturn(Optional.of(token));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(10);
+        when(instagramClient.getAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
+                .thenReturn(new AudienceBreakdowns(Map.of("25-34_female", 400L), Map.of(), Map.of()));
+        when(instagramClient.getEngagedAudienceDemographics(IG_BUSINESS_ACCOUNT_ID, TOKEN, MetaAuthPath.FACEBOOK_LOGIN))
+                .thenReturn(new AudienceBreakdowns(Map.of("18-24_male", 150L), Map.of(), Map.of()));
+
+        job.onCreatorConnected(new CreatorMetaConnectedEvent(CREATOR_ID));
+
+        ArgumentCaptor<AudienceDemographics> captor = ArgumentCaptor.forClass(AudienceDemographics.class);
+        verify(demographicsRepository).save(captor.capture());
+        assertEquals("AVAILABLE", captor.getValue().getEngagedStatus());
+        assertTrue(captor.getValue().getEngagedAgeGenderBreakdownJson().contains("\"18-24_male\":150"));
+    }
+
     private MetaOAuthToken createTestToken(String workspaceId, String creatorProfileId) {
         return createTestToken(workspaceId, creatorProfileId, IG_BUSINESS_ACCOUNT_ID);
     }

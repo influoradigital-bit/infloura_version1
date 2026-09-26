@@ -13,8 +13,10 @@ Four scores per case, 0 to 100, all computed here by code (no model grades a mod
   it earns nothing in F and is counted on its own, as a hard veto. Supported means the VALUE
   follows from what the creator said (`ShotCardCase.value_known`), not only that the question
   was answered: a light side only from window_side "In front of me" / "Behind me"; a place, or
-  a prop side and surface, only when the creator named it in the chat (no coach option names
-  one); prop=none only with a prop_ready answer.
+  a prop side and surface, only when the creator's words name it -- the chat, or a tapped option
+  that names one (can_move "By the window" / "At my desk" / "Outside", prop_ready "In my hand" /
+  "On a table", product_side "Left" / "Centre" / "Right", owner decision D 2026-09-26);
+  prop=none only with a prop_ready answer.
 - S, category-correct shot size: each beat's size is in the allowed set for its category and
   the beat's action (`allowed_sizes`), built from the `category_composition_rule` and
   `category_composition_example` rows.
@@ -26,7 +28,11 @@ Four scores per case, 0 to 100, all computed here by code (no model grades a mod
   and right only ever the creator's own; no 8K or LOG on a phone in the Phone notes (the OPPO
   Find X8 Ultra first of all); safe-zone percentages only from `app/shoot/safe_zones.json`, with
   a check-your-preview caveat; no other creator's @handle or the named grid accounts; the Set-up
-  line, Before you shoot and the card distances pass `step_fits_phone` for the saved phone.
+  line, Before you shoot and the card distances pass `step_fits_phone` for the saved phone;
+  and (owner decision B, 2026-09-26) the "Made for:" line states no audience fact -- a share,
+  an age band, a gender or a city -- that the case's own audience context (`audience_summary`,
+  the "Your audience" line) does not hold (`made_for_audience_guesses`). No audience context,
+  or one that is "not available", means every such fact is a guess.
 
 A reply WITH the "Shot cards:" block is scored from the block. A reply WITHOUT it (the "before"
 prompt, or an older reply) is scored by a fixed extractor over the Set-up line and each beat's
@@ -100,6 +106,9 @@ FACT_SOURCES: dict[str, tuple[str, ...]] = {
     "move": ("sit_or_walk",),
     "distance": ("room_size", "phone_lens", SAVED_PHONE),
     "eyes": ("on_camera",),
+    # prop is known only with a prop_ready answer (the persona: "with no prop_ready answer it is
+    # ?"); the SIDE is then supported by the tapped product_side answer, which is one of the
+    # chat words `value_known` reads (owner decision D, 2026-09-26).
     "prop": ("prop_ready",),
 }
 LIGHT_QUESTIONS: tuple[str, ...] = FACT_SOURCES["light"]
@@ -659,6 +668,108 @@ def _phone_lacks(row: Mapping[str, Any], feature: str) -> bool:
     )
 
 
+# --- the Made for line (owner decision B, 2026-09-26) -------------------------------------------
+
+_MADE_FOR_KEY_RE = re.compile(r"^\s*made\s+for\s*:\s*(.*)$", re.IGNORECASE)
+# The audience part ends where the topic or the goal starts.
+_MADE_FOR_AUDIENCE_END_RE = re.compile(r"\u00b7|\btopic\s*:|\bgoal\s*:", re.IGNORECASE)
+_MF_PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
+_MF_AGE_BAND_RE = re.compile(r"(?<![\d.])(\d{2})\s*(?:-|\u2013|to)\s*(\d{2})(?![\d%])|(?<![\d.])(\d{2})\s*\+")
+# Gender words (English, Hinglish, Hindi) -> the class the audience line must name.
+_MF_GENDER_WORDS: dict[str, str] = {
+    "women": "f", "woman": "f", "female": "f", "females": "f", "girls": "f", "ladies": "f",
+    "mahila": "f", "mahilayen": "f", "mahilaen": "f", "ladkiyan": "f", "ladkiyaan": "f",
+    "aurat": "f", "auratein": "f", "aurten": "f",
+    "\u092e\u0939\u093f\u0932\u093e": "f", "\u092e\u0939\u093f\u0932\u093e\u090f\u0901": "f",
+    "\u092e\u0939\u093f\u0932\u093e\u090f\u0902": "f",
+    "\u0932\u0921\u093c\u0915\u093f\u092f\u093e\u0901": "f", "\u0932\u0921\u093c\u0915\u093f\u092f\u093e\u0902": "f",
+    "men": "m", "man": "m", "male": "m", "males": "m", "boys": "m", "purush": "m", "ladke": "m",
+    "\u092a\u0941\u0930\u0941\u0937": "m", "\u0932\u0921\u093c\u0915\u0947": "m",
+}
+_MF_GENDER_IN_SUMMARY: dict[str, re.Pattern[str]] = {
+    "f": re.compile(r"\b(?:women|woman|female|females)\b", re.IGNORECASE),
+    "m": re.compile(r"\b(?:men|man|male|males)\b", re.IGNORECASE),
+}
+# City names a Made for line may carry -> the spellings the audience line may use for them.
+_MF_CITIES: dict[str, tuple[str, ...]] = {
+    "mumbai": ("mumbai", "bombay"), "delhi": ("delhi",), "new delhi": ("delhi",),
+    "bengaluru": ("bengaluru", "bangalore"), "bangalore": ("bengaluru", "bangalore"),
+    "pune": ("pune",), "hyderabad": ("hyderabad",), "chennai": ("chennai",),
+    "kolkata": ("kolkata", "calcutta"), "ahmedabad": ("ahmedabad",), "jaipur": ("jaipur",),
+    "lucknow": ("lucknow",), "surat": ("surat",), "indore": ("indore",), "bhopal": ("bhopal",),
+    "nagpur": ("nagpur",), "chandigarh": ("chandigarh",), "kochi": ("kochi",), "patna": ("patna",),
+    "noida": ("noida",), "gurugram": ("gurugram", "gurgaon"), "gurgaon": ("gurugram", "gurgaon"),
+    "thane": ("thane",), "vadodara": ("vadodara",), "coimbatore": ("coimbatore",),
+    "nashik": ("nashik",), "ludhiana": ("ludhiana",), "guwahati": ("guwahati",),
+    "bhubaneswar": ("bhubaneswar",), "dehradun": ("dehradun",), "ranchi": ("ranchi",),
+    "raipur": ("raipur",), "amritsar": ("amritsar",), "goa": ("goa",), "kanpur": ("kanpur",),
+    "\u092e\u0941\u0902\u092c\u0908": ("mumbai", "bombay"), "\u0926\u093f\u0932\u094d\u0932\u0940": ("delhi",),
+    "\u092a\u0941\u0923\u0947": ("pune",), "\u092c\u0947\u0902\u0917\u0932\u0941\u0930\u0941": ("bengaluru", "bangalore"),
+    "\u0915\u094b\u0932\u0915\u093e\u0924\u093e": ("kolkata", "calcutta"), "\u091a\u0947\u0928\u094d\u0928\u0908": ("chennai",),
+    "\u0939\u0948\u0926\u0930\u093e\u092c\u093e\u0926": ("hyderabad",), "\u091c\u092f\u092a\u0941\u0930": ("jaipur",),
+    "\u0932\u0916\u0928\u090a": ("lucknow",),
+}
+_MF_WORD_RE = re.compile(r"[\w\u0900-\u097f]+", re.UNICODE)
+
+
+def made_for_lines(text: str) -> list[str]:
+    """Every "Made for:" value in the reply (after markdown is stripped), in order. Scanned from
+    the lines themselves, not the parsed card, so an over-long line the parser ignores is still
+    judged."""
+    out: list[str] = []
+    for line in strip_meera_markdown(text or "").split("\n"):
+        match = _MADE_FOR_KEY_RE.match(line)
+        if match:
+            out.append(match.group(1).strip())
+    return out
+
+
+def _audience_part(value: str) -> str:
+    end = _MADE_FOR_AUDIENCE_END_RE.search(value)
+    return value[: end.start()] if end else value
+
+
+def audience_available(audience_summary: str | None) -> bool:
+    """Whether the case's "Your audience" line holds audience facts at all."""
+    summary = (audience_summary or "").strip().lower()
+    return bool(summary) and not summary.startswith("not available")
+
+
+def made_for_audience_guesses(text: str, audience_summary: str | None) -> list[str]:
+    """Audience facts in the Made for line(s) that the audience context does not hold, as short
+    reasons: a share ("61%"), an age band ("18-24", "65+"), a gender word, or a city. Only the
+    audience part is read (up to the first "\u00b7", "Topic:" or "Goal:"), so a city in the topic
+    ("Mumbai street breakfast") is not an audience claim. Without an available audience line,
+    every such fact is a guess."""
+    summary = (audience_summary or "") if audience_available(audience_summary) else ""
+    folded = summary.lower().replace("\u2013", "-")
+    words = set(_MF_WORD_RE.findall(folded))
+    reasons: list[str] = []
+    for value in made_for_lines(text):
+        part = _audience_part(value)
+        lowered = part.lower()
+        for match in _MF_PERCENT_RE.finditer(part):
+            number = match.group(1)
+            if not re.search(rf"(?<![\d.]){re.escape(number)}\s*%", folded):
+                reasons.append(f"made_for_share:{number}%")
+        for match in _MF_AGE_BAND_RE.finditer(part):
+            band = f"{match.group(1)}-{match.group(2)}" if match.group(1) else f"{match.group(3)}+"
+            if not re.search(rf"(?<!\d){re.escape(band)}(?!\d)", re.sub(r"\s*-\s*", "-", folded)):
+                reasons.append(f"made_for_age:{band}")
+        tokens = _MF_WORD_RE.findall(lowered)
+        for token in tokens:
+            gender = _MF_GENDER_WORDS.get(token)
+            if gender and not _MF_GENDER_IN_SUMMARY[gender].search(folded):
+                reasons.append(f"made_for_gender:{token}")
+        joined = " ".join(tokens)
+        for city, spellings in _MF_CITIES.items():
+            if re.search(rf"(?<![\w\u0900-\u097f]){re.escape(city)}(?![\w\u0900-\u097f])", joined) and not (
+                words & set(spellings)
+            ):
+                reasons.append(f"made_for_city:{city}")
+    return list(dict.fromkeys(reasons))
+
+
 def find_contradictions(
     text: str,
     parsed: ParsedReply,
@@ -731,6 +842,8 @@ class ShotCardCase:
     answers: tuple[tuple[str, str], ...] = ()
     # every word the creator said in the chat: the request and the tapped answers, folded
     chat_words: frozenset[str] = frozenset()
+    # the case's "Your audience" line (owner decision B); None = no line, i.e. not available
+    audience_summary: str | None = None
 
     @classmethod
     def from_expected(cls, expected: Mapping[str, Any]) -> ShotCardCase:
@@ -758,12 +871,14 @@ class ShotCardCase:
         said = [str(expected.get("request") or ""), *(str(a) for a in raw_answers.values())]
         chat_words = frozenset(w for text in said for w in _words(text))
         phone = expected.get("phone_model")
+        audience = expected.get("audience_summary")
         return cls(
             category,
             answered,
             phone.strip() if isinstance(phone, str) and phone.strip() else None,
             tuple(answers),
             chat_words,
+            audience.strip() if isinstance(audience, str) and audience.strip() else None,
         )
 
     def answer(self, qid: str) -> str | None:
@@ -851,7 +966,14 @@ def beat_fields(parsed: ParsedReply, number: int) -> dict[str, str]:
 
 def score_reply(text: str, case: ShotCardCase, *, stop_reason: str | None = None) -> ShotCardScore:
     parsed = parse_reply(text)
-    contradictions = tuple(find_contradictions(text, parsed, case.phone_model))
+    contradictions = tuple(
+        dict.fromkeys(
+            [
+                *find_contradictions(text, parsed, case.phone_model),
+                *made_for_audience_guesses(text, case.audience_summary),
+            ]
+        )
+    )
     c_score = 0.0 if contradictions else 100.0
     renders = parse_meera_script(text) is not None
     if not parsed.beats:
@@ -872,8 +994,8 @@ def score_reply(text: str, case: ShotCardCase, *, stop_reason: str | None = None
         f_scores.append((len(filled) - len(guessed_here)) / len(FIELD_ORDER))
         s_scores.append(1.0 if values["size"] in allowed_sizes(case.category, beat) else 0.0)
 
-        # P asks only for what the creator's answers make knowable: never a prop side (no
-        # option names one) and a light side only where window_side names it.
+        # P asks only for what the creator's answers make knowable: never a prop side (only a
+        # product_side answer or the chat names one) and a light side only where window_side names it.
         checks = [values["stand"] != UNKNOWN, values["text"] != UNKNOWN]
         if case.window_side() is not None:
             checks.append("-" in values["light"])
@@ -1066,6 +1188,9 @@ def build_creator_context(case_input: Mapping[str, Any]) -> dict[str, Any]:
         "creator_language": case_input.get("creator_language") or "en-IN",
         "phone_model": case_input.get("phone_model"),
         "content_goal": case_input.get("content_goal"),
+        # Owner decision B: the case's "Your audience" line, when it has one (absent = the
+        # assembler's own "not available" line).
+        **({"audience_summary": case_input["audience_summary"]} if case_input.get("audience_summary") else {}),
         "brand_tone": "FRIENDLY",
         "tools_enabled": [],
     }

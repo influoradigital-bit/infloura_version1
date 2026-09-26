@@ -170,7 +170,7 @@ export function ShootCheckPanel({ shots, lang = 'en-IN' }: ShootCheckPanelProps)
     async (blob: Blob, token: number, withAnswers: CoachAnswer[]) => {
       const outcome = await meeraApi.checkFrame(blob, currentShot.label || undefined, 'creator', {
         shotContext: shotContextFor(currentShot),
-        answers: withAnswers.map((a) => ({ id: a.ask.id, option: a.option })),
+        answers: withAnswers.map((a) => ({ id: a.ask.id, option: a.option, label: a.ask.options[a.option]?.en })),
       });
       if (frameCheckTokenRef.current !== token) return; // shot changed while checking — drop the stale result
 

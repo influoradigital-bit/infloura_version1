@@ -24,10 +24,10 @@ class CreatorToolScopesTest {
     void testLevelZeroCarriesAllEightNames() {
         Set<String> names = namesIn(CreatorToolScopes.SCOPE_LEVEL_0);
         assertEquals(
-                11,
+                12,
                 names.size(),
                 "SPEC.md 3.3 lists eight level-0 tool names, plus get_todays_topics,"
-                        + " plan_my_week and get_my_content_patterns added outside it");
+                        + " plan_my_week, get_my_content_patterns and get_my_audience added outside it");
         assertEquals(
                 Set.of(
                         "get_my_deals",
@@ -40,7 +40,8 @@ class CreatorToolScopesTest {
                         "draft_application",
                         "get_todays_topics",
                         "plan_my_week",
-                        "get_my_content_patterns"),
+                        "get_my_content_patterns",
+                        "get_my_audience"),
                 names);
     }
 
@@ -67,7 +68,7 @@ class CreatorToolScopesTest {
         Set<String> levelOne = namesIn(CreatorToolScopes.SCOPE_LEVEL_1);
         assertTrue(levelOne.containsAll(namesIn(CreatorToolScopes.SCOPE_LEVEL_0)));
         assertTrue(levelOne.contains("send_routine_reply"));
-        assertEquals(12, levelOne.size());
+        assertEquals(13, levelOne.size());
         assertEquals(levelOne, namesIn(CreatorToolScopes.SCOPE_LEVEL_2));
     }
 
@@ -107,6 +108,7 @@ class CreatorToolScopesTest {
                         "get_todays_topics",
                         "plan_my_week",
                         "get_my_content_patterns",
+                        "get_my_audience",
                         "send_routine_reply"),
                 namesIn(CreatorToolScopes.SCOPE_LEVEL_2),
                 "level 2 grants no tool of its own in this phase; if that changed, assert the ADDED"
@@ -126,7 +128,26 @@ class CreatorToolScopesTest {
         assertFalse(names.contains("draft_reply"));
         assertFalse(names.contains("draft_application"));
         assertFalse(names.contains("send_routine_reply"));
-        assertEquals(7, names.size());
+        assertEquals(8, names.size());
+    }
+
+    @Test
+    @DisplayName(
+            "get_my_audience (2026-09-26) is in the level-0 scope (and so levels 1 and 2), in the"
+                    + " represented scope (a read of her OWN audience), and OFFERED at every level")
+    void testMyAudienceIsScopedAndOffered() {
+        for (String scope :
+                List.of(
+                        CreatorToolScopes.SCOPE_LEVEL_0,
+                        CreatorToolScopes.SCOPE_LEVEL_1,
+                        CreatorToolScopes.SCOPE_LEVEL_2,
+                        CreatorToolScopes.SCOPE_REPRESENTED)) {
+            assertTrue(namesIn(scope).contains("get_my_audience"), scope);
+        }
+        for (int level : new int[] {0, 1, 2}) {
+            assertTrue(CreatorToolScopes.toolNamesForLevel(level, false, false).contains("get_my_audience"));
+            assertTrue(CreatorToolScopes.toolNamesForLevel(level, true, false).contains("get_my_audience"));
+        }
     }
 
     @Test
@@ -210,7 +231,8 @@ class CreatorToolScopesTest {
                         "check_deal_risks",
                         "get_todays_topics",
                         "plan_my_week",
-                        "get_my_content_patterns"),
+                        "get_my_content_patterns",
+                        "get_my_audience"),
                 offered);
         // The gap between the ceiling and the offered set is the point: the scope names nine
         // tools, but a tool the model can call and the server cannot answer is worse than one it

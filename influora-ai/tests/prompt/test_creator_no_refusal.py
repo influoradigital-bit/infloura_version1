@@ -60,9 +60,10 @@ def test_no_refusal_rule_is_in_the_opening():
 
 
 def test_multi_category_is_asked_in_the_intake_not_answered_per_category():
-    # .22.2 replaced "one idea per category, do not ask first" with the intake.
+    # .22.2 replaced "one idea per category, do not ask first" with the intake; owner decision A
+    # (2026-09-26) made the category its Q2.
     text = _flat(MEERA_CREATOR_PERSONA)
-    assert "With several categories, one of the questions is which category today" in text
+    assert "Q2: with several categories, which of their categories today" in text
     assert "give one concrete idea per category (at most 3)" not in text
 
 

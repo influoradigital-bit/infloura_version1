@@ -107,7 +107,8 @@ def test_the_cta_rule_reaches_the_model_with_the_script_rule_that_explains_it():
 
 
 def test_the_intake_offers_video_formats_only_and_says_so_about_carousels():
-    assert "format (Reel or YouTube Short)" in WIRED
+    # Owner decision A (2026-09-26): with one category, Q2 asks the Reel length instead.
+    assert "with one category, the format instead: a 15 s or a 30 s Reel" in WIRED
     assert "YouTube Short or carousel" not in WIRED
     assert "your content notes cover short video only, then offer the idea as a Reel" in WIRED
 

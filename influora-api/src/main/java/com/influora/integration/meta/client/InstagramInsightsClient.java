@@ -44,6 +44,12 @@ public class InstagramInsightsClient {
     static final String FOLLOWER_DEMOGRAPHICS_PATH =
             "/insights?metric=follower_demographics&period=lifetime&metric_type=total_value";
     static final String FOLLOWER_DEMOGRAPHICS_TIMEFRAME = "this_month";
+    // Engaged audience (2026-09-26): who engaged with the creator's content, same call shape as
+    // follower_demographics (period=lifetime, metric_type=total_value, one breakdown per call).
+    // Meta: "Not returned if the IG User has less than 100 engagements during the timeframe."
+    static final String ENGAGED_AUDIENCE_DEMOGRAPHICS_PATH =
+            "/insights?metric=engaged_audience_demographics&period=lifetime&metric_type=total_value";
+    static final String ENGAGED_AUDIENCE_TIMEFRAME = "this_month";
 
     private final MetaGraphApiClient apiClient;
 
@@ -142,6 +148,43 @@ public class InstagramInsightsClient {
         } catch (MetaApiException e) {
             return apiClient.get(path, accessToken, FollowerDemographicsResponse.class, igUserId, authPath);
         }
+    }
+
+    /**
+     * Who engaged with the creator's content this month: age and gender, country and city
+     * ({@code engaged_audience_demographics}, {@code timeframe=this_month}, one breakdown per call).
+     * Required permission: {@code instagram_manage_insights}.
+     *
+     * <p>Meta returns nothing when the account had fewer than 100 engagements in the timeframe.
+     * That comes back here as an EMPTY {@link AudienceBreakdowns} (a normal state, never an
+     * error), and when the age/gender call is already empty the country and city calls are not
+     * made: they cannot be non-empty for the same account and month, and each call spends rate
+     * budget. Unlike {@link #followerDemographics} there is no retry without {@code timeframe}:
+     * this metric requires it, so a retry would fail the same way. Every Meta error propagates;
+     * the caller decides what a failure means for the row.
+     */
+    public AudienceBreakdowns getEngagedAudienceDemographics(
+            String igUserId, String accessToken, MetaAuthPath authPath) {
+        FollowerDemographicsResponse ageGender =
+                engagedAudienceDemographics(igUserId, accessToken, authPath, "age,gender");
+        AudienceBreakdowns first = AudienceBreakdowns.fromResponses(ageGender, null, null);
+        if (first.isEmpty()) {
+            return first;
+        }
+        return AudienceBreakdowns.fromResponses(
+                ageGender,
+                engagedAudienceDemographics(igUserId, accessToken, authPath, "country"),
+                engagedAudienceDemographics(igUserId, accessToken, authPath, "city"));
+    }
+
+    /** One {@code engaged_audience_demographics} breakdown (same response shape as follower_demographics). */
+    FollowerDemographicsResponse engagedAudienceDemographics(
+            String igUserId, String accessToken, MetaAuthPath authPath, String breakdown) {
+        String path =
+                "/" + igUserId + ENGAGED_AUDIENCE_DEMOGRAPHICS_PATH
+                        + "&timeframe=" + ENGAGED_AUDIENCE_TIMEFRAME
+                        + "&breakdown=" + breakdown;
+        return apiClient.get(path, accessToken, FollowerDemographicsResponse.class, igUserId, authPath);
     }
 
     /**

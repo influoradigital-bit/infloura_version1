@@ -129,6 +129,13 @@ export const TOOL_TRAIL_LABELS: Record<CreatorToolName, ToolTrailLabelSet> = {
       hi: 'आपकी पोस्ट के नतीजे नहीं पढ़ पाई',
     },
   },
+  // Owner decision F (2026-09-26) — get_my_audience, the creator's own audience. The hi text is
+  // PENDING REVIEW.
+  get_my_audience: {
+    running: { en: 'Checking your audience…', hi: 'आपकी ऑडियंस देखी जा रही है…' },
+    done: { en: 'Checked your audience', hi: 'आपकी ऑडियंस देख ली' },
+    failed: { en: "Couldn't load your audience", hi: 'आपकी ऑडियंस लोड नहीं हो पाई' },
+  },
 };
 
 /**
@@ -289,6 +296,9 @@ export const STARTER_PROMPTS: StarterPrompt[] = [
  * (`influora-ai/app/prompt/creator_persona.py`), except Idea (the card's own title, no label
  * shown) and Script (never shown as a label — its beats ARE the card's beat list).
  */
+/** The optional `Made for:` line (owner decision B, 2026-09-26), shown at the top of the card.
+ *  The hi text is PENDING REVIEW. */
+export const SCRIPT_CARD_MADE_FOR_LABEL: BilingualText = { en: 'Made for', hi: 'किसके लिए' };
 export const SCRIPT_CARD_PLAN_LABEL: BilingualText = { en: 'Plan', hi: 'योजना' };
 export const SCRIPT_CARD_ACTION_LABEL: BilingualText = { en: 'Action', hi: 'ऐक्शन' };
 export const SCRIPT_CARD_SUCCESS_LABEL: BilingualText = {

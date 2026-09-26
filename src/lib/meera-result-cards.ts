@@ -35,6 +35,11 @@
  *   - the `Say: "…"` text using straight or curly double quotes
  *   - a missing `Success looks like:` line — see the parser's own comment at that line for why
  *     this is the one required-looking line that does not fail the whole card
+ *   - a missing `Made for:` line (added 2026-09-26, right after `Idea:`: the one-line basis of
+ *     the script — audience, topic and its source, goal) — older replies without it parse exactly
+ *     as before, with no `madeFor`. A `Made for:` line whose value is empty or longer than
+ *     `MADE_FOR_MAX_CHARS` code points is consumed and ignored (no `madeFor`), never a refusal:
+ *     the line only states the basis, so it must never cost the creator the whole card
  *   - a missing `Set-up:` line (added to the persona 2026-09-25, right after `Action:`) — older
  *     replies written before it existed still parse; the label is also read as `Setup:` or
  *     `Set up:`, the same meaning
@@ -102,6 +107,12 @@ export interface ScriptBeat {
 
 export interface ParsedMeeraScript {
   idea: string;
+  /** The one-line basis the script was written for (audience, topic and its source, goal), e.g.
+   *  `your followers - mostly women, 18-24, Mumbai (Instagram) · Topic: ... · Goal: grow followers`.
+   *  From the optional `Made for:` line right after `Idea:`. Absent (not `undefined`-valued) when
+   *  the reply has no such line, or its value is empty or over `MADE_FOR_MAX_CHARS` code points
+   *  (ignored, not refused). */
+  madeFor?: string;
   plan: string;
   action: string;
   /** Where the creator sits or stands and where the light falls (their left/right), where the
@@ -422,11 +433,16 @@ function shotCardsForBeats(blockLines: string[], beatCount: number): Array<ShotC
   return cards;
 }
 
+/** The longest `Made for:` value kept, in code points (counted like Python's `len`, the same as the
+ *  shot card's free text). A longer value is ignored, not refused. */
+export const MADE_FOR_MAX_CHARS = 200;
+
 export function parseMeeraScript(text: string): ParsedMeeraScript | undefined {
   if (typeof text !== 'string') return undefined;
   const lines = splitLines(text);
   // Minimum shape: Idea, Plan, Action, Script, 3 beats, Caption, Before you shoot, Why this
-  // works = 10 lines. Set-up, Success looks like and the trailing follow-up question are optional.
+  // works = 10 lines. Made for, Set-up, Success looks like and the trailing follow-up question are
+  // optional.
   if (lines.length < 10) return undefined;
 
   let i = 0;
@@ -434,6 +450,17 @@ export function parseMeeraScript(text: string): ParsedMeeraScript | undefined {
   const ideaKV = splitKeyValue(lines[i]);
   i++;
   if (!ideaKV || !keyIs(ideaKV, 'idea') || !ideaKV.value) return undefined;
+
+  // Made for: optional, and only in this one position (right after Idea, before Plan). Unlike
+  // Set-up, an empty or over-long value does not refuse the card: the line is consumed and simply
+  // not kept. It only states the basis; losing the whole script over it would be the worse outcome.
+  let madeFor: string | undefined;
+  const maybeMadeForKV = i < lines.length ? splitKeyValue(lines[i]) : null;
+  if (maybeMadeForKV && keyIs(maybeMadeForKV, 'made for')) {
+    const value = maybeMadeForKV.value;
+    if (value && Array.from(value).length <= MADE_FOR_MAX_CHARS) madeFor = value;
+    i++;
+  }
 
   const planKV = splitKeyValue(lines[i]);
   i++;
@@ -558,6 +585,8 @@ export function parseMeeraScript(text: string): ParsedMeeraScript | undefined {
 
   return {
     idea: ideaKV.value,
+    // Spread, not `madeFor,`: an old reply's result keeps exactly the keys it had before.
+    ...(madeFor !== undefined ? { madeFor } : {}),
     plan: planKV.value,
     action: actionKV.value,
     setup,

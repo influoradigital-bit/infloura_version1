@@ -306,6 +306,7 @@ export default function CreatorAnalyticsPage() {
               data={demographics}
               loading={demographicsLoading}
               error={demographicsError}
+              showEngaged
             />
 
             {/* creator-missing-0804 — your own per-post content performance + received reviews */}

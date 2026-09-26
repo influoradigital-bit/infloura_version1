@@ -100,7 +100,13 @@ label, name or count beside them is never read. A usable photo's body then carri
     have it);
   - `layout`: {faces, product}, the validated boxes, only when the model returned a layout
     object. Java strips it (and `at` / `box`) before the chat row is stored; the photo is never
-    stored, and positions without it mean nothing.
+    stored, and positions without it mean nothing;
+  - `setup_seen` (owner decision C, 2026-09-26): {light, light_side, place, phone_height,
+    product_side}, words only, written by code (`build_setup_seen`) from the validated scene
+    enums and the validated product box -- product_side is the creator's OWN left/right/centre
+    (`product_side_from_box`), never a coordinate. Absent when every field is unknown. Java
+    saves it in the chat text as a "Set-up seen: ..." line so Meera can use it like a coach
+    answer on later turns (`render_setup_seen_line` is the reference wording).
 
 Known limits (2026-09-25): a settings step's values stay English in a Hinglish ("hi")
 reply (its labels and every other step are Hinglish);
@@ -110,7 +116,9 @@ sound (that is what cant_tell is for).
 
 What counts as already answered (`answered_question_ids`): the validated answers, the phone-
 lens question when the saved phone matched one of our rows, and ONLY the shot_context keys
-that are bank ids -- on_camera and sit_or_walk. The free-text keys (where, light, angle ...)
+that are bank ids -- on_camera and sit_or_walk. product_side (owner decision D) is a follow-up:
+it counts as answered -- never askable -- until a prop_ready answer puts the product in the
+shot ("In my hand" / "On a table"), and a product box the check itself saw drops it too. The free-text keys (where, light, angle ...)
 answer nothing: "light: tube light" does not close other_light, so the model may still ask it.
 
 Request (contract C): besides the photo, `shot_label` and the saved `phone_model`, the
@@ -159,6 +167,7 @@ from app.prompt.frame_check_render import (  # noqa: F401 - phone helpers re-exp
     SCENE_VALUES,
     STEP_TEXT_TYPES,
     _phone_has,
+    build_setup_seen,
     normalize_scene,
     phone_features_named,
     render_lines,
@@ -336,6 +345,20 @@ _SHOT_CONTEXT_VALUE_CHARS = 300
 # The coach question the saved phone answers: when it matched a phone row, the lens
 # question is already settled.
 PHONE_QUESTION_ID = "phone_lens"
+
+# Owner decision D (2026-09-26): product_side is prop_ready's follow-up, askable only when the
+# creator's prop_ready answer puts the product in the shot. Found by the options' own English
+# words, so a reordered bank cannot silently open the follow-up on "Not with me".
+PROP_READY_QUESTION_ID = "prop_ready"
+PRODUCT_SIDE_QUESTION_ID = "product_side"
+_PROP_IN_SHOT_OPTIONS: frozenset[str] = frozenset({"In my hand", "On a table"})
+PROP_IN_SHOT_INDEXES: frozenset[int] = frozenset(
+    i
+    for i, option in enumerate(COACH_QUESTIONS.get(PROP_READY_QUESTION_ID, {}).get("options", []))
+    if option in _PROP_IN_SHOT_OPTIONS
+)
+if PRODUCT_SIDE_QUESTION_ID in COACH_QUESTIONS and len(PROP_IN_SHOT_INDEXES) != len(_PROP_IN_SHOT_OPTIONS):
+    raise RuntimeError("prop_ready no longer offers 'In my hand' and 'On a table': product_side has no gate")
 
 # A readable note is at most this long (a standing rule's first sentence can run long).
 NOTE_MAX_CHARS = 80
@@ -529,7 +552,11 @@ def parse_answers(raw: Any) -> list[tuple[str, int]]:
     """The `answers` form field -> [(coach id, option index)]: every item is validated
     first, then the first `MAX_ANSWERS` valid ones are kept (a bad item never pushes a
     good one out). An unknown id, a non-integer or out-of-range option, or a repeated id
-    is ignored. Empty when missing, longer than `ANSWERS_MAX_CHARS`, not JSON, or not an
+    is ignored. An item that carries a `label` (the tapped option's English words, sent by
+    the app since 2026-09-26) is ignored when that label is not the bank's option at that
+    index: ids stay stable while option meanings may change, so an ask shown from an older
+    bank is never read under the new meaning. No label (an older app) is read by index as
+    before. Empty when missing, longer than `ANSWERS_MAX_CHARS`, not JSON, or not an
     array."""
     if not isinstance(raw, str) or not raw.strip() or len(raw) > ANSWERS_MAX_CHARS:
         return []
@@ -550,6 +577,11 @@ def parse_answers(raw: Any) -> list[tuple[str, int]]:
         if isinstance(option, bool) or not isinstance(option, int):
             continue
         if not 0 <= option < len(COACH_QUESTIONS[qid]["options"]):
+            continue
+        label = item.get("label")
+        if label is not None and (
+            not isinstance(label, str) or label.strip() != COACH_QUESTIONS[qid]["options"][option]
+        ):
             continue
         seen.add(qid)
         out.append((qid, option))
@@ -575,11 +607,18 @@ def answered_question_ids(
 ) -> frozenset[str]:
     """The coach questions this request already answers: the ids of the validated answers,
     the shot_context keys that are bank ids (on_camera, sit_or_walk), and the phone-lens
-    question whenever the saved phone matched one of our phone rows."""
+    question whenever the saved phone matched one of our phone rows. product_side, the
+    follow-up, is in the set (never askable) unless a prop_ready answer puts the product in
+    the shot."""
     ids = {qid for qid, _ in answers or []}
     ids.update(key for key in shot_context or {} if key in COACH_QUESTIONS)
     if phone_row is not None:
         ids.add(PHONE_QUESTION_ID)
+    in_shot = any(
+        qid == PROP_READY_QUESTION_ID and option in PROP_IN_SHOT_INDEXES for qid, option in answers or []
+    )
+    if PRODUCT_SIDE_QUESTION_ID in COACH_QUESTIONS and not in_shot:
+        ids.add(PRODUCT_SIDE_QUESTION_ID)
     return frozenset(ids)
 
 
@@ -1229,7 +1268,11 @@ def parse_frame_check_reply(
         return FrameCheckParse(body, 0, dropped, usable, lang, True)
 
     steps, dropped = validate_steps(raw_steps, phone_row, lang)
+    layout = normalize_layout(parsed.get("layout"))
     ask = resolve_ask(parsed.get("ask"), answered_ids)
+    if ask is not None and ask["id"] == PRODUCT_SIDE_QUESTION_ID and layout is not None and layout.product:
+        # The check saw the product itself: its side is in setup_seen, so the follow-up is moot.
+        ask = None
     if not steps and ask is None:
         # Nothing to act on: a scene line alone ("I can see the shot ...") is not an answer.
         return FrameCheckParse(None, 0, dropped, usable, lang, scene is not None)
@@ -1247,7 +1290,6 @@ def parse_frame_check_reply(
         "lang": lang,
         "retake": False,
     }
-    layout = normalize_layout(parsed.get("layout"))
     # Only code writes these lines: a "checks" key the model sent is never read. Both keys are
     # additive and absent when empty, so a reply without a layout is exactly the older body.
     checks = quick_checks(layout, scene, lang, shot_context, photo_size)
@@ -1255,6 +1297,11 @@ def parse_frame_check_reply(
         body["checks"] = checks
     if layout is not None:
         body["layout"] = layout.as_json()
+    # Owner decision C: words only, from the validated scene and product box -- a "setup_seen"
+    # key the model sent is never read. Absent when nothing is known (the older body).
+    setup_seen = build_setup_seen(scene, layout.product if layout is not None else None)
+    if setup_seen is not None:
+        body["setup_seen"] = setup_seen
     return FrameCheckParse(body, len(steps), dropped, usable, lang, scene is not None)
 
 

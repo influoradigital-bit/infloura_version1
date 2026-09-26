@@ -6,7 +6,7 @@ import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorAnalyticsService;
 import com.influora.web.dto.analytics.AnalyticsDtos.ContentPerformanceResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorAccountInsightsResponse;
-import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorSelfDemographicsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorMetricsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorScoresResponse;
 import java.time.Instant;
@@ -53,7 +53,7 @@ public class CreatorAnalyticsController {
     }
 
     @GetMapping("/demographics")
-    public ResponseEntity<ApiResponse<CreatorDemographicsResponse>> getMyDemographics(
+    public ResponseEntity<ApiResponse<CreatorSelfDemographicsResponse>> getMyDemographics(
             @AuthenticationPrincipal AuthPrincipal principal) {
         return ResponseEntity.ok(
                 ApiResponse.ok(creatorAnalyticsService.getMyDemographics(principal)));

@@ -11,6 +11,32 @@ interface AudienceDemographicsPanelProps {
   loading?: boolean;
   error?: string | null;
   className?: string;
+  /**
+   * Show the "Engaged this month" section. Only the creator's OWN analytics page turns this on:
+   * the engaged audience is creator-only for now, so a brand page never shows it (2026-09-26).
+   */
+  showEngaged?: boolean;
+}
+
+/** Shown in place of the engaged section when Meta returned nothing for this month (BELOW_THRESHOLD). */
+export const ENGAGED_EMPTY_TEXT = 'Shown once your posts get at least 100 engagements in a month';
+
+/**
+ * Shown when the engaged audience was never fetched for this snapshot (engagedStatus null or
+ * absent: a row written before the engaged fetch existed, until the next weekly job). Same meaning
+ * as Meera's CreatorAudienceShares.ENGAGED_NOT_YET; never the under-100 claim, which is unchecked.
+ */
+export const ENGAGED_NOT_YET_TEXT = 'Not fetched yet. It arrives with the next weekly Instagram update.';
+
+/** Shown instead when the API says the last weekly fetch failed: the creator may well be over 100. */
+export const ENGAGED_FETCH_FAILED_TEXT =
+  "Instagram didn't return this on the last weekly check. It's tried again every week.";
+
+/** The engaged section's not-available line for a status (AVAILABLE with nothing in it = below 100). */
+export function engagedReasonText(status: CreatorDemographics['engagedStatus']): string {
+  if (status === 'FETCH_FAILED') return ENGAGED_FETCH_FAILED_TEXT;
+  if (status === 'BELOW_THRESHOLD' || status === 'AVAILABLE') return ENGAGED_EMPTY_TEXT;
+  return ENGAGED_NOT_YET_TEXT;
 }
 
 const AGE_GENDER_LABELS: Record<string, string> = {};
@@ -24,13 +50,44 @@ function formatAgeGenderBucket(key: string): string {
   return `${age} · ${gender.charAt(0).toUpperCase()}${gender.slice(1)}`;
 }
 
+type GenderLabel = 'Women' | 'Men' | 'Unknown';
+const GENDER_ORDER: GenderLabel[] = ['Women', 'Men', 'Unknown'];
+
+/** The gender part of an age/gender key. Anything that is not female or male counts as Unknown. */
+function genderOfBucket(key: string): GenderLabel {
+  const gender = key.slice(key.lastIndexOf('_') + 1).toLowerCase();
+  if (gender === 'female') return 'Women';
+  if (gender === 'male') return 'Men';
+  return 'Unknown';
+}
+
+/**
+ * "Women 64% · Men 33% · Unknown 3%": each gender's share of the WHOLE age/gender breakdown,
+ * summed over every age band. Null when the breakdown is empty. Plain text, so it never relies on
+ * colour to be read.
+ */
+export function genderSummary(breakdown: Record<string, number> | null | undefined): string | null {
+  if (!breakdown) return null;
+  const totals: Record<GenderLabel, number> = { Women: 0, Men: 0, Unknown: 0 };
+  let total = 0;
+  for (const [key, count] of Object.entries(breakdown)) {
+    if (!(count > 0)) continue;
+    totals[genderOfBucket(key)] += count;
+    total += count;
+  }
+  if (total === 0) return null;
+  return GENDER_ORDER.filter((label) => totals[label] > 0)
+    .map((label) => `${label} ${Math.round((totals[label] / total) * 100)}%`)
+    .join(' · ');
+}
+
 /**
  * The largest `limit` rows, plus the total of the WHOLE breakdown. Percentages are shares of all
  * followers Meta reported, not of the rows on screen: dividing by the visible rows made the top 6
  * cities always add up to 100% (2026-09-24).
  */
 function topEntries(
-  breakdown: Record<string, number> | null,
+  breakdown: Record<string, number> | null | undefined,
   limit: number,
 ): { entries: [string, number][]; total: number } {
   if (!breakdown) return { entries: [], total: 0 };
@@ -39,6 +96,11 @@ function topEntries(
     entries: [...all].sort((a, b) => b[1] - a[1]).slice(0, limit),
     total: all.reduce((sum, [, count]) => sum + count, 0),
   };
+}
+
+/** True when a breakdown has at least one positive count. */
+function hasEntries(breakdown: Record<string, number> | null | undefined): boolean {
+  return !!breakdown && Object.values(breakdown).some((count) => count > 0);
 }
 
 /** "IN" -> "India". Falls back to the code when the browser has no name for it. */
@@ -98,9 +160,82 @@ function BreakdownList({
 }
 
 /**
+ * One audience (followers, or the people engaged this month): its heading, sync date, the gender
+ * summary line and the breakdown lists. Both sections share this so they read the same way.
+ */
+function AudienceSection({
+  id,
+  title,
+  subtitle,
+  fetchedAt,
+  ageGenderBreakdown,
+  countryBreakdown,
+  cityBreakdown,
+  localeBreakdown,
+}: {
+  id: string;
+  title: string;
+  subtitle?: string;
+  fetchedAt: string | null | undefined;
+  ageGenderBreakdown: Record<string, number> | null | undefined;
+  countryBreakdown: Record<string, number> | null | undefined;
+  cityBreakdown: Record<string, number> | null | undefined;
+  localeBreakdown?: Record<string, number> | null | undefined;
+}) {
+  const headingId = `audience-${id}-heading`;
+  const ageGender = topEntries(ageGenderBreakdown, 8);
+  const countries = topEntries(countryBreakdown, 6);
+  const cities = topEntries(cityBreakdown, 6);
+  // Meta no longer reports follower languages; only an older snapshot can carry them.
+  const locales = topEntries(localeBreakdown, 6);
+  const genders = genderSummary(ageGenderBreakdown);
+
+  return (
+    <section aria-labelledby={headingId} className="space-y-4">
+      <div className="space-y-1">
+        <h3 id={headingId} className="text-sm font-semibold">
+          {title}
+        </h3>
+        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+        {fetchedAt && (
+          <p className="text-xs text-muted-foreground">
+            Last synced {new Date(fetchedAt).toLocaleDateString()}
+          </p>
+        )}
+        {genders && (
+          <p className="text-sm" data-testid={`audience-${id}-gender-summary`}>
+            {genders}
+          </p>
+        )}
+      </div>
+      <div className="grid gap-6 sm:grid-cols-2">
+        <BreakdownList
+          title="Age & Gender"
+          icon={Users}
+          entries={ageGender.entries}
+          total={ageGender.total}
+          formatLabel={formatAgeGenderBucket}
+        />
+        <BreakdownList
+          title="Top Countries"
+          icon={Globe2}
+          entries={countries.entries}
+          total={countries.total}
+          formatLabel={formatCountry}
+        />
+        <BreakdownList title="Top Cities" icon={MapPin} entries={cities.entries} total={cities.total} />
+        {locales.entries.length > 0 ? (
+          <BreakdownList title="Locales" icon={Languages} entries={locales.entries} total={locales.total} />
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+/**
  * Audience demographics panel — Wave B task B5. Wired to
- * GET /analytics/creators/{creatorId}/demographics (B4). Replaces the
- * previous "coming soon" static placeholder in brand-creator-analytics.tsx.
+ * GET /analytics/creators/{creatorId}/demographics (B4) for brands and
+ * GET /creator/analytics/me/demographics for the creator's own page.
  *
  * `data.hasData === false` is a graceful, expected steady state (the weekly
  * AudienceDemographicsJob hasn't produced a snapshot for this creator yet) —
@@ -108,12 +243,17 @@ function BreakdownList({
  * never with fabricated zero-filled bars. Uses Progress bars (the same
  * primitive QualityScoreDisplay already uses) rather than introducing a new
  * chart type — no recharts BarChart exists anywhere in this codebase yet.
+ *
+ * With `showEngaged` (creator's own page only), an "Engaged this month" section follows the
+ * Followers one: Meta's engaged_audience_demographics, which Meta leaves out when the account had
+ * fewer than 100 engagements this month. That absence is shown as its own empty text, not an error.
  */
 export function AudienceDemographicsPanel({
   data,
   loading = false,
   error,
   className,
+  showEngaged = false,
 }: AudienceDemographicsPanelProps) {
   if (loading) {
     return (
@@ -152,7 +292,14 @@ export function AudienceDemographicsPanel({
     );
   }
 
-  if (!data || !data.hasData) {
+  const engagedPresent =
+    showEngaged &&
+    !!data &&
+    (hasEntries(data.engagedAgeGenderBreakdown) ||
+      hasEntries(data.engagedCountryBreakdown) ||
+      hasEntries(data.engagedCityBreakdown));
+
+  if (!data || (!data.hasData && !engagedPresent)) {
     return (
       <Card className={className}>
         <CardHeader className="pb-2">
@@ -176,43 +323,53 @@ export function AudienceDemographicsPanel({
     );
   }
 
-  const ageGender = topEntries(data.ageGenderBreakdown, 8);
-  const countries = topEntries(data.countryBreakdown, 6);
-  const cities = topEntries(data.cityBreakdown, 6);
-  // Meta no longer reports follower languages; only an older snapshot can carry them.
-  const locales = topEntries(data.localeBreakdown, 6);
-
   return (
     <Card className={className}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">
           Audience Demographics
         </CardTitle>
-        {data.fetchedAt && (
-          <p className="text-xs text-muted-foreground">
-            Last synced {new Date(data.fetchedAt).toLocaleDateString()}
-          </p>
-        )}
       </CardHeader>
-      <CardContent className="grid gap-6 sm:grid-cols-2">
-        <BreakdownList
-          title="Age & Gender"
-          icon={Users}
-          entries={ageGender.entries}
-          total={ageGender.total}
-          formatLabel={formatAgeGenderBucket}
-        />
-        <BreakdownList
-          title="Top Countries"
-          icon={Globe2}
-          entries={countries.entries}
-          total={countries.total}
-          formatLabel={formatCountry}
-        />
-        <BreakdownList title="Top Cities" icon={MapPin} entries={cities.entries} total={cities.total} />
-        {locales.entries.length > 0 ? (
-          <BreakdownList title="Locales" icon={Languages} entries={locales.entries} total={locales.total} />
-        ) : null}
+      <CardContent className="space-y-8">
+        {data.hasData ? (
+          <AudienceSection
+            id="followers"
+            title="Followers"
+            fetchedAt={data.fetchedAt}
+            ageGenderBreakdown={data.ageGenderBreakdown}
+            countryBreakdown={data.countryBreakdown}
+            cityBreakdown={data.cityBreakdown}
+            localeBreakdown={data.localeBreakdown}
+          />
+        ) : (
+          <section aria-label="Followers" className="space-y-1">
+            <h3 className="text-sm font-semibold">Followers</h3>
+            <p className="text-sm text-muted-foreground">
+              Instagram only shares follower details for accounts with 100 or more followers.
+            </p>
+          </section>
+        )}
+        {showEngaged &&
+          (engagedPresent ? (
+            <AudienceSection
+              id="engaged"
+              title="Engaged this month"
+              subtitle="People who engaged with your posts and Reels this month."
+              fetchedAt={data.engagedFetchedAt}
+              ageGenderBreakdown={data.engagedAgeGenderBreakdown}
+              countryBreakdown={data.engagedCountryBreakdown}
+              cityBreakdown={data.engagedCityBreakdown}
+            />
+          ) : (
+            <section aria-labelledby="audience-engaged-heading" className="space-y-1">
+              <h3 id="audience-engaged-heading" className="text-sm font-semibold">
+                Engaged this month
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {engagedReasonText(data.engagedStatus)}
+              </p>
+            </section>
+          ))}
       </CardContent>
     </Card>
   );

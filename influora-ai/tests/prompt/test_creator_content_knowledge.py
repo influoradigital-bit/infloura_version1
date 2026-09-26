@@ -112,14 +112,15 @@ def test_committed_knowledge_file_loads_every_row_by_type():
     # shoot guide spec v2 Phase 6): its 162 rows in 8 new types minus the TikTok safe-zone row
     # (the file never names TikTok) -> 161 lookup-only framing and shot-planning rows -> 520.
     # Plus the explainer Reel format rows (2026-09-26, lookup only, topic reel_formats): 6-8
-    # formats and 10-15 rules by contract, pinned in test_creator_reel_formats.py.
+    # formats and 10-15 rules by contract, pinned in test_creator_reel_formats.py. Plus owner
+    # decision D (2026-09-26): one always-sent coach_question row, product_side -> 521.
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["data_type"]] = counts.get(r["data_type"], 0) + 1
     reel = {t: counts.pop(t, 0) for t in ("reel_format", "reel_format_rule")}
     assert 6 <= reel["reel_format"] <= 8, reel
     assert 10 <= reel["reel_format_rule"] <= 15, reel
-    assert len(rows) == 520 + sum(reel.values())
+    assert len(rows) == 521 + sum(reel.values())
     assert counts == {
         "camera_angle": 28,
         "storytelling_structure": 11,
@@ -172,7 +173,7 @@ def test_committed_knowledge_file_loads_every_row_by_type():
         "movement_continuity_rule": 5,
         "walking_configuration": 4,
         # coach question bank, always sent
-        "coach_question": 10,
+        "coach_question": 11,
         # dataset 9 framing and shot planning, lookup only
         "category_composition_rule": 109,
         "category_composition_example": 20,
@@ -517,7 +518,9 @@ def test_persona_states_knowledge_first_name_entry_name_category_ask_script():
     assert 'Answer from the "Influora content knowledge" block before general knowledge' in text
     assert "Name the category first." in text
     assert "name each entry you use exactly as the knowledge names it" in text
-    assert "ask them to paste their last video script as text" in text
+    # Owner decision A (2026-09-26) replaced the past-work intake question with Q1-Q3; a script
+    # the creator shares is still used.
+    assert "When they share their last script, suggest the hook and camera angles for that script." in text
     assert "fall back to general knowledge (except shooting instructions" in text
     assert "isn't in Influora's notes), and say so plainly" in text
 
@@ -560,7 +563,7 @@ def test_question_first_intake_still_present():
     text = _flat(MEERA_CREATOR_PERSONA)
     for phrase in (
         "Content idea intake.",
-        "at most 3 short questions in ONE message",
+        "at most 3 questions, ONE per message",
         "Skip override.",
         "One round of questions only.",
         "Never ask what the context already holds.",
@@ -717,16 +720,15 @@ def test_persona_states_the_playbook_and_brand_deal_rules():
 def test_persona_states_the_ask_first_rule():
     text = _flat(MEERA_CREATOR_PERSONA)
     assert "Ask first, only what's unknown." in text
-    # ONE intake rule: ask-first defers to the content idea intake (at most 3 questions in ONE
-    # message); the old "one per message" rule contradicted it and must not come back for ideas.
-    # Since .25.1 the same intake runs as Plan my shoot for shooting questions and full scripts,
-    # which asks one coach question per message by design -- so "one per message" may appear in
-    # that bullet only (test_creator_plan_my_shoot.py pins it there).
+    # ONE intake rule: ask-first defers to the content idea intake. Owner decision A
+    # (2026-09-26) made that intake three questions, ONE per message; Plan my shoot asks one coach
+    # question per message too. "one per message" may appear in those two bullets only.
     assert "Otherwise ask as the content idea intake below says." in text
-    assert "first ask at most 3 short questions in ONE message" in text
+    assert "find out what to make with at most 3 questions, ONE per message" in text
     plan_start = text.index("- Plan my shoot.")
     plan_bullet = text[plan_start : text.index(" - ", plan_start + 1)]
-    assert "one per message" not in text.replace(plan_bullet, "")
+    intake = text[text.index("- Content idea intake.") : text.index("- Short video only.")]
+    assert "one per message" not in text.replace(plan_bullet, "").replace(intake, "").lower()
     assert "ask ONE short question first" not in text
     # Never re-ask what the context or the message already holds.
     assert "Never ask what the context already holds." in text

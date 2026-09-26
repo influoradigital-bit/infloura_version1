@@ -52,6 +52,12 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * MetricsAuthorizationService} does not apply here (see that service's javadoc, "Not wired into
  * MetricsPollingJob").
  *
+ * <p><b>Engaged audience (2026-09-26).</b> Once the follower breakdowns are in hand, the same run
+ * asks for {@code engaged_audience_demographics} (this month) and stores it on the same row with
+ * an {@code engaged_status}: {@code AVAILABLE}, {@code BELOW_THRESHOLD} (Meta returned nothing:
+ * under 100 engagements this month, a normal state) or {@code FETCH_FAILED}. An engaged failure
+ * never costs the follower snapshot: the row is still written, with the failure recorded.
+ *
  * <p><b>Graceful degradation, not fabrication:</b> Meta's audience insights are only available for
  * accounts with 100+ followers ({@link InstagramInsightsClient#getAudienceDemographics} javadoc) —
  * an empty/error response for a smaller creator is logged and skipped, never turned into a
@@ -219,17 +225,13 @@ public class AudienceDemographicsJob {
         }
 
         try {
+            // T-IGLOGIN-0820: route to the host the token belongs to. Defaulting to FACEBOOK_LOGIN
+            // is safe only because getCreatorAuthPath is empty exactly when there is no usable
+            // token, which this method already returned on above.
+            MetaAuthPath authPath =
+                    tokenStorage.getCreatorAuthPath(creatorProfileId).orElse(MetaAuthPath.FACEBOOK_LOGIN);
             AudienceBreakdowns breakdowns =
-                    instagramClient.getAudienceDemographics(
-                            igBusinessAccountId,
-                            token.get(),
-                            // T-IGLOGIN-0820: route to the host the token belongs to. Defaulting
-                            // to FACEBOOK_LOGIN is safe only because getCreatorAuthPath is empty
-                            // exactly when there is no usable token, which this method already
-                            // returned on above.
-                            tokenStorage
-                                    .getCreatorAuthPath(creatorProfileId)
-                                    .orElse(MetaAuthPath.FACEBOOK_LOGIN));
+                    instagramClient.getAudienceDemographics(igBusinessAccountId, token.get(), authPath);
 
             if (breakdowns == null || breakdowns.isEmpty()) {
                 // Meta returns no follower_demographics for an account under 100 followers (or
@@ -240,6 +242,8 @@ public class AudienceDemographicsJob {
                         creatorProfileId);
                 return false;
             }
+
+            Engaged engaged = fetchEngaged(creatorProfileId, igBusinessAccountId, token.get(), authPath);
 
             AudienceDemographics snapshot =
                     AudienceDemographics.builder()
@@ -253,6 +257,12 @@ public class AudienceDemographicsJob {
                             // Meta has no language breakdown any more (audience_locale went with
                             // the other audience_* metrics), so the column stays empty.
                             .localeBreakdownJson(null)
+                            .engagedAgeGenderBreakdownJson(JsonLists.toJsonObject(nullIfEmpty(engaged.breakdowns().ageGender())))
+                            .engagedCountryBreakdownJson(JsonLists.toJsonObject(nullIfEmpty(engaged.breakdowns().country())))
+                            .engagedCityBreakdownJson(JsonLists.toJsonObject(nullIfEmpty(engaged.breakdowns().city())))
+                            .engagedStatus(engaged.status())
+                            .engagedFetchedAt(
+                                    AudienceDemographics.ENGAGED_AVAILABLE.equals(engaged.status()) ? Instant.now() : null)
                             .dataSource(DATA_SOURCE_META_API)
                             .fetchedAt(Instant.now())
                             .build();
@@ -279,6 +289,44 @@ public class AudienceDemographicsJob {
                     e.getMessage());
             return false;
         }
+    }
+
+    /** What the engaged call produced for one creator, and the status the row records for it. */
+    record Engaged(String status, AudienceBreakdowns breakdowns) {}
+
+    private static final AudienceBreakdowns NO_BREAKDOWNS =
+            new AudienceBreakdowns(Map.of(), Map.of(), Map.of());
+
+    /**
+     * The creator's engaged audience this month. Never throws: whatever goes wrong here is
+     * recorded as {@code FETCH_FAILED} on a row that still carries the good follower breakdowns.
+     * Meta returning nothing is {@code BELOW_THRESHOLD} (under 100 engagements this month), never
+     * an error and never zero-filled.
+     */
+    private Engaged fetchEngaged(
+            String creatorProfileId, String igBusinessAccountId, String token, MetaAuthPath authPath) {
+        try {
+            AudienceBreakdowns engaged =
+                    instagramClient.getEngagedAudienceDemographics(igBusinessAccountId, token, authPath);
+            if (engaged == null || engaged.isEmpty()) {
+                return new Engaged(AudienceDemographics.ENGAGED_BELOW_THRESHOLD, NO_BREAKDOWNS);
+            }
+            return new Engaged(AudienceDemographics.ENGAGED_AVAILABLE, engaged);
+        } catch (MetaRateLimitException e) {
+            // Same key as getCurrentUsage()/MetaGraphApiClient (F-0126): igBusinessAccountId.
+            rateLimitTracker.markLimited(igBusinessAccountId);
+            log.warn(
+                    "AudienceDemographicsJob: rate limited fetching engaged audience for creator {};"
+                            + " follower breakdowns still saved",
+                    creatorProfileId);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "AudienceDemographicsJob: engaged audience fetch failed for creator {}: {};"
+                            + " follower breakdowns still saved",
+                    creatorProfileId,
+                    e.getMessage());
+        }
+        return new Engaged(AudienceDemographics.ENGAGED_FETCH_FAILED, NO_BREAKDOWNS);
     }
 
     private static Map<String, Long> nullIfEmpty(Map<String, Long> map) {

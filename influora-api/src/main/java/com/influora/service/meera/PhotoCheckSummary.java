@@ -3,6 +3,8 @@ package com.influora.service.meera;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -23,6 +25,7 @@ import java.util.regex.Pattern;
  * [Photo check]
  * Shot: "0-3s · Close-up on your face"
  * Photo check saw: I can see you're in a bedroom, ...
+ * Set-up seen: light: window light from your left; place: bedroom; phone: at eye level; product: on your right
  * Steps:
  * 1) Window behind you: Change where the phone points ...
  * 2) Talking head by a window: Lens: 1x Main. Distance: 0.8-1m. ...
@@ -39,6 +42,15 @@ import java.util.regex.Pattern;
  * "Can't tell" items, then the question's options, then the question (spec Phase 4: the quick
  * checks go before "Looking good"). If the header, what the check saw and the steps alone are
  * over the cap, the text is returned over the cap rather than cut.
+ *
+ * <p><b>Set-up seen</b> (Swapnil 2026-09-26): influora-ai's code-written {@code setup_seen}
+ * ({@code light}, {@code light_side}, {@code place}, {@code phone_height}, {@code product_side}),
+ * built from the validated scene enums and the product box, rendered here in WORDS only so later
+ * turns can read what the photo showed and fill the shot card's creator facts from it. Every value
+ * must be a lower-case enum word ({@link #SETUP_VALUE}); anything else -- a number, a coordinate,
+ * free text -- is dropped, so no position can reach the chat even if the result carried one.
+ * {@code unknown} is dropped too. {@code product_side} is only ever left / centre / right (the
+ * creator's OWN side, influora-ai's left/right rule). The line is never trimmed for size.
  *
  * <p>{@code <} and {@code >} are written as "under" / "over" (Ash correction 14): the replay path
  * turns every {@code <} into {@code &lt;}, which Meera would otherwise echo ("ISO &lt;800").
@@ -58,6 +70,12 @@ public final class PhotoCheckSummary {
     private static final Pattern LESS_THAN = Pattern.compile("\\s*<\\s*");
     private static final Pattern GREATER_THAN = Pattern.compile("\\s*>\\s*");
     private static final Pattern OPEN_PAREN_SPACE = Pattern.compile("\\(\\s+");
+
+    /** A {@code setup_seen} value: one lower-case enum word, never a digit, never free text. */
+    private static final Pattern SETUP_VALUE = Pattern.compile("[a-z][a-z_]{0,23}");
+
+    /** The line's heading; the persona and the shot card read it. */
+    public static final String SETUP_SEEN_PREFIX = "Set-up seen: ";
 
     private PhotoCheckSummary() {}
 
@@ -118,6 +136,10 @@ public final class PhotoCheckSummary {
         }
         if (!seen.isEmpty()) {
             head.add("Photo check saw: " + seen);
+        }
+        String setup = setupSeen(result == null ? null : result.get("setup_seen"));
+        if (setup != null) {
+            head.add(SETUP_SEEN_PREFIX + setup);
         }
         List<String> steps = steps(result);
         if (!steps.isEmpty()) {
@@ -182,6 +204,89 @@ public final class PhotoCheckSummary {
         }
         return String.join("\n", lines);
     }
+
+    /**
+     * The words for {@code setup_seen}, or null when it is absent or holds nothing known. Mirrors
+     * influora-ai's reference wording ({@code frame_check_render.render_setup_seen_line}) word for
+     * word, so the saved chat text, the persona and the app read one phrasing: light (with its
+     * side), place, phone height, product side, joined by "; ". Only the enum words below are
+     * rendered; any other value is left out, which is also what keeps a number or a coordinate out.
+     */
+    static String setupSeen(JsonNode setup) {
+        if (setup == null || !setup.isObject()) {
+            return null;
+        }
+        List<String> parts = new ArrayList<>();
+        String light = wordFor(SETUP_LIGHT_WORDS, setupValue(setup, "light"));
+        String side = wordFor(SETUP_SIDE_WORDS, setupValue(setup, "light_side"));
+        if (light != null || side != null) {
+            parts.add("light: " + (light == null ? "light" : light) + (side == null ? "" : " " + side));
+        }
+        String place = setupValue(setup, "place");
+        if (place != null && SETUP_PLACES.contains(place)) {
+            parts.add("place: " + SETUP_PLACE_WORDS.getOrDefault(place, place.replace('_', ' ')));
+        }
+        String height = wordFor(SETUP_HEIGHT_WORDS, setupValue(setup, "phone_height"));
+        if (height != null) {
+            parts.add("phone: " + height);
+        }
+        String product = wordFor(SETUP_PRODUCT_WORDS, setupValue(setup, "product_side"));
+        if (product != null) {
+            parts.add("product: " + product);
+        }
+        return parts.isEmpty() ? null : String.join("; ", parts);
+    }
+
+    /** The words for {@code key} in {@code words}, or null (a null key included: Map.of rejects it). */
+    private static String wordFor(Map<String, String> words, String key) {
+        return key == null ? null : words.get(key);
+    }
+
+    /** One enum word from {@code setup_seen}, or null when absent, unknown, or not an enum word. */
+    private static String setupValue(JsonNode setup, String field) {
+        JsonNode value = setup.get(field);
+        if (value == null || !value.isTextual()) {
+            return null;
+        }
+        String word = value.asText().strip();
+        if (!SETUP_VALUE.matcher(word).matches() || "unknown".equals(word)) {
+            return null;
+        }
+        return word;
+    }
+
+    // influora-ai frame_check_render.py: _SETUP_SEEN_*_WORDS and SCENE_VALUES["place"].
+    private static final Map<String, String> SETUP_LIGHT_WORDS =
+            Map.of(
+                    "window", "window light",
+                    "sun", "direct sun",
+                    "shade", "open shade",
+                    "ring_light", "a ring light",
+                    "lamp", "a lamp",
+                    "tube_light", "a tube light",
+                    "ceiling_light", "a ceiling light",
+                    "mixed", "mixed lights",
+                    "low_light", "low light");
+    private static final Map<String, String> SETUP_SIDE_WORDS =
+            Map.of(
+                    "your_left", "from your left",
+                    "your_right", "from your right",
+                    "in_front", "from in front of you",
+                    "behind_you", "from behind you",
+                    "above", "from above");
+    private static final Set<String> SETUP_PLACES =
+            Set.of(
+                    "bedroom", "living_room", "kitchen", "desk", "studio", "street", "park", "rooftop",
+                    "market", "other_indoor", "other_outdoor");
+    private static final Map<String, String> SETUP_PLACE_WORDS =
+            Map.of("living_room", "living room", "other_indoor", "indoors", "other_outdoor", "outdoors");
+    private static final Map<String, String> SETUP_HEIGHT_WORDS =
+            Map.of(
+                    "eye_level", "at eye level",
+                    "below_eyes", "below your eyes",
+                    "above_eyes", "above your eyes");
+    private static final Map<String, String> SETUP_PRODUCT_WORDS =
+            Map.of("left", "on your left", "centre", "in the centre", "right", "on your right");
 
     /** Sentences join with a space; anything without end punctuation gets "; " after it. */
     private static String joinItems(List<String> items) {

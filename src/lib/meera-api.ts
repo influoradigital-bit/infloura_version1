@@ -205,6 +205,43 @@ export interface MeeraShootCheckFrameResult {
   /** Code-written quick checks (influora-ai `app/shoot/checklist.py`, never model text). Absent when
    *  the server sends none. */
   checks?: string[];
+  /** Code-written "Set-up seen" facts (owner decision C, 2026-09-26) from the validated scene and
+   *  the product box: words only, never coordinates; `product_side` is the creator's own
+   *  left/right. Absent from an older server, or when the body has no `setup_seen` object. */
+  setupSeen?: MeeraSetupSeen;
+}
+
+/** `setup_seen` on a photo-check body. Each field is `null` when the photo does not show it. */
+export interface MeeraSetupSeen {
+  light: string | null;
+  lightSide: string | null;
+  place: string | null;
+  phoneHeight: string | null;
+  productSide: 'left' | 'centre' | 'right' | null;
+}
+
+/** Longest `setup_seen` word kept (code points); a longer value is read as `null`. */
+const SETUP_SEEN_VALUE_MAX = 40;
+const SETUP_SEEN_PRODUCT_SIDES = new Set(['left', 'centre', 'right']);
+
+/** `setup_seen` from a photo-check body, or `undefined` when there is no object. A field that is
+ *  not a non-empty string (or, for `product_side`, not left/centre/right) is `null`, on its own. */
+function parseSetupSeen(value: unknown): MeeraSetupSeen | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const v = value as Record<string, unknown>;
+  const word = (raw: unknown): string | null => {
+    if (typeof raw !== 'string') return null;
+    const trimmed = raw.trim();
+    return trimmed && Array.from(trimmed).length <= SETUP_SEEN_VALUE_MAX ? trimmed : null;
+  };
+  const side = typeof v.product_side === 'string' ? v.product_side.trim().toLowerCase() : '';
+  return {
+    light: word(v.light),
+    lightSide: word(v.light_side),
+    place: word(v.place),
+    phoneHeight: word(v.phone_height),
+    productSide: SETUP_SEEN_PRODUCT_SIDES.has(side) ? (side as 'left' | 'centre' | 'right') : null,
+  };
 }
 
 /** A point on the photo AS SENT (unmirrored): shares 0..1 of its width and height, (0, 0) top-left
@@ -340,7 +377,14 @@ export interface MeeraShootCheckAsk {
 export interface MeeraCoachAnswer {
   id: string;
   option: number;
+  /** The tapped option's English words (`ask.options[option].en`). influora-ai drops an answer
+   *  whose label is not its bank's option at that index, so an ask from an older bank is never
+   *  read under a changed meaning (ids stay stable, 2026-09-26). */
+  label?: string;
 }
+
+/** Longest option label sent; every bank label is far shorter. */
+export const ANSWER_LABEL_MAX_CHARS = 60;
 
 /** The planned shot, sent as `shot_context` so the check knows what the creator is trying to film.
  *  Creator/model-written text, so influora-ai wraps it as untrusted. */
@@ -412,14 +456,15 @@ export function serializeShotContext(context: MeeraShotContext | undefined): str
  *  most `ANSWERS_MAX_ITEMS` (the most recent ones). `null` when there is nothing to send. */
 export function serializeCoachAnswers(answers: MeeraCoachAnswer[] | undefined): string | null {
   if (!answers || answers.length === 0) return null;
-  const byId = new Map<string, number>();
+  const byId = new Map<string, { option: number; label?: string }>();
   for (const answer of answers) {
     if (!answer || typeof answer.id !== 'string' || !answer.id.trim()) continue;
     if (!Number.isInteger(answer.option) || answer.option < 0) continue;
+    const label = typeof answer.label === 'string' ? answer.label.trim().slice(0, ANSWER_LABEL_MAX_CHARS) : '';
     byId.delete(answer.id);
-    byId.set(answer.id, answer.option);
+    byId.set(answer.id, label ? { option: answer.option, label } : { option: answer.option });
   }
-  const items = [...byId.entries()].slice(-ANSWERS_MAX_ITEMS).map(([id, option]) => ({ id, option }));
+  const items = [...byId.entries()].slice(-ANSWERS_MAX_ITEMS).map(([id, value]) => ({ id, ...value }));
   while (items.length > 0) {
     const json = JSON.stringify(items);
     if (json.length <= ANSWERS_MAX_CHARS) return json;
@@ -550,6 +595,8 @@ export function parseShootCheckFrameBody(body: Record<string, unknown>): MeeraSh
   if (layout) result.layout = layout;
   const checks = asStringArray(body.checks, SHOOT_CHECK_MAX_CHECKS);
   if (checks.length > 0) result.checks = checks;
+  const setupSeen = parseSetupSeen(body.setup_seen);
+  if (setupSeen) result.setupSeen = setupSeen;
   return result;
 }
 
@@ -1325,6 +1372,53 @@ export interface GetMyContentPatternsPayload {
   note?: string;
 }
 
+/** One age band's share of an audience, e.g. `{ band: '18-24', pct: 41 }`. `pct` is an integer
+ *  share of that breakdown's total. */
+export interface AudienceAgeShare {
+  band: string;
+  pct: number;
+}
+
+/** One gender's share, e.g. `{ label: 'Women', pct: 64 }` (as the server labels Meta's F/M/U). */
+export interface AudienceGenderShare {
+  label: string;
+  pct: number;
+}
+
+/** One country's share, by ISO code, e.g. `{ code: 'IN', pct: 88 }`. */
+export interface AudienceCountryShare {
+  code: string;
+  pct: number;
+}
+
+/**
+ * One audience in `get_my_audience`: the creator's followers, or the people engaging with their
+ * content this month. `available=false` carries the exact not-available reason in `reason` (for
+ * the engaged audience, Meta returns nothing below 100 engagements in the month; that is "not
+ * available", never an error) and no breakdowns. `null` and absent are read the same (a Java
+ * `@JsonInclude(NON_NULL)` record omits a null).
+ */
+export interface AudienceSection {
+  available: boolean;
+  reason?: string | null;
+  as_of?: string | null;
+  age?: AudienceAgeShare[] | null;
+  gender?: AudienceGenderShare[] | null;
+  top_cities?: string[] | null;
+  top_countries?: AudienceCountryShare[] | null;
+}
+
+/**
+ * `get_my_audience` (owner decision F, 2026-09-26): the creator's OWN audience, read-only —
+ * followers and engaged-this-month. Creator-only; never another creator's data, never on a brand
+ * wire. No card in this version (the renderer's `default` returns null); the work trail shows
+ * "Checking your audience…".
+ */
+export interface GetMyAudiencePayload {
+  followers: AudienceSection;
+  engaged_this_month: AudienceSection;
+}
+
 export function isGetMyDealsPayload(data: unknown): data is GetMyDealsPayload {
   if (!data || typeof data !== 'object') return false;
   const d = data as Partial<GetMyDealsPayload>;
@@ -1451,6 +1545,51 @@ export function isGetMyContentPatternsPayload(
   );
 }
 
+/** A share list (`age`/`gender`/`top_countries`): absent or null, or every item carries a string
+ *  `key` and a finite number `pct`. */
+function isShareList(value: unknown, key: 'band' | 'label' | 'code'): boolean {
+  if (value === undefined || value === null) return true;
+  if (!Array.isArray(value)) return false;
+  return value.every((item: unknown) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+    const record = item as Record<string, unknown>;
+    return typeof record[key] === 'string' && typeof record.pct === 'number' && Number.isFinite(record.pct);
+  });
+}
+
+function isNullableString(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === 'string';
+}
+
+function isAudienceSection(value: unknown): value is AudienceSection {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const s = value as Record<string, unknown>;
+  const citiesOk =
+    s.top_cities === undefined ||
+    s.top_cities === null ||
+    (Array.isArray(s.top_cities) && s.top_cities.every((c: unknown) => typeof c === 'string'));
+  return (
+    typeof s.available === 'boolean' &&
+    isNullableString(s.reason) &&
+    isNullableString(s.as_of) &&
+    isShareList(s.age, 'band') &&
+    isShareList(s.gender, 'label') &&
+    isShareList(s.top_countries, 'code') &&
+    citiesOk
+  );
+}
+
+/**
+ * Both audience sections present and well typed. Lists may be absent or null (a section that is
+ * not available has nothing to list); a PRESENT list with a wrong-typed item fails the whole
+ * payload, so a future card is never handed a non-string label or a non-number share.
+ */
+export function isGetMyAudiencePayload(data: unknown): data is GetMyAudiencePayload {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  const d = data as Partial<GetMyAudiencePayload>;
+  return isAudienceSection(d.followers) && isAudienceSection(d.engaged_this_month);
+}
+
 /** `caption_first_line` is absent, null or a string — never anything else. */
 function hasValidCaptionFirstLine(post: unknown): boolean {
   if (!post || typeof post !== 'object') return true;
@@ -1477,6 +1616,9 @@ export const CREATOR_TOOL_NAMES = [
   // the creator's own posts. No card in v1 (see CreatorToolResultRenderer's explicit case) — the
   // "What's working for you" card is v1.1.
   'get_my_content_patterns',
+  // Owner decision F (2026-09-26): the creator's own audience (followers + engaged this month),
+  // read-only. No card; the work trail shows "Checking your audience…".
+  'get_my_audience',
 ] as const;
 
 export type CreatorToolName = (typeof CREATOR_TOOL_NAMES)[number];
@@ -2094,13 +2236,14 @@ export const meeraApi = {
           '[Photo check]',
           ...(mockLabel ? [`Shot: "${mockLabel}"`] : []),
           "Photo check saw: I can see you're in a bedroom, window light from behind you, phone below your eyes, framed chest up.",
+          'Set-up seen: light: window light from behind you; place: bedroom; phone: below your eyes',
           'Steps:',
           '1) Window behind you: Turn so the window is at your side, not behind you, or close the curtain and put your own light on your face.',
           '2) Eye-level phone: Phone at eye-level: neutral point of view, reliable eye contact.',
           '3) Talking head by a window: Lens: 1x Main. Distance: 0.8-1m. Framing: Chest up. EV: +0.5. Stabilization: Tripod (stabilization off).',
           'Looking good: Chest-up framing suits a talking head; The background behind you is tidy',
           "Can't tell from one photo: Whether the room is quiet enough to record; Whether you have a lamp you can move",
-          ...(answered ? [] : ['I asked: Can you move to a different spot for this shot? (Yes, I can move / No, fixed spot)']),
+          ...(answered ? [] : ['I asked: Where will you shoot? (By the window / At my desk / Outside / Somewhere else)']),
         ].join('\n'),
         messageId: conversationId ? `mock_pc_${Date.now()}_assistant` : null,
         userMessageId: conversationId ? `mock_pc_${Date.now()}_user` : null,
@@ -2148,13 +2291,22 @@ export const meeraApi = {
             ? null
             : {
                 id: 'can_move',
-                questionEn: 'Can you move to a different spot for this shot?',
-                questionHi: 'Kya aap is shot ke liye jagah badal sakte ho?',
+                questionEn: 'Where will you shoot?',
+                questionHi: 'Aap kahan shoot karoge?',
                 options: [
-                  { en: 'Yes, I can move', hi: 'Haan, jagah badal sakte hain' },
-                  { en: 'No, fixed spot', hi: 'Nahi, jagah fixed hai' },
+                  { en: 'By the window', hi: 'Window ke paas' },
+                  { en: 'At my desk', hi: 'Apni desk pe' },
+                  { en: 'Outside', hi: 'Bahar' },
+                  { en: 'Somewhere else', hi: 'Kahin aur' },
                 ],
               },
+          setupSeen: {
+            light: 'window',
+            lightSide: 'behind_you',
+            place: 'bedroom',
+            phoneHeight: 'below_eyes',
+            productSide: null,
+          },
           lang: 'en',
           retake: false,
         },

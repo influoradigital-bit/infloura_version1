@@ -18,6 +18,11 @@ What this pins:
 - the playbook-category -> framing-topic table is the spec's, each topic's line names its
   playbook categories, and the tool's single topic enum grew with it;
 - the persona's one "Framing first" rule.
+
+Owner decision D (2026-09-26) made one more planned edit to the pre-merge rows: the coach bank's
+can_move and prop_ready got new answer options, and a product_side follow-up row sits right after
+prop_ready. The rows as they were are kept in fixtures/coach_bank_before_0926.jsonl; every pin
+below undoes exactly that edit (and nothing else) before it compares.
 """
 
 from __future__ import annotations
@@ -85,6 +90,29 @@ LATER_TYPES = ("reel_format", "reel_format_rule")
 LATER_TOPICS = ["reel_formats"]
 GENERAL_TYPES = tuple(t for t in DATASET_9_TYPES if not t.startswith("category_composition"))
 
+# Owner decision D (see the module docstring): the coach rows as they were, and the row added.
+COACH_BEFORE_PATH = Path(__file__).parent / "fixtures" / "coach_bank_before_0926.jsonl"
+COACH_BEFORE_LINES: dict[str, str] = {
+    json.loads(line)["id"]: line for line in COACH_BEFORE_PATH.read_text(encoding="utf-8").splitlines() if line.strip()
+}
+COACH_ADDED_IDS = ("product_side",)
+
+
+def _is_added_coach_row(row: dict[str, Any]) -> bool:
+    return row["data_type"] == "coach_question" and row["id"] in COACH_ADDED_IDS
+
+
+# The rows without the one row owner decision D added: the order every pre-merge pin was cut on.
+ROWS_BEFORE_COACH_ADD = [r for r in CREATOR_KNOWLEDGE_ROWS if not _is_added_coach_row(r)]
+
+
+def _coach_line(row: dict[str, Any]) -> str:
+    """One coach bank line of the always-sent block, built here from the row."""
+    return (
+        f"- {row['id']}: {row['question_en']} / {row['question_hi']} Options: {' / '.join(row['options'])}"
+        f" (Hinglish: {' / '.join(row['options_hi'])}). Decides: {row['resolves']}\n"
+    )
+
 NEW_TOPICS = [
     "shot_planning",
     "framing_beauty_grwm",
@@ -140,16 +168,34 @@ def test_dataset_9_rows_load_by_type():
     assert counts == DATASET_9_COUNTS
     assert sum(counts.values()) == 161
     later = [r for r in CREATOR_KNOWLEDGE_ROWS if r["data_type"] in LATER_TYPES]
-    assert len(CREATOR_KNOWLEDGE_ROWS) == PRE_MERGE_ROWS + 161 + len(later)
+    rows = ROWS_BEFORE_COACH_ADD
+    assert len(CREATOR_KNOWLEDGE_ROWS) == len(rows) + len(COACH_ADDED_IDS)
+    assert len(rows) == PRE_MERGE_ROWS + 161 + len(later)
     # Appended after the old rows, never mixed in; later lookup-only rows come after them.
-    assert all(r["data_type"] not in DATASET_9_TYPES for r in CREATOR_KNOWLEDGE_ROWS[:PRE_MERGE_ROWS])
-    assert all(r["data_type"] in DATASET_9_TYPES for r in CREATOR_KNOWLEDGE_ROWS[PRE_MERGE_ROWS : PRE_MERGE_ROWS + 161])
-    assert CREATOR_KNOWLEDGE_ROWS[PRE_MERGE_ROWS + 161 :] == later
+    assert all(r["data_type"] not in DATASET_9_TYPES for r in rows[:PRE_MERGE_ROWS])
+    assert all(r["data_type"] in DATASET_9_TYPES for r in rows[PRE_MERGE_ROWS : PRE_MERGE_ROWS + 161])
+    assert rows[PRE_MERGE_ROWS + 161 :] == later
+    # The added coach row sits right after prop_ready, inside the coach bank.
+    ids = [r.get("id") for r in CREATOR_KNOWLEDGE_ROWS]
+    assert ids.index("product_side") == ids.index("prop_ready") + 1
 
 
 def test_the_pre_merge_rows_are_unchanged_and_in_order():
     lines = KNOWLEDGE_PATH.read_text(encoding="utf-8").splitlines()
-    old = lines[:PRE_MERGE_ROWS]
+    # Owner decision D: undo the coach bank edit -- drop the added row, restore the two old rows.
+    undone: list[str] = []
+    restored = set()
+    for line in lines:
+        row = json.loads(line) if line.strip() else None
+        if row is not None and row["data_type"] == "coach_question":
+            if row["id"] in COACH_ADDED_IDS:
+                continue
+            if row["id"] in COACH_BEFORE_LINES:
+                line = COACH_BEFORE_LINES[row["id"]]
+                restored.add(row["id"])
+        undone.append(line)
+    assert restored == set(COACH_BEFORE_LINES) == {"can_move", "prop_ready"}
+    old = undone[:PRE_MERGE_ROWS]
     export = [i for i, line in enumerate(old) if '"platform_export_setting"' in line and EXPORT_PLATFORM in line]
     assert len(export) == 1
     row = json.loads(old[export[0]])
@@ -272,7 +318,19 @@ def _expected_every_turn_text() -> str:
     text = pre.replace(old_line, head + row["safe_zones"] + tail)
     # The "More on request" list is the block's last section: the new topics follow it.
     assert text.endswith(f"- delivery_examples: {LOOKUP_TOPICS['delivery_examples']}\n")
-    return text + "".join(f"- {t}: {LOOKUP_TOPICS[t]}\n" for t in NEW_TOPICS + LATER_TOPICS)
+    text += "".join(f"- {t}: {LOOKUP_TOPICS[t]}\n" for t in NEW_TOPICS + LATER_TOPICS)
+    # Owner decision D: the two coach lines become the rows' new wording, and the added row's
+    # line follows prop_ready's.
+    for qid in COACH_BEFORE_LINES:
+        old_line = _coach_line(json.loads(COACH_BEFORE_LINES[qid]))
+        assert text.count(old_line) == 1, qid
+        new_line = _coach_line(next(r for r in _rows("coach_question") if r["id"] == qid))
+        if qid == "prop_ready":
+            new_line += "".join(
+                _coach_line(next(r for r in _rows("coach_question") if r["id"] == added)) for added in COACH_ADDED_IDS
+            )
+        text = text.replace(old_line, new_line)
+    return text
 
 
 def test_the_fixture_is_the_pre_merge_snapshot():
@@ -287,7 +345,7 @@ def test_every_turn_block_is_byte_identical_except_the_two_planned_edits():
 
 def test_the_new_rows_add_nothing_to_the_every_turn_block_or_the_frame_check():
     without = [r for r in CREATOR_KNOWLEDGE_ROWS if r["data_type"] not in DATASET_9_TYPES + LATER_TYPES]
-    assert len(without) == PRE_MERGE_ROWS
+    assert len(without) == PRE_MERGE_ROWS + len(COACH_ADDED_IDS)
     assert render_knowledge_block(CREATOR_KNOWLEDGE_ROWS) == render_knowledge_block(without)
     assert render_shooting_lines(CREATOR_KNOWLEDGE_ROWS, with_phone_notes=False) == render_shooting_lines(
         without, with_phone_notes=False

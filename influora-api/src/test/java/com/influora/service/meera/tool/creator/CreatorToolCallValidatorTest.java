@@ -127,6 +127,7 @@ class CreatorToolCallValidatorTest {
         assertEquals(MeeraToolTier.R, validator.tierOf(CreatorToolName.get_todays_topics));
         assertEquals(MeeraToolTier.R, validator.tierOf(CreatorToolName.plan_my_week));
         assertEquals(MeeraToolTier.R, validator.tierOf(CreatorToolName.get_my_content_patterns));
+        assertEquals(MeeraToolTier.R, validator.tierOf(CreatorToolName.get_my_audience));
         assertEquals(MeeraToolTier.D, validator.tierOf(CreatorToolName.draft_reply));
     }
 
@@ -151,8 +152,9 @@ class CreatorToolCallValidatorTest {
                     + " 3.1), so the two catalogues are no longer the same size, only still disjoint")
     void testBrandToolCatalogueUntouched() {
         assertEquals(6, MeeraToolName.values().length);
-        // Meera intelligence v1 added get_my_content_patterns (R tier), making nine.
-        assertEquals(9, CreatorToolName.values().length);
+        // Meera intelligence v1 added get_my_content_patterns (R tier), making nine;
+        // get_my_audience (2026-09-26, R tier) makes ten.
+        assertEquals(10, CreatorToolName.values().length);
         // Same size, entirely disjoint name sets -- the two enums must never share a constant.
         for (CreatorToolName creatorTool : CreatorToolName.values()) {
             for (MeeraToolName brandTool : MeeraToolName.values()) {

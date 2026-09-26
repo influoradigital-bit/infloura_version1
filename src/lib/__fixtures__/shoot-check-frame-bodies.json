@@ -63,16 +63,24 @@
     ],
     "ask": {
       "id": "can_move",
-      "question_en": "Can you move to a different spot for this shot?",
-      "question_hi": "Kya aap is shot ke liye jagah badal sakte ho?",
+      "question_en": "Where will you shoot?",
+      "question_hi": "Aap kahan shoot karoge?",
       "options": [
         {
-          "en": "Yes, I can move",
-          "hi": "Haan, jagah badal sakte hain"
+          "en": "By the window",
+          "hi": "Window ke paas"
         },
         {
-          "en": "No, fixed spot",
-          "hi": "Nahi, jagah fixed hai"
+          "en": "At my desk",
+          "hi": "Apni desk pe"
+        },
+        {
+          "en": "Outside",
+          "hi": "Bahar"
+        },
+        {
+          "en": "Somewhere else",
+          "hi": "Kahin aur"
         }
       ]
     },
@@ -84,7 +92,14 @@
       "Lens: 1x Main. Distance: 0.8-1m. Framing: Chest up. EV: +0.5. Stabilization: Tripod (stabilization off)."
     ],
     "lang": "en",
-    "retake": false
+    "retake": false,
+    "setup_seen": {
+      "light": "window",
+      "light_side": "behind_you",
+      "place": "bedroom",
+      "phone_height": "below_eyes",
+      "product_side": null
+    }
   },
   "kitchen_tube_light_hi_no_phone": {
     "what_i_see": "Mujhe dikh raha hai: aap kitchen mein ho, tube light upar se aa rahi hai, background busy hai, phone eye level pe hai, framing waist up hai.",
@@ -201,7 +216,14 @@
       "Lens: 1x Main. Doori: 0.3m (macro). Frame: Macro. EV: -0.3. Agar aapke camera app mein Pro video mode hai: FPS 25; shutter 1/50; ISO <800; white balance 3200K. Agar aapke phone mein OIS (optical stabilisation) hai: phone steady OIS only."
     ],
     "lang": "hi",
-    "retake": false
+    "retake": false,
+    "setup_seen": {
+      "light": "tube_light",
+      "light_side": "above",
+      "place": "kitchen",
+      "phone_height": "eye_level",
+      "product_side": null
+    }
   },
   "park_sun_en_find_x8_ultra": {
     "what_i_see": "I can see you're in a park, direct sunlight from above, a clean background, phone at eye level, framed full length.",
@@ -291,7 +313,14 @@
       "Lens: 0.5x Ultrawide. Distance: 2m. Framing: Full body. FPS: 60. Shutter: 1/120 (outdoors in daylight). ISO: 100. White balance: 5600K. EV: 0. Stabilization: Super Steady / EIS On."
     ],
     "lang": "en",
-    "retake": false
+    "retake": false,
+    "setup_seen": {
+      "light": "sun",
+      "light_side": "above",
+      "place": "park",
+      "phone_height": "eye_level",
+      "product_side": null
+    }
   },
   "too_dark_en": {
     "what_i_see": "It's too dark to judge anything here; retake the photo with more light on you.",

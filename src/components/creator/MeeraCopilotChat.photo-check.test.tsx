@@ -434,7 +434,8 @@ describe('answer chips', () => {
     await waitFor(() => expect(checkFrameMock).toHaveBeenCalledTimes(2));
     const second = checkFrameMock.mock.calls[1];
     expect(second[0]).toBe(firstBlob);
-    expect(second[3].answers).toEqual([{ id: 'can_move', option: 0 }]);
+    // Each answer carries the tapped option's English label (stale-bank guard, 2026-09-26).
+    expect(second[3].answers).toEqual([{ id: 'can_move', option: 0, label: BEDROOM.ask!.options[0].en }]);
     expect(second[3].userLine).toBe(`Same photo, my answers: ${BEDROOM.ask!.options[0].en}`);
     expect(second[3].idempotencyKey).not.toBe(checkFrameMock.mock.calls[0][3].idempotencyKey);
 
@@ -451,8 +452,8 @@ describe('answer chips', () => {
     const third = checkFrameMock.mock.calls[2];
     expect(third[0]).toBe(firstBlob);
     expect(third[3].answers).toEqual([
-      { id: 'can_move', option: 0 },
-      { id: 'other_light', option: 0 },
+      { id: 'can_move', option: 0, label: BEDROOM.ask!.options[0].en },
+      { id: 'other_light', option: 0, label: KITCHEN.ask!.options[0].en },
     ]);
     expect(third[3].userLine).toBe(`Wahi photo, mere jawab: ${BEDROOM.ask!.options[0].hi}; ${KITCHEN.ask!.options[0].hi}`);
   });

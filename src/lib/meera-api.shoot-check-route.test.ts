@@ -387,6 +387,28 @@ describe('checkFrame — coach response and request (2026-09-25)', () => {
     ]);
     expect(serializeCoachAnswers([{ id: 'x'.repeat(700), option: 0 }])).toBeNull();
   });
+
+  // Priya finding (2026-09-26): option indexes changed meaning under stable ids, so each answer
+  // carries the tapped option's English label; influora-ai drops one that is not the bank's option.
+  it('sends the tapped option label with the index, latest per id, and omits a blank one', () => {
+    const json = serializeCoachAnswers([
+      { id: 'prop_ready', option: 1, label: 'Not yet' },
+      { id: 'prop_ready', option: 1, label: 'On a table' },
+      { id: 'can_move', option: 0, label: '   ' },
+    ]);
+    expect(JSON.parse(json!)).toEqual([
+      { id: 'prop_ready', option: 1, label: 'On a table' },
+      { id: 'can_move', option: 0 },
+    ]);
+    // Three answers with the longest bank labels stay inside the 600-character form limit.
+    const three = serializeCoachAnswers([
+      { id: 'window_side', option: 2, label: 'x'.repeat(200) },
+      { id: 'can_move', option: 3, label: 'Somewhere else' },
+      { id: 'prop_ready', option: 2, label: 'Not with me' },
+    ]);
+    expect(three!.length).toBeLessThanOrEqual(ANSWERS_MAX_CHARS);
+    expect(JSON.parse(three!)[0].label).toBe('x'.repeat(60));
+  });
 });
 
 /**
@@ -616,7 +638,9 @@ describe('checkFrame — lang, retake, step labels and settings parts', () => {
     expect(r.ok).toHaveLength(2);
     expect(r.cantTell).toHaveLength(2);
     expect(r.ask?.id).toBe('can_move');
-    expect(r.ask?.options.map((o) => o.en)).toEqual(['Yes, I can move', 'No, fixed spot']);
+    // Owner decision D (2026-09-26): the mock asks the bank's can_move wording and options.
+    expect(r.ask?.questionEn).toBe('Where will you shoot?');
+    expect(r.ask?.options.map((o) => o.en)).toEqual(['By the window', 'At my desk', 'Outside', 'Somewhere else']);
 
     const answered = await meeraApi.checkFrame(new Blob(['x']), undefined, 'creator', {
       answers: [{ id: 'can_move', option: 0 }],

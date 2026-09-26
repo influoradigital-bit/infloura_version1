@@ -63,6 +63,33 @@ TOPIC = "reel_formats"
 # CREATOR_KNOWLEDGE_TEXT at 7c25c02f (release/0924), before the Reel formats: sha256 and length.
 PRE_REEL_BLOCK_SHA256 = "b035d0da8c1df345d9e4000c03df92780f1dd57ada6e208a6459f3adf644cd48"
 PRE_REEL_BLOCK_LEN = 105_546
+# Owner decision D (2026-09-26) changed the always-sent coach bank after that snapshot: can_move
+# and prop_ready got new options and product_side follows prop_ready. `_undo_coach_bank_edit`
+# puts the old two lines back (fixtures/coach_bank_before_0926.jsonl) and drops the added one,
+# so the pin still proves nothing ELSE in the block moved.
+COACH_BEFORE_PATH = Path(__file__).parent / "fixtures" / "coach_bank_before_0926.jsonl"
+COACH_ADDED_IDS = ("product_side",)
+
+
+def _coach_line(row: dict[str, Any]) -> str:
+    return (
+        f"- {row['id']}: {row['question_en']} / {row['question_hi']} Options: {' / '.join(row['options'])}"
+        f" (Hinglish: {' / '.join(row['options_hi'])}). Decides: {row['resolves']}\n"
+    )
+
+
+def _undo_coach_bank_edit(text: str) -> str:
+    rows = {r["id"]: r for r in CREATOR_KNOWLEDGE_ROWS if r["data_type"] == "coach_question"}
+    for qid in COACH_ADDED_IDS:
+        assert text.count(_coach_line(rows[qid])) == 1, qid
+        text = text.replace(_coach_line(rows[qid]), "")
+    before = [json.loads(line) for line in COACH_BEFORE_PATH.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert {r["id"] for r in before} == {"can_move", "prop_ready"}
+    for old in before:
+        new_line = _coach_line(rows[old["id"]])
+        assert text.count(new_line) == 1, old["id"]
+        text = text.replace(new_line, _coach_line(old))
+    return text
 
 # The audit pack's Reels whose audio was transcribed, and the ones that were not.
 TRANSCRIBED = {"01", "02", "06", "07", "10", "11", "12", "13", "14", "15"}
@@ -301,7 +328,7 @@ def test_the_reel_rows_add_nothing_to_the_every_turn_block_or_the_frame_check():
 def test_the_every_turn_block_is_the_pre_change_block_plus_one_line():
     line = f"- {TOPIC}: {LOOKUP_TOPICS[TOPIC]}\n"
     assert CREATOR_KNOWLEDGE_TEXT.endswith(line)
-    pre = CREATOR_KNOWLEDGE_TEXT[: -len(line)]
+    pre = _undo_coach_bank_edit(CREATOR_KNOWLEDGE_TEXT[: -len(line)])
     assert len(pre) == PRE_REEL_BLOCK_LEN
     assert hashlib.sha256(pre.encode("utf-8")).hexdigest() == PRE_REEL_BLOCK_SHA256
 

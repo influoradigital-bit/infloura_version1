@@ -85,7 +85,10 @@ public final class CreatorToolScopes {
                     + " plan_my_week"
                     // Meera intelligence v1 -- get_my_content_patterns is wired (route +
                     // GetMyContentPatternsExecutor) from the moment it is added here.
-                    + " get_my_content_patterns";
+                    + " get_my_content_patterns"
+                    // Swapnil 2026-09-26 -- get_my_audience is wired (route +
+                    // GetMyAudienceExecutor) from the moment it is added here.
+                    + " get_my_audience";
 
     /**
      * Level 1 adds the one commit-like tool: a routine reply actually reaches the brand.
@@ -150,7 +153,9 @@ public final class CreatorToolScopes {
                     + " rank_open_campaigns"
                     // Meera intelligence v1 (spec Q1) -- a read of her OWN post results, like
                     // get_my_metrics; it never touches a brand, so representation does not bar it.
-                    + " get_my_content_patterns";
+                    + " get_my_content_patterns"
+                    // Swapnil 2026-09-26 -- her OWN audience, same reasoning as the line above.
+                    + " get_my_audience";
 
     /**
      * The tools that have a route AND an executor today, in SPEC.md &sect;3.1 catalogue order.
@@ -188,7 +193,9 @@ public final class CreatorToolScopes {
                     // T-PLAN-MY-WEEK -- route + GetPlanMyWeekExecutor added in the same change.
                     "plan_my_week",
                     // Meera intelligence v1 -- route + GetMyContentPatternsExecutor, same change.
-                    "get_my_content_patterns");
+                    "get_my_content_patterns",
+                    // Swapnil 2026-09-26 -- route + GetMyAudienceExecutor, same change.
+                    "get_my_audience");
 
     private CreatorToolScopes() {}
 

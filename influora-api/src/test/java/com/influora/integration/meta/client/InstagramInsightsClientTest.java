@@ -298,4 +298,79 @@ class InstagramInsightsClientTest {
 
         assertEquals(42L, response.data().get(0).totalValue().breakdowns().get(0).results().get(0).value());
     }
+
+    // --- engaged audience (2026-09-26) -------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "getEngagedAudienceDemographics asks for engaged_audience_demographics (lifetime,"
+                    + " total_value, timeframe=this_month) by age+gender, country and city")
+    void engagedAudienceUsesEngagedAudienceDemographics() {
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenReturn(oneBreakdown(List.of("age", "gender"), List.of("25-34", "F"), 70));
+
+        client.getEngagedAudienceDemographics(IG_USER_ID, ACCESS_TOKEN, MetaAuthPath.FACEBOOK_LOGIN);
+
+        verify(apiClient, times(3))
+                .get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
+        List<String> paths = pathCaptor.getAllValues();
+        for (String path : paths) {
+            assertTrue(path.startsWith("/" + IG_USER_ID + "/insights?"), path);
+            assertTrue(path.contains("metric=engaged_audience_demographics"), path);
+            assertTrue(path.contains("period=lifetime"), path);
+            assertTrue(path.contains("metric_type=total_value"), path);
+            assertTrue(path.contains("timeframe=this_month"), path);
+            assertFalse(path.contains("follower_demographics"), path);
+        }
+        assertEquals(
+                List.of("breakdown=age,gender", "breakdown=country", "breakdown=city"),
+                paths.stream().map(p -> p.replaceAll(".*(breakdown=[a-z,]+).*", "$1")).toList());
+    }
+
+    @Test
+    @DisplayName("engaged audience maps to the same stored keys as the follower breakdowns")
+    void engagedAudienceMapsToStoredKeys() {
+        when(apiClient.get(org.mockito.ArgumentMatchers.contains("breakdown=age,gender"), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.INSTAGRAM_LOGIN)))
+                .thenReturn(oneBreakdown(List.of("age", "gender"), List.of("18-24", "M"), 55));
+        when(apiClient.get(org.mockito.ArgumentMatchers.contains("breakdown=country"), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.INSTAGRAM_LOGIN)))
+                .thenReturn(oneBreakdown(List.of("country"), List.of("IN"), 90));
+        when(apiClient.get(org.mockito.ArgumentMatchers.contains("breakdown=city"), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.INSTAGRAM_LOGIN)))
+                .thenReturn(oneBreakdown(List.of("city"), List.of("Pune, Maharashtra"), 30));
+
+        AudienceBreakdowns result =
+                client.getEngagedAudienceDemographics(IG_USER_ID, ACCESS_TOKEN, MetaAuthPath.INSTAGRAM_LOGIN);
+
+        assertEquals(java.util.Map.of("18-24_male", 55L), result.ageGender());
+        assertEquals(java.util.Map.of("IN", 90L), result.country());
+        assertEquals(java.util.Map.of("Pune, Maharashtra", 30L), result.city());
+    }
+
+    @Test
+    @DisplayName(
+            "under 100 engagements Meta returns nothing: an EMPTY result, not an error, and the country"
+                    + " and city calls are not made")
+    void engagedAudienceBelowThresholdIsEmptyAndStopsEarly() {
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenReturn(new FollowerDemographicsResponse(List.of()));
+
+        AudienceBreakdowns result =
+                client.getEngagedAudienceDemographics(IG_USER_ID, ACCESS_TOKEN, MetaAuthPath.FACEBOOK_LOGIN);
+
+        assertTrue(result.isEmpty());
+        verify(apiClient, times(1))
+                .get(any(String.class), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
+    }
+
+    @Test
+    @DisplayName("an engaged Meta error propagates (the job records it) and is never retried without timeframe")
+    void engagedAudienceErrorPropagatesWithoutRetry() {
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenThrow(new MetaApiException("(#100) not available"));
+
+        assertThrows(
+                MetaApiException.class,
+                () -> client.getEngagedAudienceDemographics(IG_USER_ID, ACCESS_TOKEN, MetaAuthPath.FACEBOOK_LOGIN));
+        verify(apiClient, times(1))
+                .get(any(String.class), eq(ACCESS_TOKEN), eq(FollowerDemographicsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
+    }
 }

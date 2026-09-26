@@ -8,7 +8,7 @@ import static org.mockito.Mockito.when;
 import com.influora.common.ApiResponse;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorAnalyticsService;
-import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorSelfDemographicsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorMetricsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorScoresResponse;
 import java.math.BigDecimal;
@@ -89,21 +89,28 @@ class CreatorAnalyticsControllerTest {
     @DisplayName("GET /creator/analytics/me/demographics delegates to service and returns 200")
     void testGetMyDemographics() {
         Instant fetchedAt = Instant.parse("2026-07-05T00:00:00Z");
-        CreatorDemographicsResponse demographics =
-                new CreatorDemographicsResponse(
+        CreatorSelfDemographicsResponse demographics =
+                new CreatorSelfDemographicsResponse(
                         true,
                         Map.of("F.25-34", 400L),
                         Map.of("IN", 1200L),
                         null,
                         null,
-                        fetchedAt);
+                        fetchedAt,
+                        Map.of("25-34_female", 90L),
+                        null,
+                        null,
+                        fetchedAt,
+                        "AVAILABLE");
         when(creatorAnalyticsService.getMyDemographics(principal)).thenReturn(demographics);
 
-        ResponseEntity<ApiResponse<CreatorDemographicsResponse>> response =
+        ResponseEntity<ApiResponse<CreatorSelfDemographicsResponse>> response =
                 controller.getMyDemographics(principal);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(true, response.getBody().data().hasData());
+        // The creator's own route carries who engaged this month (2026-09-26).
+        assertEquals(Map.of("25-34_female", 90L), response.getBody().data().engagedAgeGenderBreakdown());
         verify(creatorAnalyticsService).getMyDemographics(principal);
     }
 }

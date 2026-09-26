@@ -27,6 +27,12 @@ block nothing refuses the card: a malformed line, an `S<n>` for a beat that does
 beat named twice only leaves that beat without a card; an unknown enum value or an over-long free
 text is `?` for that one field. The fixture's `shot_card_cases` pin every card field, and
 src/lib/meera-result-cards.shot-cards.test.ts runs the same fixture through the real TS parser.
+
+Made for (owner decision B, 2026-09-26): an optional `Made for:` line right after `Idea:` -- the
+one-line basis of the script (audience, topic and its source, goal). Only in that position. A
+value that is empty or longer than `MADE_FOR_MAX_CHARS` code points is consumed and ignored
+(`made_for` None), never a refusal; a reply without the line parses exactly as before. Pinned
+against the TS parser by the fixture's `made_for_cases`.
 """
 
 from __future__ import annotations
@@ -136,6 +142,9 @@ MOVEMENTS = ("still", "sit", "stand", "walk", "pan", "push")
 # Free text is capped in code points (`len`), the same count as the TS `Array.from(v).length`;
 # a longer value is `?`, never cut.
 SHOT_CARD_TEXT_MAX = {"distance": 20, "place": 40, "background": 40}
+# The longest `Made for:` value kept, in code points (`len`, the TS `Array.from(v).length`,
+# `MADE_FOR_MAX_CHARS` in src/lib/meera-result-cards.ts). A longer value is ignored, not refused.
+MADE_FOR_MAX_CHARS = 200
 
 _UPPER_TO_LOWER = {c: c + 32 for c in range(ord("A"), ord("Z") + 1)}
 _LOWER_TO_UPPER = {c: c - 32 for c in range(ord("a"), ord("z") + 1)}
@@ -284,6 +293,9 @@ class ParsedMeeraScript:
     before_you_shoot: tuple[str, str, str]
     why_this_works: str
     follow_up: str | None
+    # From the optional `Made for:` line right after `Idea:` (the TS `madeFor?`). None when the
+    # line is absent, empty or over `MADE_FOR_MAX_CHARS`.
+    made_for: str | None = None
 
 
 def _strip_wrapping_quotes(line: str) -> str:
@@ -315,6 +327,15 @@ def parse_meera_script(text: object) -> ParsedMeeraScript | None:
     i += 1
     if not idea or not _key_is(idea, "idea") or not idea[1]:
         return None
+
+    # Made for: optional, only here (right after Idea, before Plan). Unlike Set-up, an empty or
+    # over-long value does not refuse the card: the line is consumed and simply not kept.
+    made_for: str | None = None
+    maybe_made_for = _split_key_value(lines[i]) if i < len(lines) else None
+    if maybe_made_for and _key_is(maybe_made_for, "made for"):
+        if maybe_made_for[1] and len(maybe_made_for[1]) <= MADE_FOR_MAX_CHARS:
+            made_for = maybe_made_for[1]
+        i += 1
 
     plan = _split_key_value(lines[i])
     i += 1
@@ -442,4 +463,5 @@ def parse_meera_script(text: object) -> ParsedMeeraScript | None:
         before_you_shoot=before_you_shoot,
         why_this_works=why[1],
         follow_up=follow_up,
+        made_for=made_for,
     )

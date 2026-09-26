@@ -722,7 +722,8 @@ describe('the coach result', () => {
     const firstBlob = checkFrameMock.mock.calls[0][0];
     const secondBlob = checkFrameMock.mock.calls[1][0];
     expect(secondBlob).toBe(firstBlob);
-    expect(checkFrameMock.mock.calls[1][3].answers).toEqual([{ id: 'other_light', option: 0 }]);
+    // Each answer carries the tapped option's English label (stale-bank guard, 2026-09-26).
+    expect(checkFrameMock.mock.calls[1][3].answers).toEqual([{ id: 'other_light', option: 0, label: 'A lamp' }]);
 
     await waitFor(() => expect(screen.getByText('Put the lamp on your right')).toBeTruthy());
     // The answer is shown back, and the answered question is not asked again.
@@ -748,9 +749,9 @@ describe('the coach result', () => {
     }
 
     expect(checkFrameMock.mock.calls[3][3].answers).toEqual([
-      { id: 'other_light', option: 1 },
-      { id: 'can_move', option: 1 },
-      { id: 'room_size', option: 1 },
+      { id: 'other_light', option: 1, label: 'Nothing else' },
+      { id: 'can_move', option: 1, label: 'Nothing else' },
+      { id: 'room_size', option: 1, label: 'Nothing else' },
     ]);
     await waitFor(() => expect(screen.getByTestId('frame-check-coach')).toBeTruthy());
     // A 4th question comes back, but 3 answers is the most per plan: no buttons.

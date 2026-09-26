@@ -161,6 +161,22 @@ export interface CreatorDemographics {
   cityBreakdown: Record<string, number> | null;
   localeBreakdown: Record<string, number> | null;
   fetchedAt: string | null;
+  /**
+   * Meta's engaged_audience_demographics for this month: the people who engaged with the
+   * creator's posts, keyed like the follower breakdowns. Sent on the creator's OWN analytics
+   * response only (never brand-facing); null when Meta returned nothing (under 100 engagements
+   * this month). Optional so an older API response without them still reads.
+   */
+  engagedAgeGenderBreakdown?: Record<string, number> | null;
+  engagedCountryBreakdown?: Record<string, number> | null;
+  engagedCityBreakdown?: Record<string, number> | null;
+  engagedFetchedAt?: string | null;
+  /**
+   * Why the engaged maps are (not) there, from the creator's own response only:
+   * AVAILABLE | BELOW_THRESHOLD (under 100 engagements this month) | FETCH_FAILED (Instagram did
+   * not return it on the last weekly check) | null (not fetched yet). Optional for older responses.
+   */
+  engagedStatus?: 'AVAILABLE' | 'BELOW_THRESHOLD' | 'FETCH_FAILED' | null;
 }
 
 export type NotificationType = 

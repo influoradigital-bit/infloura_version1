@@ -120,8 +120,11 @@ public final class AnalyticsDtos {
             Instant computedAt) {}
 
     /**
-     * Creator-facing audience demographics (P2-14, {@code GET /creator/analytics/me/demographics})
-     * and, since Wave B task B4, the brand-facing mirror ({@code GET
+     * Audience demographics as the BRAND-facing mirror returns them (since 2026-09-26 the
+     * creator's own {@code GET /creator/analytics/me/demographics} returns {@link
+     * CreatorSelfDemographicsResponse}, a superset with the engaged audience; this record must
+     * never gain an engaged field). Originally P2-14's creator-facing shape and, since Wave B task
+     * B4, the brand-facing mirror ({@code GET
      * /analytics/creators/{creatorId}/demographics}), mapped straight from the latest {@code
      * AudienceDemographics} snapshot (V25) — see that entity's javadoc for the raw {@code {bucket:
      * count}} JSON breakdown convention this mirrors field-for-field. Every breakdown may
@@ -145,6 +148,46 @@ public final class AnalyticsDtos {
 
         public static CreatorDemographicsResponse empty() {
             return new CreatorDemographicsResponse(false, Map.of(), Map.of(), Map.of(), Map.of(), null);
+        }
+    }
+
+    /**
+     * The CREATOR's own audience demographics ({@code GET /creator/analytics/me/demographics}
+     * only): every field of {@link CreatorDemographicsResponse}, same meaning, plus who ENGAGED
+     * with her content this month (Swapnil 2026-09-26). Deliberately a separate record: the
+     * brand-facing mirror ({@code GET /analytics/creators/{creatorId}/demographics}) keeps
+     * returning {@link CreatorDemographicsResponse}, which has no engaged field at all, so no
+     * brand route can serialise one even by accident.
+     *
+     * <p>The four {@code engaged*} fields are {@code null} when the engaged audience is not
+     * available (and are then sent as explicit nulls, not omitted, so the app can test
+     * {@code === null}). {@code engagedStatus} says why: {@code AVAILABLE}, {@code BELOW_THRESHOLD}
+     * (fewer than 100 engagements this month; Meta returns nothing below that), {@code
+     * FETCH_FAILED}, or {@code null} (never fetched: no snapshot, or one written before the engaged
+     * fetch existed). A single engaged dimension Meta returned empty is {@code null} too.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record CreatorSelfDemographicsResponse(
+            boolean hasData,
+            Map<String, Long> ageGenderBreakdown,
+            Map<String, Long> countryBreakdown,
+            Map<String, Long> cityBreakdown,
+            Map<String, Long> localeBreakdown,
+            Instant fetchedAt,
+            @JsonInclude(JsonInclude.Include.ALWAYS) Map<String, Long> engagedAgeGenderBreakdown,
+            @JsonInclude(JsonInclude.Include.ALWAYS) Map<String, Long> engagedCountryBreakdown,
+            @JsonInclude(JsonInclude.Include.ALWAYS) Map<String, Long> engagedCityBreakdown,
+            @JsonInclude(JsonInclude.Include.ALWAYS) Instant engagedFetchedAt,
+            @JsonInclude(JsonInclude.Include.ALWAYS) String engagedStatus) {
+
+        public static CreatorSelfDemographicsResponse empty() {
+            return new CreatorSelfDemographicsResponse(
+                    false, Map.of(), Map.of(), Map.of(), Map.of(), null, null, null, null, null, null);
+        }
+
+        /** True only when at least one engaged dimension holds counts. */
+        public boolean hasEngaged() {
+            return engagedAgeGenderBreakdown != null || engagedCountryBreakdown != null || engagedCityBreakdown != null;
         }
     }
 

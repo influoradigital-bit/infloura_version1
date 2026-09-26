@@ -85,6 +85,25 @@ describe('parity with the Python port: the shared fixture through the real TS pa
   it.each(FIXTURE.shot_card_cases.map((c) => [c.name, c] as const))('%s: every card field', (_name, c) => {
     expect(cardsOf(parseMeeraScript(c.text))).toEqual(c.cards);
   });
+
+  // Owner decision B (2026-09-26): a fixture case that records `made_for` (in any section of the
+  // fixture, including one added for it) pins the parsed `madeFor` too — the value, or null when
+  // the line is absent, empty or over 200 code points (ignored, not refused).
+  const madeForCases = Object.values(FIXTURE as unknown as Record<string, unknown>)
+    .filter((value): value is unknown[] => Array.isArray(value))
+    .flat()
+    .filter((c): c is FixtureCase & { made_for: string | null } => !!c && typeof c === 'object' && 'made_for' in c);
+
+  it('every fixture case with a made_for is read to exactly that value by the TS parser', () => {
+    // A gate over nothing proves nothing: at least one kept value and one ignored/absent line.
+    expect(madeForCases.some((c) => c.made_for !== null), 'no fixture case with a kept made_for').toBe(true);
+    expect(madeForCases.some((c) => c.made_for === null), 'no fixture case with made_for null').toBe(true);
+    for (const c of madeForCases) {
+      const parsed = parseMeeraScript(c.text);
+      expect(parsed === undefined ? 'none' : 'card', c.name).toBe(c.expected);
+      expect(parsed?.madeFor ?? null, c.name).toBe(c.made_for);
+    }
+  });
 });
 
 describe('parseMeeraScript — the Shot cards block', () => {

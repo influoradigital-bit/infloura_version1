@@ -161,9 +161,20 @@ def test_the_layout_never_changes_the_text():
         _raw({"faces": [box(0.0, 0.01, 0.9, 0.99)], "product": box(0.02, 0.7, 0.2, 0.2)}),
         shot_context=MEDIUM, photo_size=EXACT,
     )
+    # setup_seen (owner decision C) is the one key the layout feeds: the product box adds its
+    # side, in words, and changes nothing else in it.
     for key in plain:
+        if key == "setup_seen":
+            continue
         assert with_layout[key] == plain[key], key
     assert with_layout["checks"]
+
+    def without_side(seen: dict) -> dict:
+        return {k: v for k, v in seen.items() if k != "product_side"}
+
+    assert without_side(with_layout["setup_seen"]) == without_side(plain["setup_seen"])
+    assert plain["setup_seen"]["product_side"] is None
+    assert with_layout["setup_seen"]["product_side"] == "right"  # box centre 0.12: the photo's left
 
 
 # --- the quick checks ----------------------------------------------------------------------------------------

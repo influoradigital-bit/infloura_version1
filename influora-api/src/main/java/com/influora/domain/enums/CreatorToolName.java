@@ -36,7 +36,9 @@ public enum CreatorToolName {
     get_todays_topics,
     plan_my_week,
     /** Meera intelligence v1 -- what has worked for her, from her own settled posts. */
-    get_my_content_patterns;
+    get_my_content_patterns,
+    /** Swapnil 2026-09-26 -- her OWN audience: followers and who engaged this month. */
+    get_my_audience;
 
     /**
      * Exact {@link #name()} match — never case-insensitive, never trimmed. A model that emits

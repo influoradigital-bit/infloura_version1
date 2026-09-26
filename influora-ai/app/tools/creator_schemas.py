@@ -48,6 +48,11 @@ PLAN_MY_WEEK = "plan_my_week"
 # demand. Spring: `CreatorToolName.get_my_content_patterns`, served by
 # `GetMyContentPatternsExecutor` at `/internal/meera/creator/get_my_content_patterns`.
 GET_MY_CONTENT_PATTERNS = "get_my_content_patterns"
+# Owner decision F (Swapnil, 2026-09-26): the creator's OWN audience -- followers and the people
+# who engaged this month -- read on demand. Spring: `CreatorToolName.get_my_audience`, served at
+# `/internal/meera/creator/get_my_audience` (same scoping and executor pattern as get_my_metrics:
+# only the calling creator's own data, never another creator's, never offered to a brand).
+GET_MY_AUDIENCE = "get_my_audience"
 
 # B0 order matches §3.1's tool catalogue. B1 appends send_routine_reply,
 # rank_open_campaigns and draft_application to the END of this tuple.
@@ -61,6 +66,7 @@ CREATOR_TOOL_NAMES: tuple[str, ...] = (
     GET_TODAYS_TOPICS,
     PLAN_MY_WEEK,
     GET_MY_CONTENT_PATTERNS,
+    GET_MY_AUDIENCE,
 )
 
 # Every creator tool forwards to `/internal/meera/creator/<name>`
@@ -458,6 +464,24 @@ CREATOR_TOOL_SCHEMAS: list[dict[str, Any]] = [
             "they have and how many are needed, and claim no pattern. Even then, still review what "
             "their followers, reach and engagement show. When available is false, say "
             "Instagram is not connected. Read-only."
+        ),
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": GET_MY_AUDIENCE,
+        "description": (
+            "Read who THIS creator's audience is, from Instagram: `followers` (everyone who "
+            "follows them) and `engaged_this_month` (the people who liked, commented on, saved or "
+            "shared their posts this month). Each has `available`; when true it carries age bands, "
+            "a gender split, top cities and top countries, each share an integer percent of that "
+            "breakdown, and `as_of`, the date Instagram's numbers are from. When `available` is "
+            "false, `reason` says why (for example Instagram is not connected, fewer than 100 "
+            "followers, or fewer than 100 engagements this month): say that reason plainly and "
+            "never fill the gap. Call it before you say who their audience is or write a "
+            "\"Made for\" line. Prefer `engaged_this_month` when it is available and call it "
+            "\"the people engaging with your Reels this month\"; otherwise use `followers`. "
+            "Quote the shares exactly as given; never guess an age, a gender or a city from their "
+            "name, their photo or their category. Only this creator's own audience. Read-only."
         ),
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },

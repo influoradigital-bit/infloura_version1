@@ -98,19 +98,23 @@ def test_one_question_per_message_and_skip_what_is_known():
 # --- ONE intake budget (review round, still .25.1) ----------------------------------
 
 
-def test_one_question_budget_counts_every_question_for_the_request():
+def test_one_question_budget_counts_every_shoot_question_for_the_request():
+    # Fix round 2026-09-26 (owner decision A): the budget covers the SHOOT part only; the
+    # what-to-make intake never counts toward it (see the contradiction test below).
     bullet = _plan_my_shoot_bullet()
     assert (
-        "ask before you plan, inside ONE question budget: at most 3 questions in TOTAL for that"
-        " request, counting any already asked for it in this conversation." in bullet
+        "ask before you plan, inside ONE shoot question budget: at most 3 shoot questions for that"
+        " request, counting any shoot questions already asked for it in this conversation." in bullet
     )
+    assert "The what-to-make intake's questions are not shoot questions and never count toward it." in bullet
+    assert "in TOTAL" not in bullet
 
 
 def test_after_the_idea_intake_only_one_bank_question():
     bullet = _plan_my_shoot_bullet()
     assert (
         "If the content idea intake already ran in this conversation, ask at most ONE coach"
-        " question and nothing else, whatever that intake asked." in bullet
+        " question and nothing else." in bullet
     )
     # The one-round rule points at the same budget instead of contradicting it.
     assert (
@@ -122,26 +126,45 @@ def test_after_the_idea_intake_only_one_bank_question():
 def test_the_budget_states_that_it_wins():
     bullet = _plan_my_shoot_bullet()
     assert (
-        "This budget is the rule that wins: where any other sentence here seems to allow more"
-        " questions, ask fewer." in bullet
+        "This budget is the rule that wins for the shoot part: where any other sentence here seems"
+        " to allow more shoot questions, ask fewer." in bullet
     )
+
+
+def test_the_shoot_budget_and_the_idea_intake_never_contradict():
+    """Checker + Priya finding (2026-09-26): the intake sentence said its three questions "never
+    count toward that shoot budget" while the budget said "3 questions in TOTAL ..., counting any
+    already asked for it" and "is the rule that wins ... ask fewer", so a full-script request got
+    3, 1 or 0 coach questions depending on the reading. Both phrasings may never coexist."""
+    intake_excluded = "The intake's three questions are about what to make and never count toward that shoot budget."
+    assert intake_excluded in TEXT
+    for counts_everything in (
+        "counting any already asked for it in this conversation",
+        "at most 3 questions in TOTAL",
+        "whatever that intake asked",
+        "This budget is the rule that wins: where any other sentence here seems to allow more questions",
+    ):
+        assert counts_everything not in TEXT, counts_everything
 
 
 def test_goal_and_unknown_category_may_be_asked_shooting_questions_only_from_the_bank():
     bullet = _plan_my_shoot_bullet()
     assert (
-        "The goal, and the category only when your context has none, may be asked the way the"
-        " content idea intake asks them." in bullet
+        "When the intake did not run, the goal, and the category only when your context has none,"
+        " may be asked the way the content idea intake asks them, counting toward this budget."
+        in bullet
     )
     assert f'Every shooting question comes ONLY from the "{COACH_HEADING}" section' in bullet
     # The never-ask list no longer forbids the category outright (that contradicted the line above).
     assert "Never ask for their category, city" not in bullet
 
 
-def test_plain_idea_intake_keeps_its_one_message_form():
+def test_plain_idea_intake_asks_one_question_per_message():
+    # Owner decision A (2026-09-26): the idea intake is three questions, ONE per message, before
+    # an idea or a full script; it never borrows the shoot budget's wording.
     idea = TEXT[TEXT.index("Content idea intake.") : TEXT.index("- Short video only.")]
-    assert "When they ask for a content idea, first ask at most 3 short questions in ONE message" in idea
-    assert "per message" not in idea
+    assert "Before an idea or a full script, find out what to make with at most 3 questions, ONE per message" in idea
+    assert "in ONE message" not in idea
     assert "budget" not in idea
 
 
@@ -167,17 +190,16 @@ def test_skip_plans_now_on_defaults_said_in_one_line():
 
 
 def test_one_intake_not_two():
-    # Merge, don't duplicate: the content idea intake stays (one message, at most 3) and Plan
-    # my shoot is declared to be that same intake, never a second round.
+    # Merge, don't duplicate: the content idea intake stays (at most 3, ONE per message since
+    # owner decision A) and Plan my shoot is declared to be that same intake, never a second round.
     assert TEXT.count("Content idea intake.") == 1
     assert TEXT.count("- Plan my shoot.") == 1
-    assert "first ask at most 3 short questions in ONE message" in TEXT
+    assert "find out what to make with at most 3 questions, ONE per message" in TEXT
     assert "One round of questions only. Never ask a second round of intake." in TEXT
     assert "Plan my shoot is this same intake for a shoot, not a second round" in TEXT
-    # "one per message" belongs to Plan my shoot only, never to the idea intake.
+    # "one per message" belongs to the idea intake and Plan my shoot only.
     idea = TEXT[TEXT.index("Content idea intake.") : TEXT.index("- Short video only.")]
-    assert "per message" not in idea
-    outside = TEXT.replace(_plan_my_shoot_bullet(), "")
+    outside = TEXT.replace(_plan_my_shoot_bullet(), "").replace(idea, "").lower()
     assert "one per message" not in outside
     assert "one question per message" not in outside
 

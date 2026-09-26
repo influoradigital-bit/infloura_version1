@@ -37,7 +37,7 @@ import com.influora.repository.WorkspaceRepository;
 import com.influora.service.analytics.AnalyticsService;
 import com.influora.service.scoring.CreatorTiers;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorAccountInsightsResponse;
-import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorSelfDemographicsResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.ContextResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.OutcomeDigest;
@@ -583,7 +583,7 @@ public class MeeraContextService {
             return AUDIENCE_NOT_CONNECTED;
         }
 
-        CreatorDemographicsResponse demographics;
+        CreatorSelfDemographicsResponse demographics;
         try {
             demographics = analyticsService.getCreatorDemographicsForProfile(creatorProfileId);
         } catch (RuntimeException e) {
@@ -598,13 +598,51 @@ public class MeeraContextService {
             return AUDIENCE_NOT_YET;
         }
 
+        List<String> parts = audienceParts(demographics.ageGenderBreakdown(), demographics.cityBreakdown(), locale);
+        if (parts.isEmpty()) {
+            return AUDIENCE_NOT_YET;
+        }
+        String asOf = Rendered.date(demographics.fetchedAt(), locale);
+        if (asOf != null) {
+            parts.add("As of " + asOf);
+        }
+        return String.join(". ", parts) + ". " + engagedAudienceSummary(demographics, locale);
+    }
+
+    /**
+     * Engaged audience (Swapnil 2026-09-26): who engaged with her content this month, appended to
+     * the follower summary as one "Engaged this month: ..." sentence ({@code ;} between its parts,
+     * so nothing after it can be mistaken for a follower figure). When it is not available the
+     * sentence says why, in the same words {@code get_my_audience} uses ({@link
+     * CreatorAudienceShares}): under 100 engagements this month, the last check failed, or not
+     * fetched yet. Never guessed from the follower breakdown.
+     */
+    private static String engagedAudienceSummary(CreatorSelfDemographicsResponse demographics, Locale locale) {
+        List<String> parts =
+                demographics.hasEngaged()
+                        ? audienceParts(demographics.engagedAgeGenderBreakdown(), demographics.engagedCityBreakdown(), locale)
+                        : List.of();
+        if (parts.isEmpty()) {
+            return ENGAGED_PREFIX + "not available (" + CreatorAudienceShares.engagedReason(demographics.engagedStatus()) + ").";
+        }
+        return ENGAGED_PREFIX + String.join("; ", parts) + ".";
+    }
+
+    /** The marker influora-ai's persona keys on for the engaged part of the audience line. */
+    public static final String ENGAGED_PREFIX = "Engaged this month: ";
+
+    /**
+     * "Age: 18-24 41%, 25-34 33%", "Gender: women 58%, men 40%", "Top cities: Mumbai / Pune /
+     * Delhi" for one age/gender + city breakdown pair (followers or engaged); empty when neither
+     * holds anything usable.
+     */
+    private static List<String> audienceParts(Map<String, ?> ageGender, Map<String, ?> cities, Locale locale) {
         // Map<String, ?> on purpose: the breakdowns are decoded from JSON with a raw Map.class, so
         // at runtime a value is usually an Integer despite the declared Long. Reading it as Object
         // avoids the implicit (Long) cast that would throw ClassCastException.
         Map<String, Long> ageTotals = new LinkedHashMap<>();
         Map<String, Long> genderTotals = new LinkedHashMap<>();
         long ageGenderTotal = 0;
-        Map<String, ?> ageGender = demographics.ageGenderBreakdown();
         if (ageGender != null) {
             for (Map.Entry<String, ?> entry : ageGender.entrySet()) {
                 long count = countOf(entry.getValue());
@@ -639,7 +677,6 @@ public class MeeraContextService {
         }
 
         Map<String, Long> cityCounts = new LinkedHashMap<>();
-        Map<String, ?> cities = demographics.cityBreakdown();
         if (cities != null) {
             for (Map.Entry<String, ?> entry : cities.entrySet()) {
                 long count = countOf(entry.getValue());
@@ -663,15 +700,7 @@ public class MeeraContextService {
                                     " / ",
                                     topEntries(cityCounts, AUDIENCE_TOP_CITIES).stream().map(Map.Entry::getKey).toList()));
         }
-
-        if (parts.isEmpty()) {
-            return AUDIENCE_NOT_YET;
-        }
-        String asOf = Rendered.date(demographics.fetchedAt(), locale);
-        if (asOf != null) {
-            parts.add("As of " + asOf);
-        }
-        return String.join(". ", parts) + ".";
+        return parts;
     }
 
     private static long countOf(Object value) {

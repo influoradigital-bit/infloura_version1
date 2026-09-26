@@ -4,7 +4,7 @@ import com.influora.security.AuthPrincipal;
 import com.influora.service.analytics.AnalyticsService;
 import com.influora.web.dto.analytics.AnalyticsDtos.ContentPerformanceResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorAccountInsightsResponse;
-import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorSelfDemographicsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorMetricsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorScoresResponse;
 import java.time.Instant;
@@ -43,7 +43,7 @@ public class CreatorAnalyticsService {
     }
 
     @Transactional(readOnly = true)
-    public CreatorDemographicsResponse getMyDemographics(AuthPrincipal principal) {
+    public CreatorSelfDemographicsResponse getMyDemographics(AuthPrincipal principal) {
         String creatorProfileId = creatorContext.requireCreatorProfile(principal).getId();
         return analyticsService.getCreatorDemographicsForProfile(creatorProfileId);
     }

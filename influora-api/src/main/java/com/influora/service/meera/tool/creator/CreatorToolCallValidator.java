@@ -63,6 +63,8 @@ public class CreatorToolCallValidator {
         TIER_BY_TOOL.put(CreatorToolName.plan_my_week, MeeraToolTier.R);
         // Meera intelligence v1 -- a read of her own settled post results, never a money tool.
         TIER_BY_TOOL.put(CreatorToolName.get_my_content_patterns, MeeraToolTier.R);
+        // Swapnil 2026-09-26 -- a read of her own audience breakdowns, never a money tool.
+        TIER_BY_TOOL.put(CreatorToolName.get_my_audience, MeeraToolTier.R);
     }
 
     private final AuditLogService auditLogService;

@@ -79,7 +79,12 @@ class PhotoCheckSummaryTest {
 
         JsonNode bedroom = bodies.get("bedroom_window_behind_en_a78");
         String en = PhotoCheckSummary.render(bedroom, null);
-        assertTrue(en.contains("I asked: " + bedroom.at("/ask/question_en").asText() + " (Yes, I can move / No, fixed spot)"), en);
+        // Owner decision D (2026-09-26): can_move asks "Where will you shoot?" with four places.
+        assertTrue(
+                en.contains(
+                        "I asked: " + bedroom.at("/ask/question_en").asText()
+                                + " (By the window / At my desk / Outside / Somewhere else)"),
+                en);
     }
 
     @Test
@@ -162,7 +167,7 @@ class PhotoCheckSummaryTest {
         }
         String trimmedBoth = PhotoCheckSummary.render(body, null);
         assertFalse(trimmedBoth.contains("Looking good:"), trimmedBoth);
-        assertTrue(trimmedBoth.contains("I asked: Can you move to a different spot for this shot? (Yes, I can move"), trimmedBoth);
+        assertTrue(trimmedBoth.contains("I asked: Where will you shoot? (By the window"), trimmedBoth);
 
         // Steps alone over the cap: everything optional goes, no step is cut, the cap is exceeded.
         ObjectNode huge = body.deepCopy();
@@ -182,12 +187,19 @@ class PhotoCheckSummaryTest {
         ObjectNode body = ((ObjectNode) bodies.get("bedroom_window_behind_en_a78")).deepCopy();
         body.putArray("ok");
         body.putArray("cant_tell");
+        // Sized from the fixture itself (it gained a Set-up seen line and new options on
+        // 2026-09-26): one character over the cap with the options, so the options go and the
+        // question stays.
+        body.putArray("checks");
+        ObjectNode probe = body.deepCopy();
+        probe.putArray("steps").addObject().put("label", "L").put("text", "y");
+        int oneCharStep = PhotoCheckSummary.render(probe, null).length();
+        assertTrue(oneCharStep < PhotoCheckSummary.MAX_CHARS, String.valueOf(oneCharStep));
         ArrayNode steps = body.putArray("steps");
-        // Sized so the text fits once the options go, with the question kept.
-        steps.addObject().put("label", "L").put("text", "y".repeat(1260));
+        steps.addObject().put("label", "L").put("text", "y".repeat(PhotoCheckSummary.MAX_CHARS - oneCharStep + 2));
         String text = PhotoCheckSummary.render(body, null);
         assertTrue(text.length() <= PhotoCheckSummary.MAX_CHARS, String.valueOf(text.length()));
-        assertTrue(text.endsWith("I asked: Can you move to a different spot for this shot?"), text);
+        assertTrue(text.endsWith("I asked: " + body.at("/ask/question_en").asText()), text);
     }
 
     @Test
@@ -255,5 +267,159 @@ class PhotoCheckSummaryTest {
         assertFalse(both.contains("Quick checks:"), both);
         assertTrue(both.contains("Looking good: Your phone is at eye level."), both);
         assertTrue(both.contains("I asked:"), both);
+    }
+
+    // --- Set-up seen (Swapnil 2026-09-26) ------------------------------------------------------
+
+    private static ObjectNode bodyWithSetup(ObjectNode setup) {
+        ObjectNode body = JSON.createObjectNode();
+        body.put("what_i_see", "I can see you in a bedroom with a window.");
+        ArrayNode steps = body.putArray("steps");
+        steps.addObject().put("label", "Turn to the window").put("text", "Face the window so the light is on your face.");
+        if (setup != null) {
+            body.set("setup_seen", setup);
+        }
+        return body;
+    }
+
+    @Test
+    @DisplayName(
+            "setup_seen renders as one code-written Set-up seen line in words: light with its side,"
+                    + " place, phone height and product side (the creator's own left/right)")
+    void setupSeenRendersInWords() {
+        ObjectNode setup = JSON.createObjectNode();
+        setup.put("light", "window");
+        setup.put("light_side", "your_left");
+        setup.put("place", "living_room");
+        setup.put("phone_height", "eye_level");
+        setup.put("product_side", "right");
+
+        String text = PhotoCheckSummary.render(bodyWithSetup(setup), "0-3s Hook");
+
+        assertTrue(
+                text.contains(
+                        "Set-up seen: light: window light from your left; place: living room;"
+                                + " phone: at eye level; product: on your right"),
+                text);
+        // Its own line, after what the check saw and before the steps.
+        String[] lines = text.split("\n");
+        int seen = -1;
+        int setupLine = -1;
+        int stepsLine = -1;
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].startsWith("Photo check saw:")) seen = i;
+            if (lines[i].startsWith(PhotoCheckSummary.SETUP_SEEN_PREFIX)) setupLine = i;
+            if (lines[i].equals("Steps:")) stepsLine = i;
+        }
+        assertTrue(seen >= 0 && setupLine == seen + 1 && stepsLine == setupLine + 1, text);
+    }
+
+    @Test
+    @DisplayName(
+            "null and unknown values are left out; with nothing known there is no Set-up seen line at all,"
+                    + " and a body without setup_seen renders exactly as before")
+    void setupSeenSkipsUnknownAndNull() {
+        ObjectNode partial = JSON.createObjectNode();
+        partial.putNull("light");
+        partial.put("light_side", "unknown");
+        partial.put("place", "kitchen");
+        partial.putNull("phone_height");
+        partial.putNull("product_side");
+        assertTrue(PhotoCheckSummary.render(bodyWithSetup(partial), null).contains("Set-up seen: place: kitchen" + "\n"));
+
+        ObjectNode none = JSON.createObjectNode();
+        none.put("light", "unknown");
+        none.putNull("place");
+        assertFalse(PhotoCheckSummary.render(bodyWithSetup(none), null).contains("Set-up seen"));
+        assertEquals(
+                PhotoCheckSummary.render(bodyWithSetup(null), null),
+                PhotoCheckSummary.render(bodyWithSetup(JSON.createObjectNode()), null));
+        assertFalse(PhotoCheckSummary.render(bodyWithSetup(null), null).contains("Set-up seen"));
+    }
+
+    @Test
+    @DisplayName(
+            "never a coordinate: numbers, boxes, free text and anything not a lower-case enum word are"
+                    + " dropped, and product_side is only ever left / centre / right")
+    void setupSeenNeverCarriesCoordinates() {
+        ObjectNode setup = JSON.createObjectNode();
+        setup.put("light", "0.42");
+        setup.put("light_side", "x=120,y=40");
+        setup.put("place", "Bedroom near 12.5, 33.1");
+        setup.put("phone_height", 0.8);
+        setup.put("product_side", "0.73");
+        setup.putObject("product_box").put("x", 0.61).put("y", 0.2).put("w", 0.1).put("h", 0.2);
+
+        String text = PhotoCheckSummary.render(bodyWithSetup(setup), null);
+
+        assertFalse(text.contains("Set-up seen"), text);
+        assertFalse(text.matches("(?s).*\\d\\.\\d.*"), text);
+
+        ObjectNode sideOnly = JSON.createObjectNode();
+        sideOnly.put("product_side", "top_left");
+        assertFalse(PhotoCheckSummary.render(bodyWithSetup(sideOnly), null).contains("Set-up seen"));
+        sideOnly.put("product_side", "centre");
+        assertTrue(PhotoCheckSummary.render(bodyWithSetup(sideOnly), null).contains("Set-up seen: product: in the centre"));
+    }
+
+    @Test
+    @DisplayName("a retake (photo not usable) never gets a Set-up seen line")
+    void retakeHasNoSetupLine() {
+        ObjectNode setup = JSON.createObjectNode();
+        setup.put("place", "bedroom");
+        ObjectNode body = bodyWithSetup(setup);
+        body.put("retake", true);
+
+        assertFalse(PhotoCheckSummary.render(body, null).contains("Set-up seen"));
+    }
+
+    @Test
+    @DisplayName(
+            "setup_seen survives the saved copy (withoutGeometry keeps it, strips any box inside it),"
+                    + " so the stored chat text and metadata still carry it on later turns")
+    void setupSeenSurvivesWithoutGeometry() {
+        ObjectNode setup = JSON.createObjectNode();
+        setup.put("light", "ring_light");
+        setup.put("light_side", "in_front");
+        setup.putObject("box").put("x", 0.5);
+        ObjectNode body = bodyWithSetup(setup);
+
+        ObjectNode saved = PhotoCheckChatWriter.withoutGeometry(body);
+
+        assertTrue(saved.has("setup_seen"));
+        assertFalse(saved.get("setup_seen").has("box"));
+        assertTrue(
+                PhotoCheckSummary.render(saved, null).contains("Set-up seen: light: a ring light from in front of you"),
+                PhotoCheckSummary.render(saved, null));
+    }
+
+    /**
+     * Parity with influora-ai's reference wording: each expected string below is what
+     * {@code frame_check_render.render_setup_seen_line} returned for the same object on
+     * 2026-09-26 (run, not hand-written), so the chat text and the app's parser see one phrasing.
+     */
+    @Test
+    @DisplayName("Set-up seen wording matches influora-ai's render_setup_seen_line for the same setup_seen")
+    void setupSeenMatchesInfluoraAiReference() {
+        String[][] cases = {
+            {"sun", null, "other_indoor", "below_eyes", "left",
+                "light: direct sun; place: indoors; phone: below your eyes; product: on your left"},
+            {null, "behind_you", "garage", null, null, "light: light from behind you"},
+            {"mixed", "above", "rooftop", "above_eyes", "centre",
+                "light: mixed lights from above; place: rooftop; phone: above your eyes; product: in the centre"},
+            {"ceiling_light", "unknown", "other_outdoor", "unknown", "center", "light: a ceiling light; place: outdoors"},
+        };
+        String[] keys = {"light", "light_side", "place", "phone_height", "product_side"};
+        for (String[] c : cases) {
+            ObjectNode setup = JSON.createObjectNode();
+            for (int i = 0; i < keys.length; i++) {
+                if (c[i] == null) {
+                    setup.putNull(keys[i]);
+                } else {
+                    setup.put(keys[i], c[i]);
+                }
+            }
+            assertEquals(c[5], PhotoCheckSummary.setupSeen(setup), Arrays.toString(c));
+        }
     }
 }

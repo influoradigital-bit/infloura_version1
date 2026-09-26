@@ -13,7 +13,7 @@ import static org.mockito.Mockito.when;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.analytics.AnalyticsService;
-import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorSelfDemographicsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorMetricsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorScoresResponse;
 import java.math.BigDecimal;
@@ -101,9 +101,9 @@ class CreatorAnalyticsServiceTest {
     void testGetMyDemographicsCrossCreatorIsolation() {
         when(creatorContext.requireCreatorProfile(principal)).thenReturn(creatorA);
         when(analyticsService.getCreatorDemographicsForProfile(CREATOR_PROFILE_A))
-                .thenReturn(CreatorDemographicsResponse.empty());
+                .thenReturn(CreatorSelfDemographicsResponse.empty());
 
-        CreatorDemographicsResponse result = service.getMyDemographics(principal);
+        CreatorSelfDemographicsResponse result = service.getMyDemographics(principal);
 
         assertFalse(result.hasData());
         verify(analyticsService).getCreatorDemographicsForProfile(CREATOR_PROFILE_A);

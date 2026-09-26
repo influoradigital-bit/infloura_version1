@@ -15,6 +15,7 @@ import com.influora.service.meera.tool.creator.CheckDealRisksExecutor;
 import com.influora.service.meera.tool.creator.CreatorToolCallValidator;
 import com.influora.service.meera.tool.creator.EstimateMyRateExecutor;
 import com.influora.service.meera.tool.creator.GetBriefExecutor;
+import com.influora.service.meera.tool.creator.GetMyAudienceExecutor;
 import com.influora.service.meera.tool.creator.GetMyContentPatternsExecutor;
 import com.influora.service.meera.tool.creator.GetMyDealsExecutor;
 import com.influora.service.meera.tool.creator.GetMyMetricsExecutor;
@@ -23,6 +24,7 @@ import com.influora.service.meera.tool.creator.GetTodaysTopicsExecutor;
 import com.influora.web.dto.meera.CreatorToolDtos.CheckDealRisksResult;
 import com.influora.web.dto.meera.CreatorToolDtos.EstimateMyRateResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetBriefResult;
+import com.influora.web.dto.meera.CreatorToolDtos.GetMyAudienceResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyContentPatternsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyDealsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyMetricsResult;
@@ -47,8 +49,8 @@ import org.springframework.web.bind.annotation.RestController;
  * on-behalf JWT authenticates the creator. Neither alone is sufficient, and this controller re-proves
  * the human on every call rather than trusting the body.
  *
- * <p><b>Eight routes, not the nine in SPEC.md &sect;3.1</b> ({@code get_my_content_patterns},
- * Meera intelligence v1, is the eighth). {@code estimate_my_rate} and
+ * <p><b>Nine routes</b> ({@code get_my_content_patterns}, Meera intelligence v1, is the eighth;
+ * {@code get_my_audience}, 2026-09-26, the ninth). {@code estimate_my_rate} and
  * {@code check_deal_risks} joined the first two in Wave 3, with {@code RateQuoteService} and
  * {@code DealRiskService}; {@code get_brief} followed once {@code CreatorBriefService} existed to
  * read; {@code get_todays_topics} (T-CONTENT-TOPICS) and {@code plan_my_week} (T-PLAN-MY-WEEK) are
@@ -88,6 +90,7 @@ public class CreatorMeeraToolController {
     private final GetTodaysTopicsExecutor getTodaysTopicsExecutor;
     private final GetPlanMyWeekExecutor getPlanMyWeekExecutor;
     private final GetMyContentPatternsExecutor getMyContentPatternsExecutor;
+    private final GetMyAudienceExecutor getMyAudienceExecutor;
 
     public CreatorMeeraToolController(
             OnBehalfAuthResolver onBehalfAuthResolver,
@@ -102,7 +105,8 @@ public class CreatorMeeraToolController {
             GetBriefExecutor getBriefExecutor,
             GetTodaysTopicsExecutor getTodaysTopicsExecutor,
             GetPlanMyWeekExecutor getPlanMyWeekExecutor,
-            GetMyContentPatternsExecutor getMyContentPatternsExecutor) {
+            GetMyContentPatternsExecutor getMyContentPatternsExecutor,
+            GetMyAudienceExecutor getMyAudienceExecutor) {
         this.onBehalfAuthResolver = onBehalfAuthResolver;
         this.creatorToolCallValidator = creatorToolCallValidator;
         this.preferencesService = preferencesService;
@@ -116,6 +120,7 @@ public class CreatorMeeraToolController {
         this.getTodaysTopicsExecutor = getTodaysTopicsExecutor;
         this.getPlanMyWeekExecutor = getPlanMyWeekExecutor;
         this.getMyContentPatternsExecutor = getMyContentPatternsExecutor;
+        this.getMyAudienceExecutor = getMyAudienceExecutor;
     }
 
     @PostMapping("/get_my_deals")
@@ -205,6 +210,19 @@ public class CreatorMeeraToolController {
                 body,
                 CreatorToolName.get_my_content_patterns,
                 getMyContentPatternsExecutor::execute);
+    }
+
+    /**
+     * {@code get_my_audience} (2026-09-26): the creator's OWN followers and who engaged with her
+     * content this month, each available or with its exact reason. Read-only, through the same
+     * {@link #handleRead} chain as every route here; the executor is handed the JWT-verified user
+     * id only.
+     */
+    @PostMapping("/get_my_audience")
+    public ResponseEntity<ApiResponse<GetMyAudienceResult>> getMyAudience(
+            @RequestHeader(ON_BEHALF_HEADER) String onBehalfJwt,
+            @RequestBody Map<String, Object> body) {
+        return handleRead(onBehalfJwt, body, CreatorToolName.get_my_audience, getMyAudienceExecutor::execute);
     }
 
     /**

@@ -42,6 +42,7 @@ from app.tools.creator_schemas import (
     CREATOR_TOOL_TO_SPRING_PATH,
     GET_BRIEF,
     GET_CREATOR_KNOWLEDGE,
+    GET_MY_AUDIENCE,
     GET_MY_CONTENT_PATTERNS,
     GET_MY_DEALS,
     GET_TODAYS_TOPICS,
@@ -1075,6 +1076,53 @@ def _is_fully_trusted_quote(quote: Any) -> bool:
     return True
 
 
+# get_my_audience (owner decision F, 2026-09-26): the creator's OWN audience, computed by Spring
+# from Meta's follower_demographics / engaged_audience_demographics. No person-written text: age
+# bands, gender labels, city names and country codes are Meta's, shares are integers Spring
+# computed, `reason` and `as_of` are Spring's own words. It is still trusted only in exactly the
+# shape Spring sends: the two sections, each holding only the keys below, each list only
+# elements of its own shape with scalar values. A section that fails moves, whole, into an
+# `unclassified` wrapper, and so does any other top-level key (the allow-list default).
+_TRUSTED_KEYS_GET_MY_AUDIENCE = ("followers", "engaged_this_month")
+_AUDIENCE_SECTION_SCALARS = frozenset({"available", "reason", "as_of"})
+# list key -> the keys of one element, or None for a list of plain strings (top_cities).
+_AUDIENCE_SECTION_LISTS: dict[str, frozenset[str] | None] = {
+    "age": frozenset({"band", "pct"}),
+    "gender": frozenset({"label", "pct"}),
+    "top_cities": None,
+    "top_countries": frozenset({"code", "pct"}),
+}
+
+
+def _is_trusted_audience_section(section: Any) -> bool:
+    """One `followers` / `engaged_this_month` section in exactly Spring's shape, every leaf a
+    JSON scalar. Anything else -- an unknown key, a dict where a scalar goes, a list element of
+    the wrong shape -- is False, and the caller wraps the whole section."""
+    if not isinstance(section, dict):
+        return False
+    for key, value in section.items():
+        if key in _AUDIENCE_SECTION_SCALARS:
+            if not _is_json_scalar(value):
+                return False
+            continue
+        if key not in _AUDIENCE_SECTION_LISTS:
+            return False
+        if value is None:
+            continue
+        if not isinstance(value, list):
+            return False
+        element_keys = _AUDIENCE_SECTION_LISTS[key]
+        for element in value:
+            if element_keys is None:
+                if not isinstance(element, str):
+                    return False
+            elif not isinstance(element, dict) or not set(element) <= element_keys or not all(
+                _is_json_scalar(v) for v in element.values()
+            ):
+                return False
+    return True
+
+
 def _split_trusted_scalar(
     data: dict[str, Any],
     trusted_keys: tuple[str, ...],
@@ -1389,6 +1437,26 @@ def _model_copy_of_tool_result(tool_name: str, data: Any) -> str:
                 wrap_untrusted("creator_captions", json.dumps(captions, ensure_ascii=False))
             )
         return "\n".join(parts)
+
+    if tool_name == GET_MY_AUDIENCE:
+        # Owner decision F: trusted section by section (`_is_trusted_audience_section`); a
+        # section in any other shape, and any key Spring does not send, goes in the wrapper.
+        trusted_audience: dict[str, Any] = {}
+        unclassified_audience: dict[str, Any] = {}
+        for key, value in data.items():
+            if key in _TRUSTED_KEYS_GET_MY_AUDIENCE and (
+                value is None or _is_trusted_audience_section(value)
+            ):
+                trusted_audience[key] = value
+            else:
+                unclassified_audience[key] = value
+        if not unclassified_audience:
+            return _safe_json(trusted_audience)
+        return (
+            _safe_json(trusted_audience)
+            + "\n"
+            + wrap_untrusted("unclassified", _safe_json(unclassified_audience))
+        )
 
     if tool_name == GET_TODAYS_TOPICS:
         # Everything except the server-computed date goes in the wrapper, `topics` included --

@@ -3,7 +3,8 @@ decisions 1 and 2, Swapnil 2026-09-26; PROMPT_VERSION stays meera-2026.09.25.9).
 
 A full script gains an optional "Shot cards:" block after the last beat and before "Caption:":
 one "S<n>: " line per beat with 13 key=value pairs in a fixed order. The creator-fact fields
-come only from the answers to the 10 coach questions, their saved phone or what they said; the
+come only from the answers to the 11 coach questions, a photo check's Set-up seen line (owner
+decision C), their saved phone or what they said; the
 craft fields come from the category's framing topic; anything unknown is "?", shown as "Not set
 yet". The 7-day challenge buttons ask one "Which category today?" question first when the
 creator has several categories.
@@ -53,12 +54,13 @@ FACT_SOURCES = {
     "move": ["sit_or_walk"],
     "distance": ["room_size", "phone_lens"],
     "eyes": ["on_camera"],
-    "prop": ["prop_ready"],
+    # Owner decision D (2026-09-26): product_side, prop_ready's follow-up, names the side.
+    "prop": ["prop_ready", "product_side"],
 }
 CRAFT_KEYS = ("size", "stand", "headroom", "background", "space", "text")
 COACH_IDS = {
     "other_light", "can_move", "room_size", "window_side", "phone_lens",
-    "on_camera", "sit_or_walk", "outdoor_light", "prop_ready", "time_available",
+    "on_camera", "sit_or_walk", "outdoor_light", "prop_ready", "product_side", "time_available",
 }
 
 SCRIPT_SECTION_START = "Full script format (only when asked):"
@@ -170,14 +172,20 @@ def test_unknown_is_a_question_mark_shown_as_not_set_yet():
 def test_each_creator_fact_names_its_coach_questions():
     facts = _facts_part()
     assert facts.startswith(
-        "Their facts come only from their answers to the coach questions, their saved phone or"
-        " what they told you in this chat:"
+        "Their facts come only from their answers to the coach questions, the Set-up seen line of"
+        " the newest photo check, their saved phone or what they told you in this chat:"
     )
-    # No can_move option names a place, so the card's place is only one they named themselves.
+    # Owner decision D: three can_move answers name a place, "Somewhere else" does not; the card's
+    # place is otherwise only one they named or the photo check saw, never one Meera picked.
     assert (
-        "place (where they will shoot, at most 40 characters) from can_move, and only a spot they"
-        " named themselves, never one you picked;" in facts
+        "place (where they will shoot, at most 40 characters) from can_move's answer (By the window,"
+        " At my desk or Outside, in their words; Somewhere else stays ? until they name it) or a spot"
+        " they named themselves or the check saw, never one you picked;" in facts
     )
+    for option in ("By the window", "At my desk", "Outside", "Somewhere else"):
+        assert option in COACH_QUESTIONS["can_move"]["options"], option
+    assert "In my hand is -hand and On a table is -table; the side comes from product_side or the side the check saw." in facts
+    assert COACH_QUESTIONS["prop_ready"]["options"][:2] == ["In my hand", "On a table"]
     assert "light from window_side, other_light or outdoor_light," in facts
     assert "from sit_or_walk;" in facts and "height (" in facts and "move (" in facts
     assert "from room_size, phone_lens or their saved phone;" in facts
@@ -189,6 +197,22 @@ def test_each_creator_fact_names_its_coach_questions():
         assert re.search(rf"\b{key} ", facts), key
     for key in CRAFT_KEYS:
         assert not re.search(rf"\b{key} \(", facts), key
+
+
+def test_the_photo_checks_set_up_seen_line_counts_like_an_answer():
+    """Owner decision C: facts the photo check saw (light and side, place, phone height, product
+    side) fill the card like answers, and only in the card's own values."""
+    facts = _facts_part()
+    assert (
+        "From Set-up seen, the light and its side count as light (a ceiling light or low light stays"
+        " ?), and eye level, below your eyes and above your eyes count as height eye, below and above."
+        in facts
+    )
+    photo = TEXT[TEXT.index("Photo checks (the Check my set-up photo in this chat):") : TEXT.index("Their own results")]
+    assert "- Its Set-up seen line counts like their answers." in photo
+    assert "never ask a coach question it already answers; what it leaves out stays unknown." in photo
+    assert "a photo check's Set-up seen line answers what it shows, like a tapped answer." in _bullet("- Plan my shoot.")
+    assert "Ask product_side only after prop_ready puts the product in the shot." in _bullet("- Plan my shoot.")
 
 
 def test_the_named_coach_questions_exist_in_the_knowledge_bank():
@@ -224,12 +248,12 @@ def test_plan_my_shoot_fills_unknown_card_fields_first_inside_the_budget():
         " then the ones whose answer would change your steps the most" in bullet
     )
     assert (
-        "at most 3 questions in TOTAL for that request, counting any already asked for it in this"
-        " conversation." in bullet
+        "at most 3 shoot questions for that request, counting any shoot questions already asked for"
+        " it in this conversation." in bullet
     )
     assert (
-        "This budget is the rule that wins: where any other sentence here seems to allow more"
-        " questions, ask fewer." in bullet
+        "This budget is the rule that wins for the shoot part: where any other sentence here seems"
+        " to allow more shoot questions, ask fewer." in bullet
     )
     assert "never a question of your own: one per message," in bullet
 

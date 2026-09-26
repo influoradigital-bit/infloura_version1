@@ -894,4 +894,113 @@ class AnalyticsServiceTest {
 
         assertEquals(false, analyticsService.getCreatorAccountInsightsForProfile("creator-2").hasData());
     }
+
+    // ------------------------------------------------------------------------------------------
+    // Engaged audience (2026-09-26) -- creator-self only, never on the brand-facing route
+    // ------------------------------------------------------------------------------------------
+
+    private static com.influora.domain.entity.AudienceDemographics snapshotWithEngaged(String status) {
+        boolean available = "AVAILABLE".equals(status);
+        return com.influora.domain.entity.AudienceDemographics.builder()
+                .id("01HAUDSNAP0000000000000001")
+                .time(Instant.parse("2026-09-20T03:30:00Z"))
+                .creatorProfileId(CREATOR_ID)
+                .ageGenderBreakdownJson("{\"18-24_female\":300}")
+                .countryBreakdownJson("{\"IN\":900}")
+                .cityBreakdownJson("{\"Mumbai, Maharashtra\":200}")
+                .engagedAgeGenderBreakdownJson(available ? "{\"25-34_female\":70}" : null)
+                .engagedCountryBreakdownJson(available ? "{\"IN\":95}" : null)
+                .engagedCityBreakdownJson(available ? "{\"Pune, Maharashtra\":40}" : null)
+                .engagedStatus(status)
+                .engagedFetchedAt(available ? Instant.parse("2026-09-20T03:31:00Z") : null)
+                .fetchedAt(Instant.parse("2026-09-20T03:30:00Z"))
+                .build();
+    }
+
+    private static com.fasterxml.jackson.databind.ObjectMapper json() {
+        return new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
+    }
+
+    @Test
+    @DisplayName("creator-self demographics carry the engaged audience when the snapshot has it")
+    void creatorSelfCarriesEngagedAudience() {
+        when(audienceDemographicsRepository.findFirstByCreatorProfileIdOrderByTimeDesc(CREATOR_ID))
+                .thenReturn(Optional.of(snapshotWithEngaged("AVAILABLE")));
+
+        com.influora.web.dto.analytics.AnalyticsDtos.CreatorSelfDemographicsResponse r =
+                analyticsService.getCreatorDemographicsForProfile(CREATOR_ID);
+
+        assertEquals(true, r.hasData());
+        assertEquals(300, ((Number) ((java.util.Map<?, ?>) r.ageGenderBreakdown()).get("18-24_female")).intValue());
+        assertEquals(70, ((Number) ((java.util.Map<?, ?>) r.engagedAgeGenderBreakdown()).get("25-34_female")).intValue());
+        assertEquals(95, ((Number) ((java.util.Map<?, ?>) r.engagedCountryBreakdown()).get("IN")).intValue());
+        assertEquals(40, ((Number) ((java.util.Map<?, ?>) r.engagedCityBreakdown()).get("Pune, Maharashtra")).intValue());
+        assertEquals(Instant.parse("2026-09-20T03:31:00Z"), r.engagedFetchedAt());
+        assertEquals("AVAILABLE", r.engagedStatus());
+    }
+
+    @Test
+    @DisplayName(
+            "below the 100-engagement threshold, failed, or never fetched: the four engaged fields are"
+                    + " null, the status says which, and the follower fields are untouched")
+    void creatorSelfEngagedNotAvailableIsNullWithItsStatus() {
+        for (String status : new String[] {"BELOW_THRESHOLD", "FETCH_FAILED", null}) {
+            when(audienceDemographicsRepository.findFirstByCreatorProfileIdOrderByTimeDesc(CREATOR_ID))
+                    .thenReturn(Optional.of(snapshotWithEngaged(status)));
+
+            com.influora.web.dto.analytics.AnalyticsDtos.CreatorSelfDemographicsResponse r =
+                    analyticsService.getCreatorDemographicsForProfile(CREATOR_ID);
+
+            assertEquals(true, r.hasData(), String.valueOf(status));
+            assertEquals(null, r.engagedAgeGenderBreakdown(), String.valueOf(status));
+            assertEquals(null, r.engagedCountryBreakdown(), String.valueOf(status));
+            assertEquals(null, r.engagedCityBreakdown(), String.valueOf(status));
+            assertEquals(null, r.engagedFetchedAt(), String.valueOf(status));
+            assertEquals(status, r.engagedStatus());
+            assertEquals(false, r.hasEngaged());
+        }
+    }
+
+    @Test
+    @DisplayName("creator-self JSON sends the engaged fields as explicit nulls when not available, so the app can test === null")
+    void creatorSelfJsonSendsExplicitNulls() throws Exception {
+        when(audienceDemographicsRepository.findFirstByCreatorProfileIdOrderByTimeDesc(CREATOR_ID))
+                .thenReturn(Optional.of(snapshotWithEngaged("BELOW_THRESHOLD")));
+
+        String body = json().writeValueAsString(analyticsService.getCreatorDemographicsForProfile(CREATOR_ID));
+
+        org.assertj.core.api.Assertions.assertThat(body)
+                .contains("\"engagedAgeGenderBreakdown\":null")
+                .contains("\"engagedCountryBreakdown\":null")
+                .contains("\"engagedCityBreakdown\":null")
+                .contains("\"engagedFetchedAt\":null")
+                .contains("\"engagedStatus\":\"BELOW_THRESHOLD\"")
+                .contains("\"ageGenderBreakdown\"");
+    }
+
+    @Test
+    @DisplayName(
+            "the BRAND-facing demographics route never carries the engaged audience: its DTO has no"
+                    + " engaged field at all, and its JSON has no engaged key even when the row holds one")
+    void brandDemographicsNeverCarryEngagedAudience() throws Exception {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+        when(metricsAuthorizationService.resolveAuthorizedCreatorProfileId(WORKSPACE_ID, CREATOR_ID))
+                .thenReturn(CREATOR_ID);
+        when(audienceDemographicsRepository.findFirstByCreatorProfileIdOrderByTimeDesc(CREATOR_ID))
+                .thenReturn(Optional.of(snapshotWithEngaged("AVAILABLE")));
+
+        Object brand = analyticsService.getCreatorDemographics(principal, CREATOR_ID);
+
+        assertEquals(com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse.class, brand.getClass());
+        for (java.lang.reflect.RecordComponent c :
+                com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse.class.getRecordComponents()) {
+            org.assertj.core.api.Assertions.assertThat(c.getName().toLowerCase()).doesNotContain("engaged");
+        }
+        String body = json().writeValueAsString(brand);
+        org.assertj.core.api.Assertions.assertThat(body)
+                .doesNotContain("engaged")
+                .doesNotContain("Pune")
+                .doesNotContain("25-34_female");
+    }
 }

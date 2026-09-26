@@ -353,7 +353,8 @@ def test_knowledge_block_stays_under_the_size_budget():
     # dataset 9 framing and shot planning), plus every explainer Reel format row (2026-09-26).
     reel_rows = [r for r in CREATOR_KNOWLEDGE_ROWS if r["data_type"] in ("reel_format", "reel_format_rule")]
     assert reel_rows, "no Reel format rows -- the lookup-only count below would pass vacuously"
-    assert len(always_sent) == 305
+    # 306 since owner decision D (2026-09-26) added the always-sent product_side coach row.
+    assert len(always_sent) == 306
     assert len(CREATOR_KNOWLEDGE_ROWS) - len(always_sent) == 215 + len(reel_rows)
     lookup_only_types = {r["data_type"] for r in CREATOR_KNOWLEDGE_ROWS} - {
         r["data_type"] for r in always_sent

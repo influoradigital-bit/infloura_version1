@@ -329,4 +329,45 @@ class MeeraPhaseB0BootValidationTest extends AbstractIntegrationTest {
                         String.class);
         assertThat(conversationDeleteRule).isEqualTo("CASCADE");
     }
+
+    /**
+     * Engaged audience (Swapnil 2026-09-26) -- V20260926120000 adds five nullable columns to
+     * {@code audience_demographics}. Reaching this method already proves ddl-auto=validate accepted
+     * the entity's five new {@code @Column}s; this pins the exact MySQL types (JSON stays JSON,
+     * VARCHAR(20), DATETIME(6)) and that every one is nullable, so rows written before the migration
+     * need no backfill and a creator under Meta's 100-engagement threshold stores no fabricated value.
+     */
+    @Test
+    @DisplayName(
+            "V20260926120000 applied: audience_demographics has engaged_age_gender_breakdown /"
+                    + " engaged_country_breakdown / engaged_city_breakdown JSON, engaged_status VARCHAR(20)"
+                    + " and engaged_fetched_at DATETIME(6), all nullable")
+    void engagedAudienceColumnsMatchTheEntity() {
+        Integer applied =
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM flyway_schema_history WHERE version = ? AND success = true",
+                        Integer.class,
+                        "20260926120000");
+        assertThat(applied).as("migration V20260926120000 should have applied successfully").isEqualTo(1);
+
+        Map<String, String> expectedType = new java.util.LinkedHashMap<>();
+        expectedType.put("engaged_age_gender_breakdown", "json");
+        expectedType.put("engaged_country_breakdown", "json");
+        expectedType.put("engaged_city_breakdown", "json");
+        expectedType.put("engaged_status", "varchar(20)");
+        expectedType.put("engaged_fetched_at", "datetime(6)");
+        expectedType.forEach(
+                (column, type) -> {
+                    Map<String, Object> row =
+                            jdbcTemplate.queryForMap(
+                                    "SELECT column_type, is_nullable FROM information_schema.columns"
+                                            + " WHERE table_schema = DATABASE()"
+                                            + " AND table_name = 'audience_demographics' AND column_name = ?",
+                                    column);
+                    assertThat(String.valueOf(row.get("COLUMN_TYPE")).toLowerCase(java.util.Locale.ROOT))
+                            .as("audience_demographics.%s type", column)
+                            .isEqualTo(type);
+                    assertThat(row.get("IS_NULLABLE")).as("audience_demographics.%s nullable", column).isEqualTo("YES");
+                });
+    }
 }

@@ -132,9 +132,10 @@ F25 = resolve_phone("OPPO F25 Pro")  # ultrawide, no telephoto, no manual video
 A78 = resolve_phone("OPPO A78 5G")  # none of the three
 PHONES = {"none": None, "A78": A78, "F25": F25, "RENO": RENO, "PRO": PRO}
 
+# Owner decision D (2026-09-26): product_side, prop_ready's follow-up, sits right after it.
 COACH_IDS = [
     "other_light", "can_move", "room_size", "window_side", "phone_lens",
-    "on_camera", "sit_or_walk", "outdoor_light", "prop_ready", "time_available",
+    "on_camera", "sit_or_walk", "outdoor_light", "prop_ready", "product_side", "time_available",
 ]
 
 OK_IDS = [
@@ -998,12 +999,13 @@ def test_answered_ids_are_the_answers_the_context_keys_and_a_matched_phone():
     ctx = parse_shot_context(json.dumps({"on_camera": "yes", "sit_or_walk": "sitting", "angle": "Eye-level"}))
     phone = resolve_phone("OPPO A78 5G")
     ids = answered_question_ids(answers, ctx, phone)
-    assert ids == {"window_side", "on_camera", "sit_or_walk", "phone_lens"}
+    # product_side is always in the set until prop_ready puts the product in the shot (below).
+    assert ids == {"window_side", "on_camera", "sit_or_walk", "phone_lens", "product_side"}
     for qid in ids:
         assert parse_frame_check_reply(_reply([], ask={"id": qid}), answered_ids=ids).body is None, qid
     # "angle" is not a bank id; an unknown phone answers nothing.
-    assert answered_question_ids([], {"angle": "Eye-level"}, resolve_phone("Redmi Note 13")) == frozenset()
-    assert answered_question_ids() == frozenset()
+    assert answered_question_ids([], {"angle": "Eye-level"}, resolve_phone("Redmi Note 13")) == {"product_side"}
+    assert answered_question_ids() == {"product_side"}
     # The lens question is still asked when the phone is not in our notes.
     out = parse_frame_check_response(
         _reply([], ask={"id": "phone_lens"}), answered_ids=answered_question_ids([], None, None)
@@ -1171,6 +1173,28 @@ def test_answers_are_validated_against_the_bank():
     four = [{"id": q, "option": 0} for q in ("can_move", "room_size", "on_camera", "prop_ready")]
     assert [q for q, _ in parse_answers(json.dumps(four))] == ["can_move", "room_size", "on_camera"]
     assert parse_answers("x" * (ANSWERS_MAX_CHARS + 1)) == []
+
+
+def test_an_answer_whose_label_is_not_the_banks_option_is_dropped():
+    """Priya finding (2026-09-26): ids stayed stable while prop_ready / can_move options changed
+    meaning, and answers travel by index. An ask shown from the OLD bank ('Not yet' at index 1)
+    tapped after the deploy would read as 'On a table' and open product_side. The app now sends
+    the tapped option's English label; a label that is not the current bank's option at that
+    index drops the answer. No label (an older app) is read as before."""
+    old_bank_tap = json.dumps([{"id": "prop_ready", "option": 1, "label": "Not yet"}])
+    assert parse_answers(old_bank_tap) == []
+    old_can_move = json.dumps([{"id": "can_move", "option": 1, "label": "No, fixed spot"}])
+    assert parse_answers(old_can_move) == []
+    matching = json.dumps([{"id": "prop_ready", "option": 1, "label": "On a table"}])
+    assert parse_answers(matching) == [("prop_ready", 1)]
+    assert parse_answers(json.dumps([{"id": "prop_ready", "option": 1}])) == [("prop_ready", 1)]
+    assert parse_answers(json.dumps([{"id": "prop_ready", "option": 1, "label": 7}])) == []
+    # A dropped stale answer never pushes out a good one.
+    mixed = json.dumps([
+        {"id": "prop_ready", "option": 1, "label": "Not yet"},
+        {"id": "can_move", "option": 0, "label": "By the window"},
+    ])
+    assert parse_answers(mixed) == [("can_move", 0)]
     assert parse_answers('{"id": "can_move", "option": 0}') == []
     assert parse_answers("not json") == []
     assert parse_answers(None) == []
@@ -1234,13 +1258,17 @@ def test_shot_context_over_the_limit_or_not_an_object_is_ignored():
 # --- the coach question bank -----------------------------------------------------------------
 
 
-def test_the_bank_has_exactly_the_ten_questions_with_matching_hinglish_options():
+def test_the_bank_has_exactly_the_eleven_questions_with_matching_hinglish_options():
     assert list(COACH_QUESTIONS) == COACH_IDS
     for qid, row in COACH_QUESTIONS.items():
         assert 2 <= len(row["options"]) <= 4, qid
         assert len(row["options"]) == len(row["options_hi"]), qid
         assert row["confidence"] == "high" and row["source"] == "influora_content_team"
-        assert row["further_reading"] == "Influora coach question bank (2026-09-25)"
+        assert row["further_reading"] == (
+            "Influora coach question bank (2026-09-25; options 2026-09-26)"
+            if qid in ("can_move", "prop_ready", "product_side")
+            else "Influora coach question bank (2026-09-25)"
+        ), qid
         assert row["resolves"].strip() and "\n" not in row["resolves"]
         for text in [row["question_hi"], *row["options_hi"]]:
             assert text.isascii(), (qid, text)  # Hinglish in Latin script
@@ -1248,6 +1276,35 @@ def test_the_bank_has_exactly_the_ten_questions_with_matching_hinglish_options()
         "A lamp", "A ring light", "Only the tube or ceiling light", "Nothing else"
     ]
     assert COACH_QUESTIONS["window_side"]["options"] == ["In front of me", "To my side", "Behind me", "No window"]
+    # Owner decision D (2026-09-26): ids kept, better answers, and one follow-up row.
+    assert COACH_QUESTIONS["can_move"]["question_en"] == "Where will you shoot?"
+    assert COACH_QUESTIONS["can_move"]["options"] == ["By the window", "At my desk", "Outside", "Somewhere else"]
+    assert COACH_QUESTIONS["prop_ready"]["question_en"] == "Where's the product?"
+    assert COACH_QUESTIONS["prop_ready"]["options"] == ["In my hand", "On a table", "Not with me"]
+    assert COACH_QUESTIONS["product_side"]["options"] == ["Left", "Centre", "Right"]
+    assert "only after prop_ready" in COACH_QUESTIONS["product_side"]["resolves"]
+
+
+def test_product_side_is_askable_only_after_prop_ready_puts_the_product_in_the_shot():
+    """Owner decision D: the side question is a follow-up. Closed with no prop_ready answer and
+    with "Not with me"; open after "In my hand" or "On a table"; and dropped again when the
+    check's own validated product box already shows the side (it is in setup_seen)."""
+    options = COACH_QUESTIONS["prop_ready"]["options"]
+    ask = {"id": "product_side"}
+    for option, open_ in (("In my hand", True), ("On a table", True), ("Not with me", False)):
+        answers = parse_answers(json.dumps([{"id": "prop_ready", "option": options.index(option)}]))
+        ids = answered_question_ids(answers, None, None)
+        assert ("product_side" not in ids) is open_, option
+        out = parse_frame_check_response(_reply([_step("move_you", WINDOW)], ask=ask), answered_ids=ids)
+        assert (out["ask"] is not None and out["ask"]["id"] == "product_side") is open_, option
+    in_shot = answered_question_ids(parse_answers(json.dumps([{"id": "prop_ready", "option": 0}])), None, None)
+    seen = json.loads(_reply([_step("move_you", WINDOW)], ask=ask))
+    seen["layout"] = {"faces": [], "product": {"x": 0.7, "y": 0.5, "w": 0.1, "h": 0.1}}
+    out = parse_frame_check_response(json.dumps(seen), answered_ids=in_shot)
+    assert out["ask"] is None and out["setup_seen"]["product_side"] == "left"
+    # A product box that failed validation shows nothing: the follow-up stays open.
+    seen["layout"] = {"faces": [], "product": {"x": 2, "y": 0.5, "w": 0.1, "h": 0.1}}
+    assert parse_frame_check_response(json.dumps(seen), answered_ids=in_shot)["ask"]["id"] == "product_side"
 
 
 def test_the_bank_is_always_sent_under_its_exact_heading():

@@ -452,3 +452,72 @@ describe('parseMeeraScript — the optional Set-up line (persona 2026-09-25)', (
     expect(parseMeeraScript(withSetupAt(2))).toBeUndefined();
   });
 });
+
+describe('parseMeeraScript — the optional Made for line (owner decision B, 2026-09-26)', () => {
+  const MADE_FOR =
+    'Made for: your followers - mostly women, 18-24, Mumbai (Instagram) · Topic: Mumbai street breakfast (your best-performing topic) · Goal: grow followers';
+  const MADE_FOR_VALUE = MADE_FOR.slice('Made for: '.length);
+
+  function withLineAt(index: number, line = MADE_FOR, base = VALID_SCRIPT): string {
+    const lines = base.split('\n');
+    lines.splice(index, 0, line);
+    return lines.join('\n');
+  }
+
+  it('reads Made for right after Idea, and keeps the rest of the card', () => {
+    const result = parseMeeraScript(withLineAt(1));
+    expect(result?.madeFor).toBe(MADE_FOR_VALUE);
+    expect(result?.idea).toBe('3 saffron mistakes to avoid');
+    expect(result?.plan).toMatch(/^for new saffron buyers/);
+    const { madeFor: _madeFor, ...rest } = result!;
+    expect(rest).toStrictEqual(parseMeeraScript(VALID_SCRIPT));
+  });
+
+  it('an old reply without the line parses exactly as today, with no madeFor key at all', () => {
+    const result = parseMeeraScript(VALID_SCRIPT)!;
+    expect(result).toBeDefined();
+    expect('madeFor' in result).toBe(false);
+  });
+
+  it('accepts the label in any case and with extra spacing', () => {
+    expect(parseMeeraScript(withLineAt(1, MADE_FOR.replace('Made for:', 'MADE  FOR :')))?.madeFor).toBe(MADE_FOR_VALUE);
+    expect(parseMeeraScript(withLineAt(1, MADE_FOR.replace('Made for:', 'made for:')))?.madeFor).toBe(MADE_FOR_VALUE);
+  });
+
+  it('keeps a value of exactly 200 code points (an emoji counts once, like Python len)', () => {
+    const at = `${'\u{1F3E0}'.repeat(10)}${'x'.repeat(190)}`;
+    expect(parseMeeraScript(withLineAt(1, `Made for: ${at}`))?.madeFor).toBe(at);
+  });
+
+  it('ignores (does not refuse) a value over 200 code points: the card parses with no madeFor', () => {
+    const result = parseMeeraScript(withLineAt(1, `Made for: ${'x'.repeat(201)}`));
+    expect(result).toBeDefined();
+    expect('madeFor' in result!).toBe(false);
+    expect(result?.plan).toMatch(/^for new saffron buyers/);
+  });
+
+  it('ignores (does not refuse) an empty Made for line', () => {
+    const result = parseMeeraScript(withLineAt(1, 'Made for:'));
+    expect(result).toBeDefined();
+    expect('madeFor' in result!).toBe(false);
+  });
+
+  it('works together with Set-up (Made for after Idea, Set-up after Action)', () => {
+    const lines = withLineAt(1).split('\n');
+    lines.splice(4, 0, 'Set-up: sit facing the window, light on your left');
+    const result = parseMeeraScript(lines.join('\n'));
+    expect(result?.madeFor).toBe(MADE_FOR_VALUE);
+    expect(result?.setup).toBe('sit facing the window, light on your left');
+  });
+
+  it('returns undefined for a Made for line anywhere but straight after Idea', () => {
+    expect(parseMeeraScript(withLineAt(0))).toBeUndefined(); // before Idea
+    expect(parseMeeraScript(withLineAt(2))).toBeUndefined(); // after Plan
+    expect(parseMeeraScript(withLineAt(3))).toBeUndefined(); // after Action
+  });
+
+  it('a Hindi value is kept as opaque text (the label stays English)', () => {
+    const hindi = 'आपके फ़ॉलोअर्स · Goal: फ़ॉलोअर्स बढ़ाना';
+    expect(parseMeeraScript(withLineAt(1, `Made for: ${hindi}`))?.madeFor).toBe(hindi);
+  });
+});

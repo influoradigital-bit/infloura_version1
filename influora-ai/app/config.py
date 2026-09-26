@@ -84,6 +84,11 @@ PROMPT_VERSION = "meera-2026.09.25.9"
 # the goal line in creator Block B, CREATOR_KNOWLEDGE_VERSION, and the write-back's
 # metadata.recommendations (app/recommendations/record.py). Every release rule (.25.1-.25.8: Plan my
 # shoot, photo checks, framing, reel_formats, ASCI) is kept. BRAND prompt unchanged.
+# Still .25.9 (unreleased), owner decisions A-G (2026-09-26): what-to-make intake Q1-Q3, the Made
+# for line, photo Set-up seen, coach options, engaged audience, get_my_audience. Fix round: the shoot
+# budget counts shoot questions only (the intake never counts; after it, at most ONE coach question);
+# a full script's basis is only its Made for line, never above Idea; Made for stays <= 200 chars
+# (shorten the topic) and the Plan line's for whom repeats "a general audience" when none is known.
 #
 # Previously (.25.8):
 # ^ .25.8 = explainer Reel formats (Swapnil 2026-09-26): lookup-only reel_format and

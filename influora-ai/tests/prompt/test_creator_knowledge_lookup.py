@@ -89,8 +89,10 @@ V8_TYPES: tuple[str, ...] = (
 # (2026-09-26) rewrote the Instagram Reels / YouTube Shorts export row's safe zones to the
 # safe-zone config in words: the frame check renders the export rows. Dataset 9's framing rows
 # are lookup only and add nothing here. +336 since the same spec's Phase 4 asks the photo
-# check for layout boxes: 126 chars of reply shape plus the 210-char layout rule.
-FRAME_CHECK_CHARS_AT_COACH_BANK = 38_643 + 361 + 336
+# check for layout boxes: 126 chars of reply shape plus the 210-char layout rule. +185 since
+# owner decision D (2026-09-26) changed the coach bank the photo check may ask from: the
+# product_side follow-up row's line, and can_move / prop_ready's new question and "Decides" words.
+FRAME_CHECK_CHARS_AT_COACH_BANK = 38_643 + 361 + 336 + 185
 
 _COMBINATORS = ("anyOf", "oneOf", "allOf")
 

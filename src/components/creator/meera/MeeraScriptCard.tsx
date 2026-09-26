@@ -9,6 +9,7 @@ import {
   SCRIPT_CARD_ACTION_LABEL,
   SCRIPT_CARD_BEFORE_YOU_SHOOT_LABEL,
   SCRIPT_CARD_CAPTION_LABEL,
+  SCRIPT_CARD_MADE_FOR_LABEL,
   SCRIPT_CARD_ON_SCREEN_LABEL,
   SCRIPT_CARD_PAUSE_LABEL,
   SCRIPT_CARD_PLAN_LABEL,
@@ -174,7 +175,8 @@ function ShotCardPanel({ card, beat, beatIndex, beatLineId, lang, onPrefill }: S
  * finished card. Rendered by `MeeraCopilotChat.tsx` INSTEAD of the plain bubble once a finished
  * assistant turn's text has parsed; the caller keeps the original bubble as a fallback for an
  * `undefined` parse, so this component can assume `script` is already a fully valid, non-partial
- * shape (`setup`, `successLooksLike` and `followUp` are the only fields allowed to be absent).
+ * shape (`madeFor`, `setup`, `successLooksLike` and `followUp` are the only fields allowed to be
+ * absent).
  *
  * Creator tokens only (`border-border`, `bg-card`, `bg-muted`, `text-primary`) — same rule
  * `CreatorToolResultRenderer.tsx` documents for the other creator-side cards. No `--meera-stage`
@@ -243,6 +245,15 @@ export function MeeraScriptCard({
       data-testid="meera-script-card"
       className={cn('space-y-3 rounded-xl border border-border bg-card p-3', className)}
     >
+      {/* Made for (owner decision B): the basis the script was written for, first on the card.
+          Plain text only — a React text node, never markdown or HTML. */}
+      {script.madeFor ? (
+        <p data-testid="script-card-made-for" className="text-xs text-muted-foreground break-words">
+          <span className="font-medium">{pickLang(language, SCRIPT_CARD_MADE_FOR_LABEL)}: </span>
+          {script.madeFor}
+        </p>
+      ) : null}
+
       <p data-testid="script-card-idea" className="text-sm font-semibold break-words">
         {script.idea}
       </p>

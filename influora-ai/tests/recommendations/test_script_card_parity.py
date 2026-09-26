@@ -15,6 +15,10 @@ A SCRIPT_CARD recommendation is recorded only for a reply the chat renders as a 
   than beats, a Hindi reply and the refusals, each with the verdict AND every card field the
   REAL TypeScript parser returned. `src/lib/meera-result-cards.shot-cards.test.ts` runs the same
   cases through the TS parser itself, so the two sides are pinned to one set of values.
+- `made_for_cases` (owner decision B, 2026-09-26): the optional `Made for:` line right after
+  `Idea:` -- present, absent, Hindi, at and over the 200 code point cap (ASCII and astral), empty,
+  misplaced and doubled -- each with the verdict AND the `madeFor` value the REAL TypeScript
+  parser returned (bundled with esbuild, run under node).
 
 A text the TS parser rejects must produce no recommendation -- the last test pins that through
 `build_recommendations`, the function the write-back calls.
@@ -30,7 +34,12 @@ from pathlib import Path
 import pytest
 
 from app.recommendations.record import build_recommendations
-from app.recommendations.script_card import SHOT_CARD_KEYS, ShotCard, parse_meera_script
+from app.recommendations.script_card import (
+    MADE_FOR_MAX_CHARS,
+    SHOT_CARD_KEYS,
+    ShotCard,
+    parse_meera_script,
+)
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "meera_scripts.json"
 PERSONA = Path(__file__).resolve().parents[2] / "app" / "prompt" / "creator_persona.py"
@@ -43,7 +52,11 @@ def _fixture() -> dict:
 
 def _all_cases() -> list[dict]:
     data = _fixture()
-    return data["cases"] + data["edge_cases"] + data["shot_card_cases"]
+    return data["cases"] + data["edge_cases"] + data["shot_card_cases"] + data["made_for_cases"]
+
+
+def _made_for_cases() -> list[dict]:
+    return _fixture()["made_for_cases"]
 
 
 def _shot_card_cases() -> list[dict]:
@@ -160,6 +173,8 @@ def test_a_script_written_exactly_to_the_persona_layout_is_a_card():
     text = "\n".join(
         [
             "Idea: a short title.",
+            "Made for: your followers (from the audience line) \u00b7 Topic: their topic (where it "
+            "came from) \u00b7 Goal: their goal",
             "Plan: for whom; the one feeling; the goal; 20 seconds, vertical 9:16; "
             "Before-After-Bridge (BAB); The mistakes that are quietly ruining your [outcome].",
             "Action: what they do on camera while they speak.",
@@ -176,6 +191,7 @@ def test_a_script_written_exactly_to_the_persona_layout_is_a_card():
     )
     parsed = parse_meera_script(text)
     assert parsed is not None
+    assert parsed.made_for is not None and parsed.made_for.startswith("your followers")
     assert parsed.setup == "where you sit and the light; where the phone goes; the settings; one spot."
     assert parsed.beats[0].stress == "<the one phrase to stress>"
     items = build_recommendations(text, [])
@@ -194,6 +210,46 @@ def test_a_script_written_exactly_to_the_persona_layout_is_a_card():
             "festival": None,
         }
     ]
+
+
+# --- Made for (owner decision B, 2026-09-26) ---------------------------------------------------
+
+
+@pytest.mark.parametrize("case", _made_for_cases(), ids=lambda c: c["name"])
+def test_every_made_for_value_matches_the_typescript_parser(case):
+    """Verdict and value: what the REAL TS parser returned for this text (null = no madeFor)."""
+    parsed = parse_meera_script(case["text"])
+    assert (parsed is not None) == (case["expected"] == "card"), case["name"]
+    assert (parsed.made_for if parsed is not None else None) == case["made_for"], case["name"]
+
+
+def test_the_made_for_fixture_is_not_vacuous():
+    """Kept values, ignored values and refusals all occur, and the cap cases sit on the cap."""
+    cases = {c["name"]: c for c in _made_for_cases()}
+    kept = [c for c in cases.values() if c["made_for"]]
+    ignored = [c for c in cases.values() if c["expected"] == "card" and c["made_for"] is None]
+    refused = [c for c in cases.values() if c["expected"] == "none"]
+    assert len(kept) >= 5 and len(ignored) >= 4 and len(refused) >= 3
+    assert len(cases["made_for_at_the_200_cap"]["made_for"]) == MADE_FOR_MAX_CHARS == 200
+    assert len(cases["made_for_astral_at_the_cap"]["made_for"]) == MADE_FOR_MAX_CHARS
+    assert cases["made_for_absent_old_reply"]["made_for"] is None
+    assert "\u0906" in cases["made_for_hindi_reply"]["made_for"]
+
+
+def test_made_for_changes_nothing_else_on_the_card():
+    """The same reply with and without the line is the same card, apart from `made_for`; an old
+    reply without it parses exactly as before, and the write-back records one SCRIPT_CARD for
+    each with the same fields."""
+    cases = {c["name"]: c["text"] for c in _made_for_cases()}
+    with_line = parse_meera_script(cases["made_for_present_after_idea"])
+    without = parse_meera_script(cases["made_for_absent_old_reply"])
+    assert with_line.made_for.startswith("your followers - mostly women")
+    assert without.made_for is None
+    assert dataclasses.replace(with_line, made_for=None) == without
+    for name in ("made_for_over_long_is_ignored_not_refused", "made_for_empty_is_ignored_not_refused"):
+        assert parse_meera_script(cases[name]) == without, name
+    recorded = [build_recommendations(cases[n], []) for n in ("made_for_present_after_idea", "made_for_absent_old_reply")]
+    assert recorded[0] == recorded[1] and len(recorded[0]) == 1
 
 
 # --- shot cards (spec v2 Phase 6) ------------------------------------------------------------

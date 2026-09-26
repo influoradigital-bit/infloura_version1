@@ -70,6 +70,26 @@ public class AudienceDemographics {
     @Column(name = "locale_breakdown", columnDefinition = "json")
     private String localeBreakdownJson;
 
+    // Engaged audience (V20260926120000): who engaged with her content this month. Creator-only;
+    // see the migration for the engaged_status codes. Never mapped by the brand-facing route.
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "engaged_age_gender_breakdown", columnDefinition = "json")
+    private String engagedAgeGenderBreakdownJson;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "engaged_country_breakdown", columnDefinition = "json")
+    private String engagedCountryBreakdownJson;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "engaged_city_breakdown", columnDefinition = "json")
+    private String engagedCityBreakdownJson;
+
+    @Column(name = "engaged_status", length = 20)
+    private String engagedStatus;
+
+    @Column(name = "engaged_fetched_at", columnDefinition = "DATETIME(6)")
+    private Instant engagedFetchedAt;
+
     @Column(name = "data_source", nullable = false, length = 20)
     private String dataSource;
 
@@ -78,6 +98,15 @@ public class AudienceDemographics {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    /** Engaged breakdowns hold Meta's counts. */
+    public static final String ENGAGED_AVAILABLE = "AVAILABLE";
+
+    /** Meta returned nothing: under 100 engagements this month. A normal state, not an error. */
+    public static final String ENGAGED_BELOW_THRESHOLD = "BELOW_THRESHOLD";
+
+    /** The engaged call failed; the follower breakdowns on the same row are still good. */
+    public static final String ENGAGED_FETCH_FAILED = "FETCH_FAILED";
 
     protected AudienceDemographics() {}
 
@@ -111,6 +140,27 @@ public class AudienceDemographics {
 
     public String getLocaleBreakdownJson() {
         return localeBreakdownJson;
+    }
+
+    public String getEngagedAgeGenderBreakdownJson() {
+        return engagedAgeGenderBreakdownJson;
+    }
+
+    public String getEngagedCountryBreakdownJson() {
+        return engagedCountryBreakdownJson;
+    }
+
+    public String getEngagedCityBreakdownJson() {
+        return engagedCityBreakdownJson;
+    }
+
+    /** {@link #ENGAGED_AVAILABLE}, {@link #ENGAGED_BELOW_THRESHOLD}, {@link #ENGAGED_FETCH_FAILED}, or null (never asked). */
+    public String getEngagedStatus() {
+        return engagedStatus;
+    }
+
+    public Instant getEngagedFetchedAt() {
+        return engagedFetchedAt;
     }
 
     public String getDataSource() {
@@ -169,6 +219,31 @@ public class AudienceDemographics {
 
         public Builder localeBreakdownJson(String localeBreakdownJson) {
             d.localeBreakdownJson = localeBreakdownJson;
+            return this;
+        }
+
+        public Builder engagedAgeGenderBreakdownJson(String json) {
+            d.engagedAgeGenderBreakdownJson = json;
+            return this;
+        }
+
+        public Builder engagedCountryBreakdownJson(String json) {
+            d.engagedCountryBreakdownJson = json;
+            return this;
+        }
+
+        public Builder engagedCityBreakdownJson(String json) {
+            d.engagedCityBreakdownJson = json;
+            return this;
+        }
+
+        public Builder engagedStatus(String engagedStatus) {
+            d.engagedStatus = engagedStatus;
+            return this;
+        }
+
+        public Builder engagedFetchedAt(Instant engagedFetchedAt) {
+            d.engagedFetchedAt = engagedFetchedAt;
             return this;
         }
 

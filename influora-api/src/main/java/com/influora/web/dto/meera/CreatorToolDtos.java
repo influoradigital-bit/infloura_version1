@@ -433,4 +433,46 @@ public final class CreatorToolDtos {
             @JsonProperty("what_works") List<WorkingPattern> whatWorks,
             @JsonProperty("followed_recommendations") List<FollowedGroup> followedRecommendations,
             @JsonProperty("note") String note) {}
+
+    // ---------------------------------------------------------------------------------------
+    // get_my_audience (Swapnil 2026-09-26) -- the creator's OWN audience: followers and who
+    // engaged this month. Creator-only: served from /internal/meera/creator/get_my_audience and
+    // from no brand route or DTO.
+    // ---------------------------------------------------------------------------------------
+
+    /** One age band and its integer share of the age/gender total. */
+    public record AudienceAgeShare(@JsonProperty("band") String band, @JsonProperty("pct") int pct) {}
+
+    /** "women" / "men" / "unknown" and its integer share of the age/gender total. */
+    public record AudienceGenderShare(@JsonProperty("label") String label, @JsonProperty("pct") int pct) {}
+
+    /** A country (Meta's ISO code) and its integer share of the country total. */
+    public record AudienceCountryShare(@JsonProperty("code") String code, @JsonProperty("pct") int pct) {}
+
+    /**
+     * One audience (followers, or engaged this month). ALWAYS includes every key: {@code reason}
+     * and {@code as_of} are sent as {@code null} rather than dropped, and the four lists are
+     * {@code []} when there is nothing, never null. {@code available=false} always carries the
+     * exact reason and no figures at all.
+     */
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    public record AudienceSection(
+            @JsonProperty("available") boolean available,
+            @JsonProperty("reason") String reason,
+            @JsonProperty("as_of") String asOf,
+            @JsonProperty("age") List<AudienceAgeShare> age,
+            @JsonProperty("gender") List<AudienceGenderShare> gender,
+            @JsonProperty("top_cities") List<String> topCities,
+            @JsonProperty("top_countries") List<AudienceCountryShare> topCountries) {
+
+        public static AudienceSection notAvailable(String reason) {
+            return new AudienceSection(false, reason, null, List.of(), List.of(), List.of(), List.of());
+        }
+    }
+
+    /** {@code get_my_audience}'s result: both audiences, each available or with its reason. */
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    public record GetMyAudienceResult(
+            @JsonProperty("followers") AudienceSection followers,
+            @JsonProperty("engaged_this_month") AudienceSection engagedThisMonth) {}
 }

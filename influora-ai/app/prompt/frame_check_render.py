@@ -317,6 +317,102 @@ def render_what_i_see(scene: dict[str, str] | None, lang: str) -> str:
     return line
 
 
+# --- setup_seen (owner decision C, 2026-09-26) -------------------------------------------------
+#
+# What the photo showed about the SET-UP, as words, so a later chat turn can use it like a coach
+# answer for the shot card's creator facts (light and its side, place, phone height, product
+# side). Written by code only, from the validated scene enums and the validated product box --
+# never a string the model wrote -- and never a coordinate: the product box becomes one of three
+# words and the box itself stays in `layout`, which Java strips before the chat row is stored.
+
+SETUP_SEEN_KEYS: tuple[str, ...] = ("light", "light_side", "place", "phone_height", "product_side")
+PRODUCT_SIDES: tuple[str, ...] = ("left", "centre", "right")
+# A product box whose centre is within this share of the photo's middle is "centre".
+PRODUCT_CENTRE_TOLERANCE = 0.08
+# The scene fields copied into setup_seen as they are (validated enum words; "unknown" -> None).
+_SETUP_SEEN_SCENE_FIELDS: tuple[str, ...] = ("light", "light_side", "place", "phone_height")
+
+
+def product_side_from_box(box: Any) -> str | None:
+    """The product's side in the CREATOR's own left/right, from a validated box in shares of the
+    UNMIRRORED photo as sent. The creator faces the phone, so the right half of the photo is
+    their left (the rule the frame check's steps and the persona already use): a box centre
+    more than `PRODUCT_CENTRE_TOLERANCE` right of the middle is "left", more than that left of it
+    is "right", anything within it is "centre". None for anything that is not a box."""
+    if not isinstance(box, dict):
+        return None
+    x, w = box.get("x"), box.get("w")
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (x, w)):
+        return None
+    offset = round(x + w / 2 - 0.5, 6)
+    if abs(offset) <= PRODUCT_CENTRE_TOLERANCE:
+        return "centre"
+    return "left" if offset > 0 else "right"
+
+
+def build_setup_seen(scene: dict[str, str] | None, product_box: Any = None) -> dict[str, str | None] | None:
+    """The code-written `setup_seen` object: {light, light_side, place, phone_height,
+    product_side}, each a word or None (unknown). Only a normalized scene's enum values are read
+    (an "unknown" or a value outside `SCENE_VALUES` is None), and the product side only from a
+    validated box. None when every field is None, so a body without it is the older body."""
+    out: dict[str, str | None] = {key: None for key in SETUP_SEEN_KEYS}
+    if isinstance(scene, dict) and scene.get("usable", "yes") == "yes":
+        for field in _SETUP_SEEN_SCENE_FIELDS:
+            value = scene.get(field)
+            if isinstance(value, str) and value != "unknown" and value in SCENE_VALUES[field]:
+                out[field] = value
+    out["product_side"] = product_side_from_box(product_box)
+    if all(v is None for v in out.values()):
+        return None
+    return out
+
+
+_SETUP_SEEN_LIGHT_WORDS: dict[str, str] = {
+    "window": "window light", "sun": "direct sun", "shade": "open shade",
+    "ring_light": "a ring light", "lamp": "a lamp", "tube_light": "a tube light",
+    "ceiling_light": "a ceiling light", "mixed": "mixed lights", "low_light": "low light",
+}
+_SETUP_SEEN_SIDE_WORDS: dict[str, str] = {
+    "your_left": "from your left", "your_right": "from your right",
+    "in_front": "from in front of you", "behind_you": "from behind you", "above": "from above",
+}
+_SETUP_SEEN_PLACE_WORDS: dict[str, str] = {
+    "living_room": "living room", "other_indoor": "indoors", "other_outdoor": "outdoors",
+}
+_SETUP_SEEN_HEIGHT_WORDS: dict[str, str] = {
+    "eye_level": "at eye level", "below_eyes": "below your eyes", "above_eyes": "above your eyes",
+}
+_SETUP_SEEN_PRODUCT_WORDS: dict[str, str] = {
+    "left": "on your left", "centre": "in the centre", "right": "on your right",
+}
+
+
+def render_setup_seen_line(setup_seen: Any) -> str | None:
+    """The reference "Set-up seen: ..." line for a `setup_seen` object: English words only, in
+    the key order, unknown parts left out, left and right the creator's own. For example
+    "Set-up seen: light: window light from your left; place: bedroom; phone: below your eyes;
+    product: on your right". None when nothing is known."""
+    if not isinstance(setup_seen, dict):
+        return None
+    parts: list[str] = []
+    light = _SETUP_SEEN_LIGHT_WORDS.get(setup_seen.get("light") or "")
+    side = _SETUP_SEEN_SIDE_WORDS.get(setup_seen.get("light_side") or "")
+    if light or side:
+        parts.append("light: " + " ".join(p for p in (light or "light", side) if p))
+    place = setup_seen.get("place")
+    if isinstance(place, str) and place in SCENE_VALUES["place"] and place != "unknown":
+        parts.append("place: " + _SETUP_SEEN_PLACE_WORDS.get(place, place.replace("_", " ")))
+    height = _SETUP_SEEN_HEIGHT_WORDS.get(setup_seen.get("phone_height") or "")
+    if height:
+        parts.append("phone: " + height)
+    product = _SETUP_SEEN_PRODUCT_WORDS.get(setup_seen.get("product_side") or "")
+    if product:
+        parts.append("product: " + product)
+    if not parts:
+        return None
+    return "Set-up seen: " + "; ".join(parts)
+
+
 # --- ok / cant_tell ----------------------------------------------------------------------------
 
 # What is already working. Friendly, no numbers, no growth words, nothing about the person
@@ -1307,18 +1403,24 @@ __all__ = [
     "MAX_STEP_CHARS",
     "OIS_PREFIX",
     "OK_LINES",
+    "PRODUCT_CENTRE_TOLERANCE",
+    "PRODUCT_SIDES",
     "PRO_MODE_PREFIX",
     "RenderedStep",
     "SCENE_VALUES",
+    "SETUP_SEEN_KEYS",
     "STEP_KINDS",
     "STEP_TEXT_TYPES",
     "USABLE_UNCLEAR",
+    "build_setup_seen",
     "load_creator_step_labels",
     "load_creator_step_lines",
     "normalize_lang",
     "normalize_scene",
     "phone_features_named",
+    "product_side_from_box",
     "render_lines",
+    "render_setup_seen_line",
     "render_step",
     "render_step_parts",
     "render_what_i_see",

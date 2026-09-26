@@ -724,7 +724,7 @@ export function MeeraCopilotChat({
       try {
         const outcome = await meeraApi.checkFrame(args.blob, args.shot?.label.trim() || undefined, 'creator', {
           shotContext: shotContextFor(args.shot),
-          answers: args.answers.map((a) => ({ id: a.ask.id, option: a.option })),
+          answers: args.answers.map((a) => ({ id: a.ask.id, option: a.option, label: a.ask.options[a.option]?.en })),
           ...(conversation ? { conversationId: conversation } : {}),
           idempotencyKey: newIdempotencyKey('photo-check'),
           userLine: args.userLine,
