@@ -1,0 +1,2 @@
+# Byte-exact test fixtures: the tests hash them, so git must never convert their line endings.
+influora-ai/tests/prompt/fixtures/*.txt -text
