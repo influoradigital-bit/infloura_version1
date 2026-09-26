@@ -16,6 +16,14 @@ name: Publish Images (GHCR)
 on:
   workflow_dispatch:
     inputs:
+      # Side-environment builds (e.g. the Hostinger IP box). When set, every image is pushed as
+      # :<image_tag> and :<image_tag>-<sha> ONLY -- :latest and the bare :<sha> are left alone,
+      # so a web bundle baked for another URL can never replace the one production pulls.
+      # Empty (the default, and always on push) keeps the original :latest + :<sha> tags.
+      image_tag:
+        description: 'Custom tag for a side environment (leave empty for :latest). When set, :latest is NOT touched.'
+        type: string
+        default: ''
       publish_web:
         description: 'Also build+push the frontend (web) image?'
         type: boolean
@@ -105,8 +113,8 @@ jobs:
           context: ./influora-api
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-api:latest
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-api:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-api:${{ inputs.image_tag || 'latest' }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-api:${{ inputs.image_tag && format('{0}-{1}', inputs.image_tag, github.sha) || github.sha }}
 
   ai:
     name: Build & push influora-ai
@@ -126,8 +134,8 @@ jobs:
           context: ./influora-ai
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-ai:latest
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-ai:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-ai:${{ inputs.image_tag || 'latest' }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-ai:${{ inputs.image_tag && format('{0}-{1}', inputs.image_tag, github.sha) || github.sha }}
 
   web:
     name: Build & push frontend (URL-baked)
@@ -252,7 +260,7 @@ jobs:
             VITE_PAYMENTS_IN_ENABLED=${{ (inputs.vite_payments_in_enabled != 'default' && inputs.vite_payments_in_enabled) || vars.PAYMENTS_IN_ENABLED || 'true' }}
             VITE_PAYOUTS_ENABLED=${{ (inputs.vite_payouts_enabled != 'default' && inputs.vite_payouts_enabled) || vars.PAYOUTS_ENABLED || 'false' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-web:latest
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-web:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-web:${{ inputs.image_tag || 'latest' }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/influora-web:${{ inputs.image_tag && format('{0}-{1}', inputs.image_tag, github.sha) || github.sha }}
 
 # retrigger 2026-07-25 (2): first re-run was orphaned in the queue by the GitHub Actions outage

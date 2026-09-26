@@ -1,0 +1,178 @@
+name: influora-ai
+
+# Influora on the Hostinger VPS 1844961 -- IP + PORT test environment (no domain, no TLS).
+# Serves on http://200.141.1.6:8090 (single-origin: Caddy path-routes /api, /meera, else SPA).
+# dev profile, fresh database. NOT production -- production is the Utho box (influora.in).
+#
+# Why :8090 and not :80/:443: on this VPS host port 80 belongs to the `canbuy` project's Caddy
+# and 443 to the `orb` project's Caddy. Neither may be touched, so this stack publishes one free
+# port. That port must also be allowed in Hostinger firewall 332848.
+#
+# Images: built by .github/workflows/publish-images.yml via workflow_dispatch with
+#   image_tag=hostinger-ip
+#   vite_api_base_url=http://200.141.1.6:8090/api/v1
+#   vite_meera_stream_url=http://200.141.1.6:8090/meera
+# which pushes :hostinger-ip (and :hostinger-ip-<sha>) and leaves :latest alone -- the web
+# bundle bakes these URLs in, so it must never be the :latest production pulls.
+#
+# SECRETS: every ${VAR} is supplied via the Hostinger MCP `environment` field (NEVER committed).
+# Deploy:   VPS_createNewProjectV1(1844961, "influora-ai", <this file>, <env>)
+# Redeploy: VPS_updateProjectV1(1844961, "influora-ai")  -- preserves the mysql volume.
+
+configs:
+  caddyfile:
+    content: |
+      {
+        auto_https off
+      }
+      :8090 {
+        handle /api/* {
+          reverse_proxy influora-api:8080 {
+            header_up X-Forwarded-Proto http
+          }
+        }
+        handle_path /meera/* {
+          reverse_proxy influora-ai:8000 {
+            flush_interval -1
+          }
+        }
+        handle {
+          reverse_proxy frontend:80
+        }
+      }
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "8090:8090"
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    depends_on:
+      - frontend
+      - influora-api
+      - influora-ai
+
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: influora
+      MYSQL_USER: influora_app
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - influora_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+  influora-api:
+    image: ghcr.io/influoradigital-bit/influora-api:hostinger-ip
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      APP_ENV: dev
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/influora?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: influora_app
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      INFLUORA_API_PUBLIC_URL: http://200.141.1.6:8090/api/v1
+      INFLUORA_WEB_BASE_URL: http://200.141.1.6:8090
+      CORS_ALLOWED_ORIGINS: http://200.141.1.6:8090
+      SERVER_FORWARD_HEADERS_STRATEGY: native
+      INTERNAL_REQUEST_HMAC_SECRET: ${INTERNAL_HMAC_KEY}
+      INTERNAL_SERVICE_TOKEN_SECRET: ${SERVICE_TOKEN_SIGNING_KEY}
+      BRAND_SAFETY_AI_BASE_URL: http://influora-ai:8000
+      TRENDSPARK_AI_BASE_URL: http://influora-ai:8000
+      MEERA_CHAT_AI_BASE_URL: http://influora-ai:8000
+      ANALYZE_SITE_AI_BASE_URL: http://influora-ai:8000
+      CREATOR_COPILOT_AI_BASE_URL: http://influora-ai:8000
+      VOICE_AI_BASE_URL: http://influora-ai:8000
+      TREND_INGEST_ENABLED: "false"
+      # Browser-reachable SSE URL, same-origin through Caddy's /meera/* route.
+      INFLUORA_MEERA_STREAM_PUBLICCHATURL: http://200.141.1.6:8090/meera/chat
+      CLAMAV_HOST: ""
+      # TEST ONLY: admin login without MFA enrollment. Re-enable for production.
+      INFLUORA_ADMIN_MFAENFORCEONLOGIN: "false"
+      MSG91_ENABLED: "true"
+      MSG91_AUTH_KEY: ${MSG91_AUTH_KEY}
+      MSG91_SENDER_ID: ${MSG91_SENDER_ID}
+      MSG91_ROUTE: "4"
+      MSG91_WIDGET_ID: ${MSG91_WIDGET_ID}
+      MSG91_TOKEN_AUTH: ${MSG91_TOKEN_AUTH}
+      MSG91_EMAIL_DOMAIN: ${MSG91_EMAIL_DOMAIN}
+      MSG91_FROM_EMAIL: ${MSG91_FROM_EMAIL}
+      MSG91_FROM_NAME: Influora
+      MSG91_EMAIL_TEMPLATE_ID: ${MSG91_EMAIL_TEMPLATE_ID}
+      MSG91_OTP_TEMPLATE_ID: ${MSG91_OTP_TEMPLATE_ID}
+      MSG91_EMAIL_COMPANY_NAME: ${MSG91_EMAIL_COMPANY_NAME}
+      MSG91_EMAIL_TEMPLATE_OTP_VARIABLE: otp
+      MSG91_EMAIL_TRANSACTIONAL_LINK_VARIABLE: magic_link
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: "587"
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME}
+      R2_ENDPOINT: ${R2_ENDPOINT}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_started }
+
+  influora-ai:
+    image: ghcr.io/influoradigital-bit/influora-ai:hostinger-ip
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      APP_ENV: dev
+      LOG_LEVEL: INFO
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      SARVAM_API_KEY: ${SARVAM_API_KEY}
+      SPRING_JWKS_URL: http://influora-api:8080/api/v1/.well-known/jwks.json
+      SPRING_INTERNAL_BASE_URL: http://influora-api:8080/api/v1
+      # MUST byte-match the Java side.
+      INTERNAL_HMAC_KEY: ${INTERNAL_HMAC_KEY}
+      SERVICE_TOKEN_SIGNING_KEY: ${SERVICE_TOKEN_SIGNING_KEY}
+      MEERA_ALLOWED_ORIGINS: http://200.141.1.6:8090
+      REDIS_URL: redis://redis:6379
+      # Cost guard on a public test box.
+      AI_DAILY_SPEND_CEILING_USD: "5.0"
+      AI_SPEND_KILL_SWITCH: "false"
+      MEERA_CHAT_MAX_TOKENS: "1536"
+      MEERA_CHAT_MAX_TOKENS_RETRY: "2048"
+    depends_on:
+      - influora-api
+
+  frontend:
+    image: ghcr.io/influoradigital-bit/influora-web:hostinger-ip
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  influora_mysql_data:
