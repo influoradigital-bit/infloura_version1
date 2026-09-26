@@ -1,13 +1,14 @@
 /**
  * MeeraScriptCard: renders every field of the rich-format `ParsedMeeraScript`, and Copy writes the
- * exact original reply text (never a re-serialized version of the parsed fields).
+ * exact original reply text (never a re-serialized version of the parsed fields), minus only the
+ * machine `Shot cards:` block.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MeeraScriptCard } from './MeeraScriptCard';
-import type { ParsedMeeraScript } from '@/lib/meera-result-cards';
+import { SHOT_CARD_KEYS, type ParsedMeeraScript, type ShotCard } from '@/lib/meera-result-cards';
 
 const SCRIPT: ParsedMeeraScript = {
   idea: '3 saffron mistakes to avoid',
@@ -125,6 +126,42 @@ describe('MeeraScriptCard', () => {
     expect(screen.getByTestId('script-card-copy')).toHaveAccessibleName('Copy');
   });
 
+  it.each([
+    ['LF', '\n'],
+    ['CRLF', '\r\n'],
+  ])('Copy leaves out the machine "Shot cards:" block and keeps every other byte (%s)', async (_name, eol) => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+    const lines = RAW_TEXT.split('\n');
+    const captionAt = lines.findIndex((line) => line.startsWith('Caption:'));
+    const withCards = [
+      ...lines.slice(0, captionAt),
+      '**Shot cards:**',
+      'S1: size=MCU; height=eye; distance=0.8-1 m; place=?; light=window; stand=left; headroom=small; eyes=lens; background=plain wall; space=right; text=top; prop=?; move=still',
+      'S2: size=OVERHEAD; height=overhead; distance=?; place=?; light=?; stand=?; headroom=?; eyes=?; background=?; space=none; text=none; prop=?; move=still',
+      ...lines.slice(captionAt),
+    ].join(eol);
+
+    render(<MeeraScriptCard script={SCRIPT} rawText={withCards} language="en-IN" />);
+    await user.click(screen.getByTestId('script-card-copy'));
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith(lines.join(eol));
+  });
+
+  it('Copy writes the reply unchanged when it does not parse as a script', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+    const notAScript = 'Shot cards:\nS1: size=MCU\nCaption: hello';
+    render(<MeeraScriptCard script={SCRIPT} rawText={notAScript} language="en-IN" />);
+    await user.click(screen.getByTestId('script-card-copy'));
+    expect(writeText).toHaveBeenCalledWith(notAScript);
+  });
+
   it('has no Save button — this phase has no backend store to save to', () => {
     render(<MeeraScriptCard script={SCRIPT} rawText={RAW_TEXT} language="en-IN" />);
     expect(screen.queryByText(/save/i)).toBeNull();
@@ -228,5 +265,181 @@ describe('MeeraScriptCard — "Check my set-up" per shot (photo check inside Mee
       <MeeraScriptCard script={SCRIPT} rawText={RAW_TEXT} language="en-IN" onCheckShot={() => {}} />,
     );
     expect(container.textContent ?? '').not.toMatch(/co-?pilot/i);
+  });
+});
+
+describe('MeeraScriptCard — shot card per beat (spec v2 Phase 6)', () => {
+  const FULL_CARD: ShotCard = {
+    size: 'MCU',
+    height: 'eye',
+    distance: '0.8-1 m',
+    place: 'Bedroom desk',
+    light: 'window-left',
+    stand: 'centre',
+    headroom: 'small',
+    eyes: 'lens',
+    background: 'plain wall',
+    space: 'right',
+    text: 'top',
+    prop: 'right-hand',
+    move: 'still',
+  };
+  const PARTIAL_CARD: ShotCard = { ...FULL_CARD, height: '?', move: '?' };
+  const WITH_CARDS: ParsedMeeraScript = {
+    ...SCRIPT,
+    beats: [SCRIPT.beats[0], { ...SCRIPT.beats[1], card: PARTIAL_CARD }, { ...SCRIPT.beats[2], card: FULL_CARD }],
+  };
+
+  it('renders no shot card for a reply without the Shot cards block (older replies)', () => {
+    render(<MeeraScriptCard script={SCRIPT} rawText={RAW_TEXT} language="en-IN" onPrefill={() => {}} />);
+    expect(screen.queryByTestId('script-card-shot-card')).toBeNull();
+    expect(screen.queryByRole('button', { name: /shot card/i })).toBeNull();
+  });
+
+  it('gives only the beats with a card a collapsed disclosure button', async () => {
+    const user = userEvent.setup();
+    render(<MeeraScriptCard script={WITH_CARDS} rawText={RAW_TEXT} language="en-IN" />);
+    const beats = screen.getAllByTestId('script-card-beat');
+    expect(within(beats[0]).queryByTestId('script-card-shot-card')).toBeNull();
+
+    const toggle = within(beats[2]).getByTestId('script-card-shot-card-toggle');
+    const panel = within(beats[2]).getByTestId('script-card-shot-card-panel');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveAttribute('aria-controls', panel.id);
+    expect(toggle.className).toContain('min-h-11');
+    expect(panel).not.toBeVisible();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(panel).toBeVisible();
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(panel).not.toBeVisible();
+  });
+
+  it('shows the 13 fields in plain words, in the wire order', async () => {
+    const user = userEvent.setup();
+    render(<MeeraScriptCard script={WITH_CARDS} rawText={RAW_TEXT} language="en-IN" />);
+    const beat = screen.getAllByTestId('script-card-beat')[2];
+    await user.click(within(beat).getByTestId('script-card-shot-card-toggle'));
+
+    const rows = within(beat).getAllByTestId(/^shot-card-field-/);
+    expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual(
+      SHOT_CARD_KEYS.map((key) => `shot-card-field-${key}`),
+    );
+    const text = (key: string) => within(beat).getByTestId(`shot-card-field-${key}`).textContent;
+    expect(text('size')).toBe('SizeMedium close-up (chest up)');
+    expect(text('height')).toBe('Camera heighteye level');
+    expect(text('light')).toBe('Lightwindow, your left');
+    expect(text('prop')).toBe('Propin your right hand');
+    expect(text('place')).toBe('WhereBedroom desk');
+    expect(text('distance')).toBe('Distance0.8-1 m');
+    // A fully set card has nothing to ask.
+    expect(within(beat).queryByTestId('shot-card-not-set')).toBeNull();
+    expect(within(beat).getByTestId('script-card-shot-card-toggle')).toHaveTextContent(/^Shot card$/);
+  });
+
+  it('shows "?" as "Not set yet" in words with a dashed border, and counts it on the button', async () => {
+    const user = userEvent.setup();
+    render(<MeeraScriptCard script={WITH_CARDS} rawText={RAW_TEXT} language="en-IN" />);
+    const beat = screen.getAllByTestId('script-card-beat')[1];
+    const toggle = within(beat).getByTestId('script-card-shot-card-toggle');
+    expect(toggle).toHaveTextContent('Shot card · 2 not set yet');
+    await user.click(toggle);
+
+    const notSet = within(beat).getAllByTestId('shot-card-not-set');
+    expect(notSet).toHaveLength(2);
+    for (const badge of notSet) {
+      expect(badge).toHaveTextContent('Not set yet');
+      expect(badge.className).toContain('border-dashed');
+    }
+    expect(within(beat).getByTestId('shot-card-field-height')).toHaveTextContent('Camera heightNot set yet');
+    expect(within(beat).getByTestId('shot-card-field-move')).toHaveTextContent('MovementNot set yet');
+    // Never a guessed value in its place.
+    expect(within(beat).getByTestId('shot-card-field-move')).not.toHaveTextContent(/still|sitting|standing/);
+  });
+
+  it('Ask Meera only prefills the message box with the missing fields, and sends nothing', async () => {
+    const user = userEvent.setup();
+    const onPrefill = vi.fn();
+    const onCheckShot = vi.fn();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    render(
+      <MeeraScriptCard
+        script={WITH_CARDS}
+        rawText={RAW_TEXT}
+        language="en-IN"
+        onPrefill={onPrefill}
+        onCheckShot={onCheckShot}
+      />,
+    );
+    const beats = screen.getAllByTestId('script-card-beat');
+    await user.click(within(beats[1]).getByTestId('script-card-shot-card-toggle'));
+    const ask = within(beats[1]).getByRole('button', { name: 'Ask Meera' });
+    expect(ask.className).toContain('min-h-11');
+    await user.click(ask);
+
+    expect(onPrefill).toHaveBeenCalledTimes(1);
+    expect(onPrefill).toHaveBeenCalledWith(
+      'Shot card for beat 2 (10-20s): ask me what you need to fill in camera height, movement.',
+    );
+    expect(onCheckShot).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    // A fully set card has no Ask button.
+    await user.click(within(beats[2]).getByTestId('script-card-shot-card-toggle'));
+    expect(within(beats[2]).queryByTestId('script-card-shot-card-ask')).toBeNull();
+  });
+
+  it('has no Ask button when the chat passes no onPrefill', async () => {
+    const user = userEvent.setup();
+    render(<MeeraScriptCard script={WITH_CARDS} rawText={RAW_TEXT} language="en-IN" />);
+    const beat = screen.getAllByTestId('script-card-beat')[1];
+    await user.click(within(beat).getByTestId('script-card-shot-card-toggle'));
+    expect(within(beat).queryByTestId('script-card-shot-card-ask')).toBeNull();
+  });
+
+  it('keeps "Check my set-up" on a beat with a card, still opening that beat', async () => {
+    const user = userEvent.setup();
+    const onCheckShot = vi.fn();
+    render(<MeeraScriptCard script={WITH_CARDS} rawText={RAW_TEXT} language="en-IN" onCheckShot={onCheckShot} />);
+    const beat = screen.getAllByTestId('script-card-beat')[2];
+    await user.click(within(beat).getByRole('button', { name: 'Check my set-up' }));
+    expect(onCheckShot).toHaveBeenCalledWith(2);
+  });
+
+  it('writes the card in Devanagari for a Hindi creator, enum values never shown raw', async () => {
+    const user = userEvent.setup();
+    const onPrefill = vi.fn();
+    render(<MeeraScriptCard script={WITH_CARDS} rawText={RAW_TEXT} language="hi-IN" onPrefill={onPrefill} />);
+    const beat = screen.getAllByTestId('script-card-beat')[1];
+    const toggle = within(beat).getByTestId('script-card-shot-card-toggle');
+    expect(toggle).toHaveTextContent('शॉट कार्ड · 2 अभी तय नहीं');
+    await user.click(toggle);
+    expect(within(beat).getByTestId('shot-card-field-light')).toHaveTextContent('रोशनीखिड़की, आपकी बाईं ओर');
+    expect(within(beat).getByTestId('shot-card-field-prop')).toHaveTextContent('प्रॉपआपके दाएँ हाथ में');
+    expect(within(beat).getAllByTestId('shot-card-not-set')[0]).toHaveTextContent('अभी तय नहीं');
+    expect(within(beat).getByTestId('script-card-shot-card-panel').textContent).not.toMatch(/window-left|right-hand/);
+
+    await user.click(within(beat).getByRole('button', { name: 'Meera से पूछें' }));
+    expect(onPrefill).toHaveBeenCalledWith(
+      'बीट 2 (10-20s) का शॉट कार्ड: कैमरे की ऊँचाई, मूवमेंट भरने के लिए मुझसे जो जानना है, पूछें।',
+    );
+  });
+
+  it('shows an out-of-contract value as "Not set yet", not as raw text', async () => {
+    const user = userEvent.setup();
+    const odd = { ...FULL_CARD, light: 'candle-up', prop: 'right-shelf' } as unknown as ShotCard;
+    render(
+      <MeeraScriptCard
+        script={{ ...SCRIPT, beats: [{ ...SCRIPT.beats[0], card: odd }, SCRIPT.beats[1], SCRIPT.beats[2]] }}
+        rawText={RAW_TEXT}
+        language="en-IN"
+      />,
+    );
+    const beat = screen.getAllByTestId('script-card-beat')[0];
+    await user.click(within(beat).getByTestId('script-card-shot-card-toggle'));
+    expect(within(beat).getByTestId('shot-card-field-light')).toHaveTextContent('LightNot set yet');
+    expect(within(beat).getByTestId('shot-card-field-prop')).toHaveTextContent('PropNot set yet');
   });
 });

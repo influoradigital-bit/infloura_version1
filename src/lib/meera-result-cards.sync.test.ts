@@ -18,6 +18,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { parseMeeraScript, SHOT_CARD_KEYS } from './meera-result-cards';
+
 // Path relative to THIS test file, not `process.cwd()` — vitest can be invoked from a few
 // different working directories (see `meera-api.creator-tools-in-sync.test.ts`'s `process.cwd()`
 // approach, which assumes the repo root; this one does not need that assumption).
@@ -64,6 +66,9 @@ const REQUIRED_LABELS = [
   'Stress:',
   'Pause:',
   'On screen:',
+  // Optional in the PARSER (spec v2 Phase 6: replies without the block still parse), but the
+  // label must exist in the persona so a model that writes the block is read.
+  'Shot cards:',
 ];
 
 describe('parseMeeraScript labels stay in sync with creator_persona.py', () => {
@@ -72,5 +77,35 @@ describe('parseMeeraScript labels stay in sync with creator_persona.py', () => {
     for (const label of REQUIRED_LABELS) {
       expect(section.includes(label), `expected "${label}" inside the Full script format section`).toBe(true);
     }
+  });
+});
+
+describe("the persona's Shot cards line is the one the parser reads", () => {
+  it('its S1 example line has the 13 keys in the parser order and parses into a card', () => {
+    const section = fullScriptFormatSection();
+    const example = /^\s*(S1: size=.*)$/m.exec(section)?.[1]?.trim();
+    expect(example, "the persona's S1 example line moved or changed shape").toBeTruthy();
+    const keys = example!
+      .slice('S1:'.length)
+      .split(';')
+      .map((pair) => pair.split('=')[0].trim());
+    expect(keys).toEqual([...SHOT_CARD_KEYS]);
+    const script = [
+      'Idea: a short title',
+      'Plan: for whom; the feeling; the goal; 20 seconds',
+      'Action: speak to camera',
+      'Script:',
+      '0-3s. Shot: Close-up - speak. Say: "one". On screen: ONE',
+      '3-6s. Shot: Close-up - speak. Say: "two". On screen: TWO',
+      '6-9s. Shot: Close-up - speak. Say: "three". On screen: THREE',
+      'Shot cards:',
+      example!,
+      'Caption: a caption',
+      'Before you shoot: 1) one 2) two 3) three',
+      'Why this works: a reason',
+    ].join('\n');
+    const card = parseMeeraScript(script)?.beats[0].card;
+    expect(card).toBeDefined();
+    expect(Object.keys(card!)).toEqual([...SHOT_CARD_KEYS]);
   });
 });

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Camera, ChevronLeft, ChevronRight, Loader2, MapPin, PersonStanding, Sun, SwitchCamera, X } from 'lucide-react';
+import { ArrowUpDown, Camera, ChevronLeft, ChevronRight, Loader2, MapPin, PersonStanding, Sun, SwitchCamera, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -9,7 +9,7 @@ import { FramingGuide } from '@/components/creator/shoot-check/FramingGuide';
 import type { ShootCheckShot } from '@/components/creator/shoot-check/ShootCheckPanel';
 import { useShootCheck } from '@/hooks/useShootCheck';
 import { FRAME_CHECK_DISCLOSURE, adviceText, type ShootCheckLang } from '@/lib/shoot-check/advice-copy';
-import type { ShotSize } from '@/lib/shoot-check/beat-to-shot';
+import { CARD_UNKNOWN, parseCardLight, parseCardProp, type ShotCard, type ShotSize } from '@/lib/shoot-check/beat-to-shot';
 import { FRAME_JPEG_QUALITY, MAX_FRAME_WIDTH } from '@/lib/shoot-check/capture-frame';
 import {
   readCameraGrid,
@@ -21,7 +21,18 @@ import {
   type CameraGrid,
 } from '@/lib/shoot-check/guide-prefs';
 import { getSafeZones } from '@/lib/shoot-check/safe-zones';
-import { cleanShotText, propZone, setupChips, shotSizeFor, type ChipKind } from '@/lib/shoot-check/shot-zones';
+import {
+  cleanShotText,
+  clipVisible,
+  propZone,
+  setupChips,
+  shotBands,
+  shotSizeFor,
+  textArea,
+  type CardChipWords,
+  type ChipKind,
+  type TextAreaKind,
+} from '@/lib/shoot-check/shot-zones';
 import { cn } from '@/lib/utils';
 
 /**
@@ -36,8 +47,14 @@ import { cn } from '@/lib/utils';
  * ruling, 2026-09-26). The hook is opened camera-only (`withMic: false`) and muted.
  *
  * Under the preview, the "Set-up for this shot: ..." line is the guide's text version (the SVG is
- * aria-hidden; the preview points at the line with `aria-describedby`), with up to 3 set-up chips.
+ * aria-hidden; the preview points at the line with `aria-describedby`), with the set-up chips.
  * The first time on a device, the safe-zone note shows until the creator taps "Got it".
+ *
+ * Decision 3 (Swapnil, 2026-09-26): while framing a beat, the bottom panel also shows the beat's
+ * "Say:" line and "On screen:" text as plain text (cut by visible characters, so a Devanagari
+ * syllable is never split). The first chip is the shot SIZE (it used to be called "angle"). When
+ * the beat has a shot card, the chips add its camera height, light and place, and the guide draws
+ * the prop zone from the card's prop; a card field that is `?` gets no chip and draws nothing.
  *
  * The camera lives in `CameraSheetBody`, which is rendered only while `open`: closing the sheet
  * unmounts it at once, and the hook's unmount teardown stops the video track, the wake lock and any
@@ -89,6 +106,16 @@ const COPY = {
     suggestedSpot: '(suggested spot)',
     wideAsFull: 'The guide shows a full shot for a wide shot.',
     startingPoint: 'The shot bands are a starting point.',
+    say: 'Say:',
+    onScreen: 'On screen:',
+    camera: 'Camera:',
+    chipLabels: {
+      size: 'Shot size',
+      height: 'Camera height',
+      light: 'Light',
+      where: 'Place',
+      sit_or_walk: 'Sit or walk',
+    },
     sizes: {
       ECU: 'Extreme close-up',
       CU: 'Close-up',
@@ -98,6 +125,30 @@ const COPY = {
       FS: 'Full shot',
       LS: 'Wide shot',
       OVERHEAD: 'Overhead, hands',
+    },
+    heights: {
+      eye: 'Eye level',
+      chest: 'Chest height',
+      above: 'Above eye level',
+      below: 'Below eye level',
+      overhead: 'Overhead',
+    },
+    lightKinds: {
+      window: 'Window',
+      sun: 'Sunlight',
+      shade: 'Shade',
+      lamp: 'Lamp',
+      ring_light: 'Ring light',
+      tube_light: 'Tube light',
+      mixed: 'Mixed light',
+    },
+    lightSides: { left: 'your left', right: 'your right', front: 'in front', behind: 'behind you' },
+    propSides: { left: 'your left', centre: 'centre', right: 'your right' },
+    propSurfaces: { hand: 'in hand', table: 'on a table', floor: 'on the floor' },
+    textPositions: {
+      top: 'Text at the top',
+      opposite_face: 'Text on the side away from your face',
+      lower_middle: 'Text in the lower middle',
     },
   },
   // Hindi chrome is Devanagari, like the disclosure and framing-guide lines shown with it (the
@@ -131,6 +182,16 @@ const COPY = {
     suggestedSpot: '(सुझाई गई जगह)',
     wideAsFull: 'वाइड शॉट के लिए गाइड फ़ुल शॉट दिखाती है।',
     startingPoint: 'शॉट बैंड बस शुरुआत के लिए हैं।',
+    say: 'बोलें:',
+    onScreen: 'स्क्रीन पर:',
+    camera: 'कैमरा:',
+    chipLabels: {
+      size: 'शॉट साइज़',
+      height: 'कैमरा की ऊँचाई',
+      light: 'रोशनी',
+      where: 'जगह',
+      sit_or_walk: 'बैठना या चलना',
+    },
     sizes: {
       ECU: 'एक्सट्रीम क्लोज़-अप',
       CU: 'क्लोज़-अप',
@@ -141,10 +202,59 @@ const COPY = {
       LS: 'वाइड शॉट',
       OVERHEAD: 'ऊपर से, हाथ',
     },
+    heights: {
+      eye: 'आँखों के लेवल पर',
+      chest: 'छाती की ऊँचाई पर',
+      above: 'आँखों से ऊपर',
+      below: 'आँखों से नीचे',
+      overhead: 'ऊपर से',
+    },
+    lightKinds: {
+      window: 'खिड़की',
+      sun: 'धूप',
+      shade: 'छाँव',
+      lamp: 'लैंप',
+      ring_light: 'रिंग लाइट',
+      tube_light: 'ट्यूबलाइट',
+      mixed: 'मिली-जुली रोशनी',
+    },
+    lightSides: { left: 'आपके बाएँ', right: 'आपके दाएँ', front: 'सामने', behind: 'आपके पीछे' },
+    propSides: { left: 'आपके बाएँ', centre: 'बीच में', right: 'आपके दाएँ' },
+    propSurfaces: { hand: 'हाथ में', table: 'टेबल पर', floor: 'ज़मीन पर' },
+    textPositions: {
+      top: 'टेक्स्ट ऊपर',
+      opposite_face: 'टेक्स्ट चेहरे की दूसरी तरफ़',
+      lower_middle: 'टेक्स्ट नीचे बीच में',
+    },
   },
 } as const;
 
 type SheetCopy = (typeof COPY)[keyof typeof COPY];
+
+/** The Say line and On-screen text are cut at these many visible characters (never mid-syllable). */
+const SAY_MAX_CHARS = 120;
+const ON_SCREEN_MAX_CHARS = 60;
+
+/** A card's camera height in the chat's language, or null when the card does not know it. */
+function cardHeightWord(t: SheetCopy, card: ShotCard | undefined): string | null {
+  if (!card || card.height === CARD_UNKNOWN) return null;
+  return t.heights[card.height];
+}
+
+/** A card's light ("Window, your left"), or null when the card does not know it. */
+function cardLightWord(t: SheetCopy, card: ShotCard | undefined): string | null {
+  const light = card ? parseCardLight(card.light) : null;
+  if (!light) return null;
+  const kind = t.lightKinds[light.kind];
+  return light.side ? `${kind}, ${t.lightSides[light.side]}` : kind;
+}
+
+/** A card's prop position ("your right, in hand"), or null for none / `?`. */
+function cardPropWords(t: SheetCopy, card: ShotCard | undefined): string | null {
+  const prop = card ? parseCardProp(card.prop) : null;
+  if (!prop) return null;
+  return `${t.propSides[prop.side]}, ${t.propSurfaces[prop.surface]}`;
+}
 
 export function MeeraCameraSheet({ open, onOpenChange, lang, shots, initialShotIndex, onCapture }: MeeraCameraSheetProps) {
   const shootLang = shootCheckLangFor(lang);
@@ -291,10 +401,21 @@ function CameraSheetBody({
 
   const size = shotSizeFor(currentShot);
   const prop = shotGuides ? propZone({ shot: currentShot, size, grid, mirrored, zones }) : null;
-  const setupLine = setupLineText({ t, shootLang, shot: currentShot, size, propShown: prop !== null, sidedProp: prop?.snappedTo != null, shotGuides });
+  // The text area the guide places for this shot (null when it places none, as for opposite_face
+  // with no known side or no eye line), so the set-up line never names a zone the guide lacks.
+  const textKind = textArea({ shot: currentShot, bands: shotBands(size), zones, mirrored })?.kind ?? null;
+  const setupLine = setupLineText({ t, shootLang, shot: currentShot, size, propShown: prop !== null, sidedProp: prop?.snappedTo != null, textKind, shotGuides });
+  const cardWords: CardChipWords = {
+    height: cardHeightWord(t, currentShot?.card),
+    light: cardLightWord(t, currentShot?.card),
+  };
   const chips = currentShot
-    ? setupChips(currentShot, t.sizes[size])
-    : [{ kind: 'angle' as const, text: t.generalGuide, full: t.generalGuide }];
+    ? setupChips(currentShot, t.sizes[size], cardWords)
+    : [{ kind: 'size' as const, text: t.generalGuide, full: t.generalGuide }];
+  // The beat's own lines, for framing while reading them (decision 3). Untrusted script text:
+  // React text only, cut by visible characters.
+  const sayText = currentShot?.say ? clipVisible(currentShot.say, SAY_MAX_CHARS) : '';
+  const onScreenText = currentShot?.onScreen ? clipVisible(currentShot.onScreen, ON_SCREEN_MAX_CHARS) : '';
 
   const active = phase === 'active';
   const checkDisabled = !active || !online || capturing;
@@ -445,6 +566,20 @@ function CameraSheetBody({
             </Button>
           </div>
         ) : null}
+        {sayText || onScreenText ? (
+          <div className="flex flex-col gap-0.5 text-sm text-white" data-testid="camera-sheet-beat-lines">
+            {sayText ? (
+              <p className="break-words" data-testid="camera-sheet-say">
+                <span className="font-semibold text-white/80">{t.say}</span> {sayText}
+              </p>
+            ) : null}
+            {onScreenText ? (
+              <p className="break-words" data-testid="camera-sheet-on-screen">
+                <span className="font-semibold text-white/80">{t.onScreen}</span> {onScreenText}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <p id={setupLineId} className="text-xs text-white/90" data-testid="camera-sheet-setup-line">
           {setupLine}
         </p>
@@ -457,9 +592,12 @@ function CameraSheetBody({
                   key={chip.kind}
                   className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 text-xs text-white"
                   data-testid="camera-sheet-chip"
+                  data-kind={chip.kind}
                 >
                   <Icon className="h-3.5 w-3.5" aria-hidden />
-                  {chip.text}
+                  {/* What the chip is, for screen readers: the first one is the shot size. */}
+                  <span className="sr-only">{`${t.chipLabels[chip.kind]}: `}</span>
+                  <span data-testid="camera-sheet-chip-text">{chip.text}</span>
                 </li>
               );
             })}
@@ -507,16 +645,22 @@ function CameraSheetBody({
 }
 
 const CHIP_ICON: Record<ChipKind, typeof Camera> = {
-  angle: Camera,
+  size: Camera,
+  height: ArrowUpDown,
   where: MapPin,
   light: Sun,
   sit_or_walk: PersonStanding,
 };
 
 /**
- * The guide's text version, in full with no cuts: "Set-up for this shot: <size>. <angle>. Where:
- * ... Light: ... <sit or walk>. Prop: ... (suggested spot)." plus "Stand on the other line." when a
- * side prop zone is drawn. The values are the script's (untrusted) text, rendered only as React text.
+ * The guide's text version, in full with no cuts: "Set-up for this shot: <size>. Camera: <height>.
+ * <angle>. Where: ... Light: ... <sit or walk>. Prop: ... (suggested spot). <text position>." plus
+ * "Stand on the other line." when a side prop zone is drawn. With a shot card, its known place,
+ * light, camera height, prop position and text position are used (a `?` field adds nothing, and
+ * a card-placed prop is the plan, not a "suggested spot"). The card's text position is named only
+ * when `textKind` (the area `textArea` places) is that position, so the line never describes a
+ * text zone the guide does not have. The values are the script's (untrusted) text, rendered only
+ * as React text.
  */
 function setupLineText({
   t,
@@ -525,6 +669,7 @@ function setupLineText({
   size,
   propShown,
   sidedProp,
+  textKind,
   shotGuides,
 }: {
   t: SheetCopy;
@@ -533,22 +678,30 @@ function setupLineText({
   size: ShotSize;
   propShown: boolean;
   sidedProp: boolean;
+  textKind: TextAreaKind | null;
   shotGuides: boolean;
 }): string {
   const context = shot?.context ?? {};
+  const card = shot?.card;
   const parts: string[] = [];
   if (!shot) parts.push(t.generalGuide);
   parts.push(t.sizes[size]);
+  const height = cardHeightWord(t, card);
+  if (height) parts.push(`${t.camera} ${height}`);
   const angle = cleanShotText(context.angle);
   if (angle) parts.push(angle);
-  const where = cleanShotText(context.where);
+  const cardPlace = card && card.place !== CARD_UNKNOWN ? cleanShotText(card.place) : '';
+  const where = cardPlace || cleanShotText(context.where);
   if (where) parts.push(`${t.where} ${where}`);
-  const light = cleanShotText(context.light);
+  const light = cardLightWord(t, card) ?? cleanShotText(context.light);
   if (light) parts.push(`${t.light} ${light}`);
   const sitOrWalk = cleanShotText(context.sit_or_walk);
   if (sitOrWalk) parts.push(sitOrWalk);
   const propText = cleanShotText(context.prop);
-  if (propText) parts.push(propShown ? `${t.prop} ${propText} ${t.suggestedSpot}` : `${t.prop} ${propText}`);
+  const propPlan = cardPropWords(t, card);
+  if (propPlan) parts.push(propText ? `${t.prop} ${propText} (${propPlan})` : `${t.prop} ${propPlan}`);
+  else if (propText) parts.push(propShown ? `${t.prop} ${propText} ${t.suggestedSpot}` : `${t.prop} ${propText}`);
+  if (card && card.text !== CARD_UNKNOWN && card.text !== 'none' && textKind === card.text) parts.push(t.textPositions[card.text]);
 
   const stop = shootLang === 'hi-IN' ? '।' : '.';
   const sentence = (text: string) => (/[.!?।…]$/.test(text) ? text : `${text}${stop}`);

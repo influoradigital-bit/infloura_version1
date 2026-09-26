@@ -7,7 +7,6 @@ import { getSafeZones, type SafeZones } from '@/lib/shoot-check/safe-zones';
 import {
   PLANE,
   gridGeometry,
-  hookTextArea,
   planeRectToBox,
   planeXToBox,
   planeYToBox,
@@ -15,6 +14,7 @@ import {
   reelFrame,
   shotBands,
   shotSizeFor,
+  textArea,
   type BoxSize,
   type Rect,
 } from '@/lib/shoot-check/shot-zones';
@@ -25,7 +25,9 @@ import {
  *   2. the camera grid, only from `grid`: Rule of thirds, Golden grid (lines + 4 crossing dots) or
  *      Off (no lines). No golden spiral;
  *   3. the shot guides, only while `shotGuides` is on: soft bands (not lines) for the eye line,
- *      head top and lower crop of this shot's size, the hook-text area (MCU/MS), the overhead
+ *      head top and lower crop of this shot's size, the hook-text area (MCU/MS, or where the
+ *      shot card's `text` puts it: top, the side away from the face, lower middle; `none` or `?`
+ *      draws no text area), the overhead
  *      surface, and a dashed prop zone on the creator's side;
  *   4. the safe zone, ALWAYS (spec 2.6): red covered areas with text labels, the right-side button
  *      rail, the amber "Short CTA, left side" band and the green safe-area outline. It reads
@@ -165,7 +167,9 @@ export function FramingGuide({
 
   const size = shotSizeFor(shot);
   const bands = shotBands(size);
-  const hookArea = hookTextArea(bands, zones);
+  // Spec v2 Phase 6 (decision 3): with a shot card the text area follows the card's `text`.
+  const hookText = textArea({ shot, bands, zones, mirrored });
+  const hookArea = hookText?.rect ?? null;
   const prop = shotGuides ? propZone({ shot, size, grid, mirrored, zones }) : null;
   const band = (from: number, to: number): Rect => ({ x: sideX0, y: from, width: sideX1 - sideX0, height: to - from });
 
@@ -245,9 +249,10 @@ export function FramingGuide({
                 strokeWidth={stroke}
                 strokeDasharray={`${12 * scale} ${8 * scale}`}
                 data-band="hook-text"
+                data-text-kind={hookText?.kind}
               />
               <ZoneLabel x={X(hookArea.x + hookArea.width / 2)} y={Y(hookArea.y + hookArea.height / 2)} size={labelSize} anchor="middle">
-                {adviceText('hook_slot', lang)}
+                {adviceText(hookText?.kind === 'top' ? 'hook_slot' : 'slot_hook', lang)}
               </ZoneLabel>
             </>
           ) : null}

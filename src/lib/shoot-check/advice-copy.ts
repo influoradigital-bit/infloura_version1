@@ -224,3 +224,241 @@ export function adviceText(key: string, lang: ShootCheckLang): string {
   if (!entry) return key;
   return entry[lang] ?? entry['en-IN'];
 }
+
+// ---------------------------------------------------------------------------
+// Shot card (spec v2 Phase 6): the 13 fields of a script beat's card, in plain words
+// ---------------------------------------------------------------------------
+
+/**
+ * The 13 shot-card keys, in the wire format's fixed order (`S<n>: size=…; height=…; …; move=…`,
+ * the "Shot cards:" block `parseMeeraScript` reads). The card shows its rows in this order.
+ */
+export const SHOT_CARD_FIELDS = [
+  'size',
+  'height',
+  'distance',
+  'place',
+  'light',
+  'stand',
+  'headroom',
+  'eyes',
+  'background',
+  'space',
+  'text',
+  'prop',
+  'move',
+] as const;
+
+export type ShotCardField = (typeof SHOT_CARD_FIELDS)[number];
+
+type CopyPair = Record<ShootCheckLang, string>;
+
+/**
+ * Shot card copy. en-IN follows the spec's mockup 12 (`12-shot-card.svg`); left and right are
+ * always the creator's own ("your left"), never the screen's (spec 2.4).
+ *
+ * hi-IN: Devanagari Hindi written at build time, PENDING REVIEW (same review as `GUIDE_COPY`). Do
+ * not treat any hi-IN line here as approved until that review lands.
+ *
+ * House rules (scanned by `advice-copy.shot-card.test.ts`): no `@` handle, no reach or engagement
+ * promise, never the word "escrow", and the assistant is only ever "Meera".
+ */
+export const SHOT_CARD_COPY = {
+  title: { 'en-IN': 'Shot card', 'hi-IN': 'शॉट कार्ड' },
+  not_set: { 'en-IN': 'Not set yet', 'hi-IN': 'अभी तय नहीं' },
+  /** `{n}` is the number of fields still "Not set yet". */
+  missing_count: { 'en-IN': '{n} not set yet', 'hi-IN': '{n} अभी तय नहीं' },
+  from_answers_note: {
+    'en-IN': 'Meera fills these from your answers, never by guessing.',
+    'hi-IN': 'Meera इन्हें आपके जवाबों से भरती है, अंदाज़े से नहीं।',
+  },
+  ask_meera: { 'en-IN': 'Ask Meera', 'hi-IN': 'Meera से पूछें' },
+  /** Prefilled into the message box by the card's Ask button (never sent on its own). `{n}` is the
+   *  beat number, `{time}` its timing ("3-8s"), `{fields}` the missing field names. */
+  ask_prefill: {
+    'en-IN': 'Shot card for beat {n} ({time}): ask me what you need to fill in {fields}.',
+    'hi-IN': 'बीट {n} ({time}) का शॉट कार्ड: {fields} भरने के लिए मुझसे जो जानना है, पूछें।',
+  },
+} as const satisfies Record<string, CopyPair>;
+
+/** Row labels, one per field. */
+export const SHOT_CARD_LABELS: Record<ShotCardField, CopyPair> = {
+  size: { 'en-IN': 'Size', 'hi-IN': 'शॉट साइज़' },
+  height: { 'en-IN': 'Camera height', 'hi-IN': 'कैमरे की ऊँचाई' },
+  distance: { 'en-IN': 'Distance', 'hi-IN': 'दूरी' },
+  place: { 'en-IN': 'Where', 'hi-IN': 'जगह' },
+  light: { 'en-IN': 'Light', 'hi-IN': 'रोशनी' },
+  stand: { 'en-IN': 'You in frame', 'hi-IN': 'फ़्रेम में आप' },
+  headroom: { 'en-IN': 'Space above your head', 'hi-IN': 'सिर के ऊपर जगह' },
+  eyes: { 'en-IN': 'Eyes', 'hi-IN': 'नज़र' },
+  background: { 'en-IN': 'Background', 'hi-IN': 'बैकग्राउंड' },
+  space: { 'en-IN': 'Empty side', 'hi-IN': 'खाली जगह' },
+  text: { 'en-IN': 'Text on screen', 'hi-IN': 'स्क्रीन पर टेक्स्ट' },
+  prop: { 'en-IN': 'Prop', 'hi-IN': 'प्रॉप' },
+  move: { 'en-IN': 'Movement', 'hi-IN': 'मूवमेंट' },
+};
+
+/** Plain words for every enum value of the wire contract. `light` and `prop` are composed below. */
+const SHOT_CARD_ENUM_WORDS = {
+  size: {
+    ECU: { 'en-IN': 'Extreme close-up (eyes or a detail)', 'hi-IN': 'एक्सट्रीम क्लोज़-अप (आँखें या कोई डिटेल)' },
+    CU: { 'en-IN': 'Close-up (face)', 'hi-IN': 'क्लोज़-अप (चेहरा)' },
+    MCU: { 'en-IN': 'Medium close-up (chest up)', 'hi-IN': 'मीडियम क्लोज़-अप (छाती से ऊपर)' },
+    MS: { 'en-IN': 'Medium shot (waist up)', 'hi-IN': 'मीडियम शॉट (कमर से ऊपर)' },
+    MLS: { 'en-IN': 'Medium long shot (knees up)', 'hi-IN': 'मीडियम लॉन्ग शॉट (घुटनों से ऊपर)' },
+    FS: { 'en-IN': 'Full shot (head to toe)', 'hi-IN': 'फ़ुल शॉट (सिर से पैर तक)' },
+    LS: { 'en-IN': 'Wide shot (you and the place)', 'hi-IN': 'वाइड शॉट (आप और पूरी जगह)' },
+    OVERHEAD: { 'en-IN': 'Overhead (looking down at your hands)', 'hi-IN': 'ऊपर से शॉट (नीचे हाथों की ओर)' },
+  },
+  height: {
+    eye: { 'en-IN': 'eye level', 'hi-IN': 'आँखों के लेवल पर' },
+    chest: { 'en-IN': 'chest height', 'hi-IN': 'छाती की ऊँचाई पर' },
+    above: { 'en-IN': 'above you, tilted down a little', 'hi-IN': 'आपसे ऊपर, थोड़ा नीचे की ओर' },
+    below: { 'en-IN': 'below you, tilted up a little', 'hi-IN': 'आपसे नीचे, थोड़ा ऊपर की ओर' },
+    overhead: { 'en-IN': 'straight above, looking down', 'hi-IN': 'ठीक ऊपर, सीधे नीचे की ओर' },
+  },
+  stand: {
+    left: { 'en-IN': 'to your left', 'hi-IN': 'आपकी बाईं ओर' },
+    centre: { 'en-IN': 'centre', 'hi-IN': 'बीच में' },
+    right: { 'en-IN': 'to your right', 'hi-IN': 'आपकी दाईं ओर' },
+  },
+  headroom: {
+    cropped: { 'en-IN': 'none, top of your head just out of frame', 'hi-IN': 'नहीं, सिर का ऊपरी हिस्सा फ़्रेम से बाहर' },
+    small: { 'en-IN': 'a little', 'hi-IN': 'थोड़ी' },
+    medium: { 'en-IN': 'some', 'hi-IN': 'मध्यम' },
+  },
+  eyes: {
+    lens: { 'en-IN': 'to the lens', 'hi-IN': 'लेंस की ओर' },
+    product: { 'en-IN': 'on the product', 'hi-IN': 'प्रोडक्ट पर' },
+    off_lens: { 'en-IN': 'away from the lens', 'hi-IN': 'लेंस से हटकर' },
+  },
+  space: {
+    left: { 'en-IN': 'your left', 'hi-IN': 'आपकी बाईं ओर' },
+    right: { 'en-IN': 'your right', 'hi-IN': 'आपकी दाईं ओर' },
+    top: { 'en-IN': 'above you', 'hi-IN': 'आपके ऊपर' },
+    none: { 'en-IN': 'none', 'hi-IN': 'कोई नहीं' },
+  },
+  text: {
+    top: { 'en-IN': 'at the top', 'hi-IN': 'ऊपर' },
+    opposite_face: { 'en-IN': 'on the side away from your face', 'hi-IN': 'चेहरे की दूसरी ओर' },
+    lower_middle: { 'en-IN': 'lower middle', 'hi-IN': 'नीचे बीच में' },
+    none: { 'en-IN': 'no text', 'hi-IN': 'कोई टेक्स्ट नहीं' },
+  },
+  move: {
+    still: { 'en-IN': 'stay still', 'hi-IN': 'स्थिर रहें' },
+    sit: { 'en-IN': 'sitting', 'hi-IN': 'बैठकर' },
+    stand: { 'en-IN': 'standing', 'hi-IN': 'खड़े होकर' },
+    walk: { 'en-IN': 'walking', 'hi-IN': 'चलते हुए' },
+    pan: { 'en-IN': 'phone turns slowly across the scene', 'hi-IN': 'फ़ोन धीरे से एक ओर घूमे' },
+    push: { 'en-IN': 'phone moves slowly closer', 'hi-IN': 'फ़ोन धीरे से पास आए' },
+  },
+} as const satisfies Record<string, Record<string, CopyPair>>;
+
+const SHOT_CARD_LIGHT_KINDS = {
+  window: { 'en-IN': 'window', 'hi-IN': 'खिड़की' },
+  sun: { 'en-IN': 'sunlight', 'hi-IN': 'धूप' },
+  shade: { 'en-IN': 'shade', 'hi-IN': 'छाँव' },
+  lamp: { 'en-IN': 'lamp', 'hi-IN': 'लैंप' },
+  ring_light: { 'en-IN': 'ring light', 'hi-IN': 'रिंग लाइट' },
+  tube_light: { 'en-IN': 'tube light', 'hi-IN': 'ट्यूबलाइट' },
+  mixed: { 'en-IN': 'mixed light', 'hi-IN': 'मिली-जुली रोशनी' },
+} as const satisfies Record<string, CopyPair>;
+
+/** The light's side, the creator's own as they face the phone. */
+const SHOT_CARD_LIGHT_SIDES = {
+  left: { 'en-IN': 'your left', 'hi-IN': 'आपकी बाईं ओर' },
+  right: { 'en-IN': 'your right', 'hi-IN': 'आपकी दाईं ओर' },
+  front: { 'en-IN': 'in front of you', 'hi-IN': 'आपके सामने' },
+  behind: { 'en-IN': 'behind you', 'hi-IN': 'आपके पीछे' },
+} as const satisfies Record<string, CopyPair>;
+
+/** `prop=<side>-<surface>`, written out whole (no word-by-word joining, so the Hindi reads right). */
+const SHOT_CARD_PROP_WORDS = {
+  none: { 'en-IN': 'no prop', 'hi-IN': 'कोई प्रॉप नहीं' },
+  'left-hand': { 'en-IN': 'in your left hand', 'hi-IN': 'आपके बाएँ हाथ में' },
+  'centre-hand': { 'en-IN': 'in both hands, in the middle', 'hi-IN': 'दोनों हाथों में, बीच में' },
+  'right-hand': { 'en-IN': 'in your right hand', 'hi-IN': 'आपके दाएँ हाथ में' },
+  'left-table': { 'en-IN': 'on the table, to your left', 'hi-IN': 'टेबल पर, आपकी बाईं ओर' },
+  'centre-table': { 'en-IN': 'on the table, in the middle', 'hi-IN': 'टेबल पर, बीच में' },
+  'right-table': { 'en-IN': 'on the table, to your right', 'hi-IN': 'टेबल पर, आपकी दाईं ओर' },
+  'left-floor': { 'en-IN': 'on the floor, to your left', 'hi-IN': 'ज़मीन पर, आपकी बाईं ओर' },
+  'centre-floor': { 'en-IN': 'on the floor, in the middle', 'hi-IN': 'ज़मीन पर, बीच में' },
+  'right-floor': { 'en-IN': 'on the floor, to your right', 'hi-IN': 'ज़मीन पर, आपकी दाईं ओर' },
+} as const satisfies Record<string, CopyPair>;
+
+/** Free-text fields and their wire-contract length limits. A longer value counts as not set. */
+const SHOT_CARD_FREE_TEXT_MAX: Partial<Record<ShotCardField, number>> = {
+  distance: 20,
+  place: 40,
+  background: 40,
+};
+
+function lookup(table: Record<string, CopyPair>, value: string, lang: ShootCheckLang): string | undefined {
+  if (!Object.prototype.hasOwnProperty.call(table, value)) return undefined;
+  return table[value][lang];
+}
+
+/**
+ * One shot-card field's value in plain words, in the creator's language, or `undefined` when the
+ * field is not set: missing, blank, `?`, an enum value outside the wire contract, or free text
+ * longer than its limit. The caller shows `SHOT_CARD_COPY.not_set` for `undefined` and never
+ * guesses a value.
+ *
+ * Free text (`distance`, `place`, `background`) is Meera's own words in the creator's language and
+ * is shown as written. Pure; shared by the script card and the camera sheet's chips.
+ */
+export function shotCardFieldText(
+  field: ShotCardField,
+  value: string | null | undefined,
+  lang: ShootCheckLang,
+): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const clean = value.trim().replace(/\s+/g, ' ');
+  if (!clean || clean === '?') return undefined;
+
+  const freeTextMax = SHOT_CARD_FREE_TEXT_MAX[field];
+  // Counted in code points, like the parsers (`SHOT_CARD_TEXT_MAX`, Python's `len`).
+  if (freeTextMax !== undefined) return [...clean].length <= freeTextMax ? clean : undefined;
+
+  if (field === 'light') {
+    const dash = clean.indexOf('-');
+    const kind = dash === -1 ? clean : clean.slice(0, dash);
+    const kindText = lookup(SHOT_CARD_LIGHT_KINDS, kind, lang);
+    if (!kindText) return undefined;
+    if (dash === -1) return kindText;
+    const sideText = lookup(SHOT_CARD_LIGHT_SIDES, clean.slice(dash + 1), lang);
+    return sideText ? `${kindText}, ${sideText}` : undefined;
+  }
+  if (field === 'prop') return lookup(SHOT_CARD_PROP_WORDS, clean, lang);
+
+  const table = (SHOT_CARD_ENUM_WORDS as Record<string, Record<string, CopyPair>>)[field];
+  return table ? lookup(table, clean, lang) : undefined;
+}
+
+/** Fills `{name}` placeholders in a copy line. */
+export function fillShotCardCopy(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (whole, name: string) =>
+    Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : whole,
+  );
+}
+
+/** Every shot-card line in both languages, for the house-rule copy scan. */
+export function allShotCardCopyLines(): Array<[string, string]> {
+  const tables: Array<[string, Record<string, CopyPair>]> = [
+    ['copy', SHOT_CARD_COPY],
+    ['label', SHOT_CARD_LABELS],
+    ['light_kind', SHOT_CARD_LIGHT_KINDS],
+    ['light_side', SHOT_CARD_LIGHT_SIDES],
+    ['prop', SHOT_CARD_PROP_WORDS],
+    ...Object.entries(SHOT_CARD_ENUM_WORDS).map(
+      ([field, table]) => [`enum.${field}`, table as Record<string, CopyPair>] as [string, Record<string, CopyPair>],
+    ),
+  ];
+  return tables.flatMap(([prefix, table]) =>
+    Object.entries(table).flatMap(([key, pair]) =>
+      (Object.entries(pair) as Array<[string, string]>).map(
+        ([lang, text]) => [`${prefix}.${key}.${lang}`, text] as [string, string],
+      ),
+    ),
+  );
+}

@@ -41,6 +41,18 @@
  *   - a beat line's `Stress:`/`Pause:` markers, entirely — both are optional together (see
  *     `ScriptBeat.stress`/`.pause`), so a beat with just `Shot`/`Say`/`On screen` still parses
  *   - one trailing short question line after `Why this works:` (kept as `followUp`)
+ *   - a missing `Shot cards:` block (spec v2 Phase 6) — replies written before it existed, or
+ *     without it, parse exactly as before, with no `ScriptBeat.card`. When present it sits after
+ *     the last beat and before `Caption:`: the line `Shot cards:`, then `S<n>: ` + 13 `key=value`
+ *     pairs joined by `; ` (size, height, distance, place, light, stand, headroom, eyes,
+ *     background, space, text, prop, move — this order). Inside the block nothing refuses the
+ *     card: a malformed or unrecognised line, an `S<n>` for a beat that does not exist, or a beat
+ *     named twice only means that beat has no card; fewer lines than beats is fine; an unknown
+ *     enum value or an over-long free text becomes `'?'` for that one field (see `ShotCard`).
+ *     `influora-ai/app/recommendations/script_card.py` is this parser's Python twin and must read
+ *     the block identically (shared fixture: `influora-ai/tests/fixtures/meera_scripts.json`,
+ *     `shot_card_cases`, pinned by `meera-result-cards.shot-cards.test.ts` and the pytest parity
+ *     test), or SCRIPT_CARD recommendations silently stop being recorded (spec risk R6).
  *
  * `parseMeeraScript` — strict (returns `undefined`):
  *   - `Idea`, `Plan`, `Action`, `Script`, `Caption`, `Before you shoot` or `Why this works` is
@@ -53,6 +65,8 @@
  *   - `Before you shoot:`'s value is not exactly three `1) … 2) … 3) …` items on that one line
  *   - anything appears before `Idea:`, or after the last recognised line (the optional follow-up
  *     question, when present)
+ *   - the `Shot cards:` line itself carries a value, or the block appears anywhere but straight
+ *     after the last beat (`S<n>:` lines without the `Shot cards:` line are not a block either)
  */
 import { stripMeeraMarkdown } from './meera-text';
 
@@ -81,6 +95,9 @@ export interface ScriptBeat {
   pause?: string;
   /** The on-screen text overlay. */
   onScreen: string;
+  /** This beat's shot card, from the optional `Shot cards:` block. Absent (not `undefined`-valued)
+   *  when the reply has no block, or no well-formed `S<n>:` line for this beat. */
+  card?: ShotCard;
 }
 
 export interface ParsedMeeraScript {
@@ -197,6 +214,214 @@ function parseBeforeYouShoot(value: string): [string, string, string] | undefine
   return [a.trim(), b.trim(), c.trim()];
 }
 
+// ---------------------------------------------------------------------------
+// Shot cards (spec v2 Phase 6): the optional block between the last beat and `Caption:`
+// ---------------------------------------------------------------------------
+
+/** A field Meera does not know. The card shows it as "Not set yet"; Meera asks the matching
+ *  coach question next time instead of guessing. */
+export const SHOT_CARD_UNKNOWN = '?';
+export type ShotCardUnknown = typeof SHOT_CARD_UNKNOWN;
+
+export const SHOT_SIZES = ['ECU', 'CU', 'MCU', 'MS', 'MLS', 'FS', 'LS', 'OVERHEAD'] as const;
+export const CAMERA_HEIGHTS = ['eye', 'chest', 'above', 'below', 'overhead'] as const;
+export const LIGHT_KINDS = ['window', 'sun', 'shade', 'lamp', 'ring_light', 'tube_light', 'mixed'] as const;
+/** The creator's OWN side, as they face the phone (spec 2.4). */
+export const LIGHT_SIDES = ['left', 'right', 'front', 'behind'] as const;
+export const STAND_POSITIONS = ['left', 'centre', 'right'] as const;
+export const HEADROOMS = ['cropped', 'small', 'medium'] as const;
+export const EYE_LINES = ['lens', 'product', 'off_lens'] as const;
+export const NEGATIVE_SPACES = ['left', 'right', 'top', 'none'] as const;
+export const TEXT_POSITIONS = ['top', 'opposite_face', 'lower_middle', 'none'] as const;
+export const PROP_SIDES = ['left', 'centre', 'right'] as const;
+export const PROP_SURFACES = ['hand', 'table', 'floor'] as const;
+export const MOVEMENTS = ['still', 'sit', 'stand', 'walk', 'pan', 'push'] as const;
+
+export type ShotSize = (typeof SHOT_SIZES)[number];
+export type CameraHeight = (typeof CAMERA_HEIGHTS)[number];
+export type LightKind = (typeof LIGHT_KINDS)[number];
+export type LightSide = (typeof LIGHT_SIDES)[number];
+export type StandPosition = (typeof STAND_POSITIONS)[number];
+export type Headroom = (typeof HEADROOMS)[number];
+export type EyeLine = (typeof EYE_LINES)[number];
+export type NegativeSpace = (typeof NEGATIVE_SPACES)[number];
+export type TextPosition = (typeof TEXT_POSITIONS)[number];
+export type PropSide = (typeof PROP_SIDES)[number];
+export type PropSurface = (typeof PROP_SURFACES)[number];
+export type Movement = (typeof MOVEMENTS)[number];
+/** `window`, or `window-left` (kind, then the creator's own side). */
+export type ShotLight = LightKind | `${LightKind}-${LightSide}`;
+/** `none`, or `right-hand` / `centre-table` / `left-floor` (the creator's own side, then the
+ *  surface). This exact value is what the camera sends as `MeeraShotContext.prop_position`. */
+export type ShotProp = 'none' | `${PropSide}-${PropSurface}`;
+
+/** Free-text fields are capped (Unicode code points, the same count as Python's `len`); a longer
+ *  value is treated as unknown, never cut. */
+export const SHOT_CARD_TEXT_MAX = { distance: 20, place: 40, background: 40 } as const;
+
+/**
+ * One beat's shot card: the 13 `key=value` pairs of an `S<n>:` line, each either a valid value or
+ * `'?'` (unknown). Values are kept exactly as the wire contract spells them (enum values English
+ * even in a Hindi reply; free text in the creator's language). Creator facts (place, light,
+ * height, distance, eyes, prop, move) come only from the creator's answers; the prompt, not this
+ * parser, owns that rule.
+ */
+export interface ShotCard {
+  size: ShotSize | ShotCardUnknown;
+  height: CameraHeight | ShotCardUnknown;
+  /** Free text, at most 20 characters. */
+  distance: string;
+  /** Free text, at most 40 characters. */
+  place: string;
+  light: ShotLight | ShotCardUnknown;
+  stand: StandPosition | ShotCardUnknown;
+  headroom: Headroom | ShotCardUnknown;
+  eyes: EyeLine | ShotCardUnknown;
+  /** Free text, at most 40 characters. */
+  background: string;
+  space: NegativeSpace | ShotCardUnknown;
+  text: TextPosition | ShotCardUnknown;
+  prop: ShotProp | ShotCardUnknown;
+  move: Movement | ShotCardUnknown;
+}
+
+/** The 13 keys, in the one order an `S<n>:` line must use. */
+export const SHOT_CARD_KEYS = [
+  'size',
+  'height',
+  'distance',
+  'place',
+  'light',
+  'stand',
+  'headroom',
+  'eyes',
+  'background',
+  'space',
+  'text',
+  'prop',
+  'move',
+] as const satisfies ReadonlyArray<keyof ShotCard>;
+
+/** Lower-cases A-Z only. Enum values are ASCII, and folding only ASCII keeps this identical to
+ *  the Python twin (full Unicode case mapping differs between the two languages at the edges). */
+function asciiLower(value: string): string {
+  return value.replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32));
+}
+
+function asciiUpper(value: string): string {
+  return value.replace(/[a-z]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 32));
+}
+
+function enumValue<T extends string>(value: string, allowed: readonly T[], fold: (v: string) => string): T | ShotCardUnknown {
+  const folded = fold(value);
+  return (allowed as readonly string[]).includes(folded) ? (folded as T) : SHOT_CARD_UNKNOWN;
+}
+
+function freeText(value: string, max: number): string {
+  if (!value || value === SHOT_CARD_UNKNOWN) return SHOT_CARD_UNKNOWN;
+  // Code points, not UTF-16 units: an emoji counts once, as it does in Python.
+  return Array.from(value).length <= max ? value : SHOT_CARD_UNKNOWN;
+}
+
+function lightValue(value: string): ShotLight | ShotCardUnknown {
+  const folded = asciiLower(value);
+  const dash = folded.indexOf('-');
+  const kind = dash === -1 ? folded : folded.slice(0, dash);
+  if (!(LIGHT_KINDS as readonly string[]).includes(kind)) return SHOT_CARD_UNKNOWN;
+  if (dash === -1) return folded as ShotLight;
+  return (LIGHT_SIDES as readonly string[]).includes(folded.slice(dash + 1)) ? (folded as ShotLight) : SHOT_CARD_UNKNOWN;
+}
+
+function propValue(value: string): ShotProp | ShotCardUnknown {
+  const folded = asciiLower(value);
+  if (folded === 'none') return 'none';
+  const dash = folded.indexOf('-');
+  if (dash === -1) return SHOT_CARD_UNKNOWN;
+  const side = folded.slice(0, dash);
+  const surface = folded.slice(dash + 1);
+  return (PROP_SIDES as readonly string[]).includes(side) && (PROP_SURFACES as readonly string[]).includes(surface)
+    ? (folded as ShotProp)
+    : SHOT_CARD_UNKNOWN;
+}
+
+/** `light` split into its kind and the creator's own side; `null` when unknown. */
+export function shotLightParts(light: ShotCard['light']): { kind: LightKind; side?: LightSide } | null {
+  if (light === SHOT_CARD_UNKNOWN) return null;
+  const dash = light.indexOf('-');
+  if (dash === -1) return { kind: light as LightKind };
+  return { kind: light.slice(0, dash) as LightKind, side: light.slice(dash + 1) as LightSide };
+}
+
+/** `prop` split into the creator's own side and the surface; `null` for `none` or unknown (no
+ *  prop zone is drawn for either). */
+export function shotPropParts(prop: ShotCard['prop']): { side: PropSide; surface: PropSurface } | null {
+  if (prop === SHOT_CARD_UNKNOWN || prop === 'none') return null;
+  const dash = prop.indexOf('-');
+  return { side: prop.slice(0, dash) as PropSide, surface: prop.slice(dash + 1) as PropSurface };
+}
+
+/** `S<n>:` at the start of a block line (ASCII digits only, as JS `\d` is). */
+const SHOT_LINE_RE = /^S\s*(\d+)\s*:/i;
+
+/**
+ * The part of an `S<n>:` line after the colon -> a card, or `null` when the line is malformed:
+ * not exactly 13 `key=value` pairs, or a key missing, misspelt or out of order. One trailing `.`
+ * or `;` is tolerated (the spec's own example line ends with a full stop). A bad VALUE never makes
+ * the line malformed: it becomes `'?'` for that one field.
+ */
+function parseShotCardBody(body: string): ShotCard | null {
+  const text = body.trim().replace(/[.;]\s*$/, '');
+  const pairs = text.split(';');
+  if (pairs.length !== SHOT_CARD_KEYS.length) return null;
+  const raw: Record<string, string> = {};
+  for (let k = 0; k < SHOT_CARD_KEYS.length; k++) {
+    const pair = pairs[k];
+    const eq = pair.indexOf('=');
+    if (eq === -1) return null;
+    if (asciiLower(pair.slice(0, eq).trim()) !== SHOT_CARD_KEYS[k]) return null;
+    raw[SHOT_CARD_KEYS[k]] = pair.slice(eq + 1).trim();
+  }
+  return {
+    size: enumValue(raw.size, SHOT_SIZES, asciiUpper),
+    height: enumValue(raw.height, CAMERA_HEIGHTS, asciiLower),
+    distance: freeText(raw.distance, SHOT_CARD_TEXT_MAX.distance),
+    place: freeText(raw.place, SHOT_CARD_TEXT_MAX.place),
+    light: lightValue(raw.light),
+    stand: enumValue(raw.stand, STAND_POSITIONS, asciiLower),
+    headroom: enumValue(raw.headroom, HEADROOMS, asciiLower),
+    eyes: enumValue(raw.eyes, EYE_LINES, asciiLower),
+    background: freeText(raw.background, SHOT_CARD_TEXT_MAX.background),
+    space: enumValue(raw.space, NEGATIVE_SPACES, asciiLower),
+    text: enumValue(raw.text, TEXT_POSITIONS, asciiLower),
+    prop: propValue(raw.prop),
+    move: enumValue(raw.move, MOVEMENTS, asciiLower),
+  };
+}
+
+/**
+ * The block's lines (everything after `Shot cards:` up to, not including, the `Caption:` line) ->
+ * one card or `null` per beat. A line that is not a well-formed `S<n>:` line for a beat that exists
+ * is dropped; a beat named twice gets no card (never guess which one was meant); a beat with no
+ * line gets no card.
+ */
+function shotCardsForBeats(blockLines: string[], beatCount: number): Array<ShotCard | null> {
+  const cards: Array<ShotCard | null> = new Array(beatCount).fill(null);
+  const seen = new Set<number>();
+  const doubled = new Set<number>();
+  for (const line of blockLines) {
+    const trimmed = line.trim();
+    const match = SHOT_LINE_RE.exec(trimmed);
+    if (!match) continue;
+    const n = parseInt(match[1], 10);
+    if (n < 1 || n > beatCount) continue;
+    if (seen.has(n)) doubled.add(n);
+    seen.add(n);
+    cards[n - 1] = parseShotCardBody(trimmed.slice(match[0].length));
+  }
+  for (const n of doubled) cards[n - 1] = null;
+  return cards;
+}
+
 export function parseMeeraScript(text: string): ParsedMeeraScript | undefined {
   if (typeof text !== 'string') return undefined;
   const lines = splitLines(text);
@@ -280,6 +505,26 @@ export function parseMeeraScript(text: string): ParsedMeeraScript | undefined {
     if (b > 0 && beats[b].from !== beats[b - 1].to) return undefined;
   }
 
+  // Shot cards: optional, and only in this one position (after the last beat, before Caption).
+  // The block runs up to the `Caption:` line; what is inside it can only cost a beat its card,
+  // never the whole script (see `shotCardsForBeats`). Present with a value on its own line is
+  // refused, like `Script:`.
+  const maybeCardsKV = i < lines.length ? splitKeyValue(lines[i]) : null;
+  if (maybeCardsKV && keyIs(maybeCardsKV, 'shot cards')) {
+    if (maybeCardsKV.value) return undefined;
+    i++;
+    const blockStart = i;
+    while (i < lines.length) {
+      const kv = splitKeyValue(lines[i]);
+      if (kv && keyIs(kv, 'caption')) break;
+      i++;
+    }
+    const cards = shotCardsForBeats(lines.slice(blockStart, i), beats.length);
+    cards.forEach((card, index) => {
+      if (card) beats[index].card = card;
+    });
+  }
+
   if (i >= lines.length) return undefined;
   const captionKV = splitKeyValue(lines[i]);
   i++;
@@ -323,6 +568,34 @@ export function parseMeeraScript(text: string): ParsedMeeraScript | undefined {
     whyThisWorks: whyKV.value,
     followUp,
   };
+}
+
+/**
+ * The text the script card's Copy writes: the reply exactly as sent, minus the machine-readable
+ * `Shot cards:` block (its header line and every line up to `Caption:`), which the card never
+ * shows as text and which keeps English keys even in a Hindi reply. Every other character, line
+ * endings included, is kept byte for byte. A reply that does not parse as a script, or has no
+ * block, comes back unchanged.
+ */
+export function scriptCopyText(text: string): string {
+  if (!parseMeeraScript(text)) return text;
+  // Lines at even indexes, their line breaks at odd ones (the parser's own breaks: CRLF or LF).
+  const parts = text.split(/(\r\n|\n)/);
+  const keyAt = (k: number) => splitKeyValue(stripMeeraMarkdown(parts[k]));
+  let header = -1;
+  for (let k = 0; k < parts.length; k += 2) {
+    const kv = keyAt(k);
+    if (kv && keyIs(kv, 'shot cards') && !kv.value) {
+      header = k;
+      break;
+    }
+  }
+  if (header < 0) return text;
+  for (let k = header + 2; k < parts.length; k += 2) {
+    const kv = keyAt(k);
+    if (kv && keyIs(kv, 'caption')) return parts.slice(0, header).join('') + parts.slice(k).join('');
+  }
+  return text;
 }
 
 // ---------------------------------------------------------------------------

@@ -1356,3 +1356,20 @@ async def test_the_frame_check_system_block_is_sent_with_cache_control(monkeypat
     assert system_blocks == [{"type": "text", "text": build_system_prompt(), "cache_control": expected}]
     # A 1-hour write is billed at 2x; the usage says how much of the write was 1-hour.
     assert result.usage["cache_creation_1h_input_tokens"] == (9000 if ttl == "1h" else None)
+
+
+def test_shot_context_carries_the_shot_cards_prop_position():
+    """Spec v2 Phase 6: the camera sends the shot card's prop value as `prop_position`. It is
+    kept (after sit_or_walk, before line), wrapped as untrusted, and answers no coach question:
+    prop_ready stays askable, since a planned prop spot is not the creator saying it is ready."""
+    ctx = parse_shot_context(json.dumps({
+        "line": "0-3s hold it up", "prop_position": "right-hand", "sit_or_walk": "sitting", "angle": "MCU",
+    }))
+    assert list(ctx) == ["angle", "sit_or_walk", "prop_position", "line"]
+    assert ctx["prop_position"] == "right-hand"
+    text = build_user_text("talking head", None, ctx, [])
+    assert "prop_position: right-hand" in text
+    wrapped = text[text.index("<untrusted_shot_context>"):text.index("</untrusted_shot_context>")]
+    assert "prop_position: right-hand" in wrapped
+    assert "prop_ready" not in answered_question_ids([], ctx)
+    assert parse_shot_context(json.dumps({"prop_position": "  "})) is None

@@ -22,6 +22,7 @@ import {
   type MeeraShotContext,
 } from '@/lib/meera-api';
 import { FRAME_CHECK_DISCLOSURE, type ShootCheckLang } from '@/lib/shoot-check/advice-copy';
+import type { ShotCard } from '@/lib/shoot-check/beat-to-shot';
 import type { ShotTarget } from '@/lib/shoot-check/metrics';
 import { captureDownscaledJpeg } from '@/lib/shoot-check/capture-frame';
 import { useShootCheck } from '@/hooks/useShootCheck';
@@ -41,6 +42,13 @@ export interface ShootCheckShot {
    * frame" as `shot_context` together with `label` (as `line`) so the check knows what the creator
    * is trying to film. Optional: a shot with only a label still sends that. */
   context?: MeeraShotContext;
+  /** The beat's Say line, shown in the camera sheet while framing (never sent with the check).
+   * Optional: shots rebuilt from a stored label (`shotFromLabel`) do not have it. */
+  say?: string;
+  /** The beat's On-screen text, shown in the camera sheet (never sent with the check). */
+  onScreen?: string;
+  /** The beat's validated shot card (spec v2 Phase 6), when the reply had one. */
+  card?: ShotCard;
 }
 
 function shotContextFor(shot: ShootCheckShot): MeeraShotContext | undefined {

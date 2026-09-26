@@ -233,6 +233,7 @@ function MeeraMessageRowImpl({
                 language={language}
                 onCheckShot={handleCheckShot}
                 checkShotDisabled={photoCheckBusy}
+                onPrefill={onPrefill}
               />
             ) : (
               <MeeraReviewCard review={card.review} rawText={m.text} language={language} onPrefill={onPrefill} />

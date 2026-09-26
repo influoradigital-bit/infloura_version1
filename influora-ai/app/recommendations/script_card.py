@@ -18,10 +18,20 @@ Ported line for line, with the JavaScript semantics kept where Python's defaults
 Parity is pinned by tests/recommendations/test_script_card_parity.py, which runs every script
 text of src/lib/meera-result-cards.test.ts (copied into tests/fixtures/meera_scripts.json) plus
 the persona's own example through this port and asserts the TS test's own verdicts.
+
+Shot cards (spec v2 Phase 6, risk R6): the optional block after the last beat and before
+`Caption:` -- a line `Shot cards:`, then `S<n>: ` + 13 `key=value` pairs joined by `; ` in the
+fixed order of `SHOT_CARD_KEYS`. Replies with or without the block are both script cards, so
+SCRIPT_CARD recording never stops because the prompt started (or stopped) writing it. Inside the
+block nothing refuses the card: a malformed line, an `S<n>` for a beat that does not exist or a
+beat named twice only leaves that beat without a card; an unknown enum value or an over-long free
+text is `?` for that one field. The fixture's `shot_card_cases` pin every card field, and
+src/lib/meera-result-cards.shot-cards.test.ts runs the same fixture through the real TS parser.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from dataclasses import dataclass
 
@@ -104,6 +114,149 @@ _BEFORE_YOU_SHOOT_RE = re.compile(
 )
 
 
+# --------------------------------------------------------------------------- shot cards
+
+SHOT_CARD_UNKNOWN = "?"
+SHOT_CARD_KEYS: tuple[str, ...] = (
+    "size", "height", "distance", "place", "light", "stand", "headroom",
+    "eyes", "background", "space", "text", "prop", "move",
+)
+SHOT_SIZES = ("ECU", "CU", "MCU", "MS", "MLS", "FS", "LS", "OVERHEAD")
+CAMERA_HEIGHTS = ("eye", "chest", "above", "below", "overhead")
+LIGHT_KINDS = ("window", "sun", "shade", "lamp", "ring_light", "tube_light", "mixed")
+LIGHT_SIDES = ("left", "right", "front", "behind")  # the creator's OWN side (spec 2.4)
+STAND_POSITIONS = ("left", "centre", "right")
+HEADROOMS = ("cropped", "small", "medium")
+EYE_LINES = ("lens", "product", "off_lens")
+NEGATIVE_SPACES = ("left", "right", "top", "none")
+TEXT_POSITIONS = ("top", "opposite_face", "lower_middle", "none")
+PROP_SIDES = ("left", "centre", "right")
+PROP_SURFACES = ("hand", "table", "floor")
+MOVEMENTS = ("still", "sit", "stand", "walk", "pan", "push")
+# Free text is capped in code points (`len`), the same count as the TS `Array.from(v).length`;
+# a longer value is `?`, never cut.
+SHOT_CARD_TEXT_MAX = {"distance": 20, "place": 40, "background": 40}
+
+_UPPER_TO_LOWER = {c: c + 32 for c in range(ord("A"), ord("Z") + 1)}
+_LOWER_TO_UPPER = {c: c - 32 for c in range(ord("a"), ord("z") + 1)}
+# `S<n>:` at the start of a block line; ASCII digits, no Unicode case folding (as the TS regex).
+_SHOT_LINE_RE = re.compile(rf"^S{_WS}*([0-9]+){_WS}*:", re.IGNORECASE | re.ASCII)
+# One trailing `.` or `;` (the spec's own example line ends with a full stop).
+_TRAILING_STOP_RE = re.compile(rf"[.;]{_WS}*\Z")
+
+
+@dataclass(frozen=True)
+class ShotCard:
+    """One beat's shot card: every field is a contract value or `?` (unknown)."""
+
+    size: str
+    height: str
+    distance: str
+    place: str
+    light: str
+    stand: str
+    headroom: str
+    eyes: str
+    background: str
+    space: str
+    text: str
+    prop: str
+    move: str
+
+
+def _ascii_lower(value: str) -> str:
+    """A-Z only, like the TS `asciiLower` (full Unicode case mapping differs across languages)."""
+    return value.translate(_UPPER_TO_LOWER)
+
+
+def _ascii_upper(value: str) -> str:
+    return value.translate(_LOWER_TO_UPPER)
+
+
+def _enum_value(value: str, allowed: tuple[str, ...], fold) -> str:
+    folded = fold(value)
+    return folded if folded in allowed else SHOT_CARD_UNKNOWN
+
+
+def _free_text(value: str, limit: int) -> str:
+    if not value or value == SHOT_CARD_UNKNOWN:
+        return SHOT_CARD_UNKNOWN
+    return value if len(value) <= limit else SHOT_CARD_UNKNOWN
+
+
+def _light_value(value: str) -> str:
+    folded = _ascii_lower(value)
+    kind, dash, side = folded.partition("-")
+    if kind not in LIGHT_KINDS:
+        return SHOT_CARD_UNKNOWN
+    if not dash:
+        return folded
+    return folded if side in LIGHT_SIDES else SHOT_CARD_UNKNOWN
+
+
+def _prop_value(value: str) -> str:
+    folded = _ascii_lower(value)
+    if folded == "none":
+        return "none"
+    side, dash, surface = folded.partition("-")
+    if dash and side in PROP_SIDES and surface in PROP_SURFACES:
+        return folded
+    return SHOT_CARD_UNKNOWN
+
+
+def _parse_shot_card_body(body: str) -> ShotCard | None:
+    """`parseShotCardBody`: the text after `S<n>:` -> a card, or None when not exactly 13
+    `key=value` pairs in `SHOT_CARD_KEYS` order. A bad value is `?`, never a malformed line."""
+    text = _TRAILING_STOP_RE.sub("", _js_trim(body), count=1)
+    pairs = text.split(";")
+    if len(pairs) != len(SHOT_CARD_KEYS):
+        return None
+    raw: dict[str, str] = {}
+    for key, pair in zip(SHOT_CARD_KEYS, pairs):
+        name, eq, value = pair.partition("=")
+        if not eq or _ascii_lower(_js_trim(name)) != key:
+            return None
+        raw[key] = _js_trim(value)
+    return ShotCard(
+        size=_enum_value(raw["size"], SHOT_SIZES, _ascii_upper),
+        height=_enum_value(raw["height"], CAMERA_HEIGHTS, _ascii_lower),
+        distance=_free_text(raw["distance"], SHOT_CARD_TEXT_MAX["distance"]),
+        place=_free_text(raw["place"], SHOT_CARD_TEXT_MAX["place"]),
+        light=_light_value(raw["light"]),
+        stand=_enum_value(raw["stand"], STAND_POSITIONS, _ascii_lower),
+        headroom=_enum_value(raw["headroom"], HEADROOMS, _ascii_lower),
+        eyes=_enum_value(raw["eyes"], EYE_LINES, _ascii_lower),
+        background=_free_text(raw["background"], SHOT_CARD_TEXT_MAX["background"]),
+        space=_enum_value(raw["space"], NEGATIVE_SPACES, _ascii_lower),
+        text=_enum_value(raw["text"], TEXT_POSITIONS, _ascii_lower),
+        prop=_prop_value(raw["prop"]),
+        move=_enum_value(raw["move"], MOVEMENTS, _ascii_lower),
+    )
+
+
+def _shot_cards_for_beats(block_lines: list[str], beat_count: int) -> list[ShotCard | None]:
+    """`shotCardsForBeats`: one card or None per beat. A line that is not a well-formed `S<n>:`
+    line for an existing beat is dropped; a beat named twice gets no card."""
+    cards: list[ShotCard | None] = [None] * beat_count
+    seen: set[int] = set()
+    doubled: set[int] = set()
+    for line in block_lines:
+        trimmed = _js_trim(line)
+        match = _SHOT_LINE_RE.search(trimmed)
+        if not match:
+            continue
+        n = int(match.group(1))
+        if n < 1 or n > beat_count:
+            continue
+        if n in seen:
+            doubled.add(n)
+        seen.add(n)
+        cards[n - 1] = _parse_shot_card_body(trimmed[match.end() :])
+    for n in doubled:
+        cards[n - 1] = None
+    return cards
+
+
 @dataclass(frozen=True)
 class ScriptBeat:
     start: int
@@ -113,6 +266,9 @@ class ScriptBeat:
     stress: str | None
     pause: str | None
     on_screen: str
+    # From the optional `Shot cards:` block; None when the reply has no block or no well-formed
+    # `S<n>:` line for this beat (the TS `card?`).
+    card: ShotCard | None = None
 
 
 @dataclass(frozen=True)
@@ -224,6 +380,22 @@ def parse_meera_script(text: object) -> ParsedMeeraScript | None:
             return None
         if b > 0 and beat.start != beats[b - 1].end:
             return None
+
+    # Shot cards: optional, only here (after the last beat, before Caption). The block runs up to
+    # the `Caption:` line and can only cost a beat its card; `Shot cards:` with a value is refused.
+    maybe_cards = _split_key_value(lines[i]) if i < len(lines) else None
+    if maybe_cards and _key_is(maybe_cards, "shot cards"):
+        if maybe_cards[1]:
+            return None
+        i += 1
+        block_start = i
+        while i < len(lines):
+            kv = _split_key_value(lines[i])
+            if kv and _key_is(kv, "caption"):
+                break
+            i += 1
+        cards = _shot_cards_for_beats(lines[block_start:i], len(beats))
+        beats = [dataclasses.replace(beat, card=card) if card else beat for beat, card in zip(beats, cards)]
 
     if i >= len(lines):
         return None

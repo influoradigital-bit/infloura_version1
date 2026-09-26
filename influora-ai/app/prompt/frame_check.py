@@ -324,8 +324,12 @@ CANT_TELL_ID_HINTS: dict[str, str] = {
 SHOT_CONTEXT_MAX_CHARS = 1000
 ANSWERS_MAX_CHARS = 600
 MAX_ANSWERS = 3
+# `prop_position` (spec v2 Phase 6) is the shot card's `prop` value as the app sends it: `none`
+# or `<left|centre|right>-<hand|table|floor>`, the creator's own side. It sits right after
+# `sit_or_walk`, as in the app's own priority list (src/lib/meera-api.ts). Like the other
+# free-text keys it answers no coach question and is wrapped as untrusted.
 SHOT_CONTEXT_KEYS: tuple[str, ...] = (
-    "angle", "action", "prop", "where", "light", "on_camera", "sit_or_walk", "line",
+    "angle", "action", "prop", "where", "light", "on_camera", "sit_or_walk", "prop_position", "line",
 )
 _SHOT_CONTEXT_VALUE_CHARS = 300
 

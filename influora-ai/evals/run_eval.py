@@ -24,7 +24,9 @@ Design notes:
   matching (and the run fails loudly with missing_fixture) the moment anyone
   edits a golden case's input without re-recording.
 - Deliberately imports ONLY pure app modules (app.tools.schemas,
-  app.prompt.brand_safety, app.prompt.trend_tag, app.prompt.untrusted) at
+  app.prompt.brand_safety, app.prompt.trend_tag, app.prompt.untrusted, and via
+  evals.shot_card_scorer app.prompt.content_knowledge,
+  app.prompt.frame_check_render and app.recommendations.script_card) at
   module level. app.config / app.providers.* are imported lazily inside the
   live callers only — offline mode must run with zero env vars set and must
   not race concurrent edits to config/provider files.
@@ -33,6 +35,11 @@ Design notes:
   scored (F-24: `--live` with no API key used to print SKIPPED and exit 0, so a
   CI job wired to the mode that actually calls a model reported green having
   scored zero cases against zero models). An unscored dataset is never green.
+- A dataset whose live run spends real money on the owner's approval only
+  (`shot_card_plan`: about 120 full-script Meera calls for the before/after
+  proof) also needs its `live_opt_in_env` set to 1; without it `--live` reports
+  NOT RUN, exactly like a missing key, so `--live all` never spends it by
+  accident.
 """
 
 from __future__ import annotations
@@ -55,6 +62,7 @@ if str(SERVICE_ROOT) not in sys.path:
 # Pure imports only (no env reads, no provider SDKs) — see module docstring.
 from app.prompt.trend_tag import parse_and_validate  # noqa: E402
 from app.tools.schemas import GARM_CATEGORIES, GARM_RISK_LEVELS  # noqa: E402
+from evals import shot_card_scorer  # noqa: E402
 from evals.scorers import (  # noqa: E402
     exact_match,
     mean,
@@ -442,6 +450,185 @@ def make_live_campaign_performance_caller() -> ModelCaller:
             "campaign_performance is a Java-executor determinism eval — record its "
             "fixtures from the Spring integration test, then run with --offline."
         )
+
+    return caller
+
+
+# At most this many model calls per case: the answer, plus up to two knowledge lookups first
+# (Plan my shoot looks up the framing topic; a reply may also look up shot_planning).
+_SHOT_CARD_MAX_ROUNDS = 3
+
+
+def _anthropic_block_dict(block: Any) -> dict[str, Any] | None:
+    """A response content block as a request block (text and tool_use only)."""
+    kind = getattr(block, "type", None)
+    if kind == "text" and getattr(block, "text", ""):
+        return {"type": "text", "text": block.text}
+    if kind == "tool_use":
+        return {"type": "tool_use", "id": block.id, "name": block.name, "input": block.input}
+    return None
+
+
+# The "before" arm of the shot card proof (Priya 2026-09-26): the SAME harness, dataset and
+# scorer, with the creator persona text of an older commit. Before and after carry the same
+# PROMPT_VERSION on this branch, so saved runs are told apart by the persona text's sha256.
+SHOT_CARD_PERSONA_REF_ENV = "SHOT_CARD_EVAL_PERSONA_REF"
+_PERSONA_SOURCE_PATH = "influora-ai/app/prompt/creator_persona.py"
+
+
+def persona_from_source(source: str) -> str:
+    """MEERA_CREATOR_PERSONA from a creator_persona.py source text (a plain string literal),
+    read with `ast`, so an older commit's module is never imported or executed."""
+    import ast
+
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets, value = [node.target], node.value
+        else:
+            continue
+        if any(isinstance(t, ast.Name) and t.id == "MEERA_CREATOR_PERSONA" for t in targets):
+            text = ast.literal_eval(value)
+            if isinstance(text, str) and text.strip():
+                return text
+    raise ValueError("no MEERA_CREATOR_PERSONA string literal in that source")
+
+
+def _git_show(ref: str, path: str) -> str:
+    import subprocess
+
+    result = subprocess.run(["git", "show", f"{ref}:{path}"], cwd=SERVICE_ROOT, capture_output=True, check=False)
+    if result.returncode != 0:
+        raise ValueError(f"git show {ref}:{path} failed: {result.stderr.decode('utf-8', 'replace').strip()}")
+    return result.stdout.decode("utf-8")
+
+
+def shot_card_persona() -> tuple[str, str]:
+    """(label, persona text) for this run: the persona of commit $SHOT_CARD_EVAL_PERSONA_REF when
+    it is set (the "before" arm), else this working tree's (the "after" arm)."""
+    ref = (os.getenv(SHOT_CARD_PERSONA_REF_ENV) or "").strip()
+    if ref:
+        return ref, persona_from_source(_git_show(ref, _PERSONA_SOURCE_PATH))
+    from app.prompt.creator_persona import get_creator_persona_block  # lazy: imports app.config
+
+    return "working tree", get_creator_persona_block()
+
+
+def shot_card_run_identity() -> dict[str, str]:
+    """What a saved shot_card_plan run was measured with; `shot_card_scorer` refuses to compare
+    a before and an after that share a persona sha256."""
+    label, text = shot_card_persona()
+    from app.config import PROMPT_VERSION  # lazy
+
+    return {
+        "persona_ref": label,
+        "persona_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "prompt_version": PROMPT_VERSION,
+    }
+
+
+def assemble_shot_card_prompt(case_input: dict[str, Any], persona_text: str) -> Any:
+    """The real creator prompt for one case, with `persona_text` as Block A's rules half (the
+    assembler reads it through `get_creator_persona_block`, swapped only for this call)."""
+    from unittest import mock
+
+    from app.prompt import assembler
+
+    with mock.patch.object(assembler, "get_creator_persona_block", lambda: persona_text):
+        return assembler.assemble_prompt(
+            {
+                "audience": "CREATOR",
+                "workspace_id": "eval-shot-card",
+                "creator": shot_card_scorer.build_creator_context(case_input),
+                "conversation": shot_card_scorer.build_conversation(case_input),
+            },
+            session_id="eval-" + case_input_key(case_input),
+        )
+
+
+def make_live_shot_card_plan_caller() -> ModelCaller:
+    """Live caller for the shot card proof (spec v2 Phase 6). NEVER run without the owner's
+    approval: the before/after proof is 20 cases x 3 runs x 2 prompts, about 120 full-script
+    calls. `main` refuses `--live` for this dataset unless SHOT_CARD_EVAL_APPROVED=1.
+
+    Drives the REAL creator prompt (`assemble_prompt` with audience CREATOR: Block A, the
+    knowledge block, Block B from the case's creator context) over a replayed chat: the request,
+    the pre-filled coach questions with the creator's tapped answers, then "write it now"
+    (`shot_card_scorer.build_conversation`). No account tools are offered (tools_enabled is
+    empty); the local get_creator_knowledge lookup is executed here from the same rendered
+    topics the tool loop serves, so the framing lookup works as in production. max_tokens is
+    production's `meera_chat_max_tokens`, so a card block that no longer fits shows up as a
+    truncated reply instead of being hidden by a bigger eval budget.
+
+    Both arms run on THIS branch, so the harness, dataset and scorer are the same: "before" with
+    SHOT_CARD_EVAL_PERSONA_REF=96f37fb6 (the commit before the shot-card prompt; only its persona
+    text is used, see `shot_card_persona`), "after" with it unset. Save each run with
+    `--save-scores` (it records the persona's sha256) and compare with `python -m
+    evals.shot_card_scorer --before ... --after ...`, which refuses runs that share a persona."""
+    import anthropic  # lazy
+
+    from app.config import CLAUDE_MODEL, get_settings
+    from app.prompt.content_knowledge import LOOKUP_TOPICS, render_lookup_section
+    from app.tools.creator_schemas import GET_CREATOR_KNOWLEDGE
+
+    model = os.getenv("MEERA_MODEL") or CLAUDE_MODEL
+    max_tokens = get_settings().meera_chat_max_tokens
+    client = anthropic.Anthropic()
+    persona_label, persona_text = shot_card_persona()
+    persona_sha = hashlib.sha256(persona_text.encode("utf-8")).hexdigest()
+    print(f"shot_card_plan persona: {persona_label} (sha256 {persona_sha[:12]})")
+
+    def caller(case_input: dict[str, Any]) -> dict[str, Any]:
+        prompt = assemble_shot_card_prompt(case_input, persona_text)
+        messages: list[dict[str, Any]] = list(prompt.messages)
+        text = ""
+        stop_reason: str | None = None
+        lookups: list[str] = []
+        for _ in range(_SHOT_CARD_MAX_ROUNDS):
+            response = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=cast("Any", prompt.system_blocks),
+                messages=cast("Any", messages),
+                tools=cast("Any", prompt.tools),
+            )
+            stop_reason = getattr(response, "stop_reason", None)
+            text = "".join(
+                getattr(b, "text", "") for b in response.content if getattr(b, "type", None) == "text"
+            )
+            tool_uses = [b for b in response.content if getattr(b, "type", None) == "tool_use"]
+            if not tool_uses:
+                break
+            messages.append(
+                {"role": "assistant", "content": [d for d in map(_anthropic_block_dict, response.content) if d]}
+            )
+            results: list[dict[str, Any]] = []
+            for use in tool_uses:
+                tool_input = use.input if isinstance(use.input, dict) else {}
+                topic = tool_input.get("topic")
+                knowledge = (
+                    render_lookup_section(topic)
+                    if use.name == GET_CREATOR_KNOWLEDGE and isinstance(topic, str) and topic in LOOKUP_TOPICS
+                    else None
+                )
+                lookups.append(f"{use.name}:{topic}")
+                result: dict[str, Any] = {"type": "tool_result", "tool_use_id": use.id}
+                if knowledge:
+                    result["content"] = knowledge
+                else:
+                    result["content"] = json.dumps({"error": "unknown_topic", "topics": list(LOOKUP_TOPICS)})
+                    result["is_error"] = True
+                results.append(result)
+            messages.append({"role": "user", "content": results})
+        return {
+            "response": text,
+            "stop_reason": stop_reason,
+            "model": model,
+            "prompt_version": prompt.prompt_version,
+            "persona_sha256": persona_sha,
+            "lookups": lookups,
+        }
 
     return caller
 
@@ -977,6 +1164,25 @@ def aggregate_campaign_performance(
 
 
 # ---------------------------------------------------------------------------
+# shot_card_plan -- the shot card proof (spec v2 Phase 6 "Proof before keeping").
+# Scoring lives in evals/shot_card_scorer.py (F, S, P, C by code only).
+# ---------------------------------------------------------------------------
+
+
+def score_shot_card_plan(expected: dict[str, Any], raw: dict[str, Any]) -> dict[str, float]:
+    case = shot_card_scorer.ShotCardCase.from_expected(expected)
+    stop_reason = raw.get("stop_reason") if isinstance(raw, dict) else None
+    score = shot_card_scorer.score_reply(
+        shot_card_scorer.reply_text(raw), case, stop_reason=stop_reason if isinstance(stop_reason, str) else None
+    )
+    return score.as_metrics()
+
+
+def aggregate_shot_card_plan(per_case: list[dict[str, float]]) -> tuple[dict[str, float], list[str]]:
+    return shot_card_scorer.aggregate(per_case)
+
+
+# ---------------------------------------------------------------------------
 # Feature registry
 # ---------------------------------------------------------------------------
 
@@ -988,6 +1194,9 @@ class Feature:
     aggregator: Callable[[list[dict[str, float]]], tuple[dict[str, float], list[str]]]
     live_caller_factory: Callable[[], ModelCaller]
     required_env_key: str
+    # A live run that spends real money only on the owner's approval: `--live` refuses it
+    # (NOT RUN, never green) unless this env var is exactly "1".
+    live_opt_in_env: str | None = None
 
 
 FEATURES: dict[str, Feature] = {
@@ -1042,6 +1251,14 @@ FEATURES: dict[str, Feature] = {
         aggregator=aggregate_campaign_performance,
         live_caller_factory=make_live_campaign_performance_caller,
         required_env_key="ANTHROPIC_API_KEY",
+    ),
+    "shot_card_plan": Feature(
+        name="shot_card_plan",
+        scorer=score_shot_card_plan,
+        aggregator=aggregate_shot_card_plan,
+        live_caller_factory=make_live_shot_card_plan_caller,
+        required_env_key="ANTHROPIC_API_KEY",
+        live_opt_in_env="SHOT_CARD_EVAL_APPROVED",
     ),
 }
 
@@ -1162,10 +1379,17 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--live", action="store_true", help="call the real provider (requires API keys)")
     parser.add_argument("--record", action="store_true", help="with --live: save responses as offline fixtures")
     parser.add_argument("dataset", choices=[*FEATURES, "all"], help="dataset name, or 'all'")
+    parser.add_argument(
+        "--save-scores",
+        type=Path,
+        help="write the per-case scores of ONE dataset to this JSON file (shot_card_plan's ship verdict reads it)",
+    )
     args = parser.parse_args(argv)
 
     if args.record and not args.live:
         parser.error("--record only makes sense with --live")
+    if args.save_scores and args.dataset == "all":
+        parser.error("--save-scores takes one dataset, not 'all'")
 
     names = list(FEATURES) if args.dataset == "all" else [args.dataset]
     exit_code = 0
@@ -1182,11 +1406,37 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 unscored.append(f"{name} (no {feature.required_env_key})")
                 continue
+            if feature.live_opt_in_env and os.getenv(feature.live_opt_in_env) != "1":
+                # A paid run on the owner's approval only; never spent by `--live all`.
+                print(
+                    f"\n=== {name} ===\nNOT RUN (live): this run spends real money and needs the "
+                    f"owner's approval; set {feature.live_opt_in_env}=1 once it is given. "
+                    "This dataset scored ZERO cases and is not green."
+                )
+                unscored.append(f"{name} (no {feature.live_opt_in_env}=1)")
+                continue
             caller = feature.live_caller_factory()
         else:
             caller = make_offline_caller(name)
         report = run_dataset(name, caller, record=args.record and args.live)
         print_report(report)
+        if args.save_scores:
+            args.save_scores.parent.mkdir(parents=True, exist_ok=True)
+            saved: dict[str, Any] = {
+                "dataset": name,
+                "mode": "live" if args.live else "offline",
+                "case_scores": report.case_scores,
+            }
+            if name == "shot_card_plan":
+                saved["run_identity"] = shot_card_run_identity()
+            with args.save_scores.open("w", encoding="utf-8", newline="\n") as fh:
+                json.dump(
+                    saved,
+                    fh,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                fh.write("\n")
         if not report.passed:
             exit_code = 1
 

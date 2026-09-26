@@ -269,5 +269,713 @@
       "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template\n​",
       "expected": "card"
     }
+  ],
+  "_shot_card_source": "shot_card_cases: the optional Shot cards block (spec v2 Phase 6 wire format: after the last beat, before Caption; 'S<n>: ' + 13 key=value pairs in the order size, height, distance, place, light, stand, headroom, eyes, background, space, text, prop, move). 'expected' and 'cards' (one card or null per beat, '?' = unknown) are what the REAL parseMeeraScript returned (src/lib/meera-result-cards.ts bundled with esbuild, run under node 22, 2026-09-26). Pinned on both sides: tests/recommendations/test_script_card_parity.py and src/lib/meera-result-cards.shot-cards.test.ts.",
+  "shot_card_cases": [
+    {
+      "name": "shot_cards_every_beat",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nShot cards:\nS1: size=MCU; height=eye; distance=0.8-1 m; place=Bedroom desk; light=window-left; stand=centre; headroom=small; eyes=lens; background=plain wall; space=right; text=top; prop=right-hand; move=still\nS2: size=OVERHEAD; height=overhead; distance=40 cm; place=Kitchen counter; light=window-left; stand=centre; headroom=cropped; eyes=product; background=clean counter; space=none; text=lower_middle; prop=centre-table; move=still\nS3: size=CU; height=chest; distance=30 cm; place=Kitchen counter; light=window-left; stand=left; headroom=cropped; eyes=product; background=clean counter; space=left; text=opposite_face; prop=left-hand; move=push\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card",
+      "cards": [
+        {
+          "size": "MCU",
+          "height": "eye",
+          "distance": "0.8-1 m",
+          "place": "Bedroom desk",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "small",
+          "eyes": "lens",
+          "background": "plain wall",
+          "space": "right",
+          "text": "top",
+          "prop": "right-hand",
+          "move": "still"
+        },
+        {
+          "size": "OVERHEAD",
+          "height": "overhead",
+          "distance": "40 cm",
+          "place": "Kitchen counter",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "clean counter",
+          "space": "none",
+          "text": "lower_middle",
+          "prop": "centre-table",
+          "move": "still"
+        },
+        {
+          "size": "CU",
+          "height": "chest",
+          "distance": "30 cm",
+          "place": "Kitchen counter",
+          "light": "window-left",
+          "stand": "left",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "clean counter",
+          "space": "left",
+          "text": "opposite_face",
+          "prop": "left-hand",
+          "move": "push"
+        }
+      ]
+    },
+    {
+      "name": "shot_cards_absent_still_a_card",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card",
+      "cards": [
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "name": "shot_cards_unknowns_and_blanks",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nShot cards:\nS1: size=MCU; height=eye; distance=0.8-1 m; place=Bedroom desk; light=window-left; stand=centre; headroom=small; eyes=lens; background=plain wall; space=right; text=top; prop=right-hand; move=still\nS2: size=OVERHEAD; height=overhead; distance=; place= ; light=window-left; stand=centre; headroom=cropped; eyes=product; background=clean counter; space=none; text=lower_middle; prop=centre-table; move=still\nS3: size=?; height=?; distance=?; place=?; light=?; stand=centre; headroom=small; eyes=?; background=plain wall; space=right; text=top; prop=?; move=?\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card",
+      "cards": [
+        {
+          "size": "MCU",
+          "height": "eye",
+          "distance": "0.8-1 m",
+          "place": "Bedroom desk",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "small",
+          "eyes": "lens",
+          "background": "plain wall",
+          "space": "right",
+          "text": "top",
+          "prop": "right-hand",
+          "move": "still"
+        },
+        {
+          "size": "OVERHEAD",
+          "height": "overhead",
+          "distance": "?",
+          "place": "?",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "clean counter",
+          "space": "none",
+          "text": "lower_middle",
+          "prop": "centre-table",
+          "move": "still"
+        },
+        {
+          "size": "?",
+          "height": "?",
+          "distance": "?",
+          "place": "?",
+          "light": "?",
+          "stand": "centre",
+          "headroom": "small",
+          "eyes": "?",
+          "background": "plain wall",
+          "space": "right",
+          "text": "top",
+          "prop": "?",
+          "move": "?"
+        }
+      ]
+    },
+    {
+      "name": "shot_cards_malformed_line_keeps_the_beat",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nShot cards:\nS1: size=MCU; height=eye; distance=0.8-1 m; place=Bedroom desk; light=window-left; stand=centre; headroom=small; eyes=lens; background=plain wall; space=right; text=top; prop=right-hand; move=still\nS2: size=OVERHEAD; height=overhead; distance=40 cm; place=Kitchen counter; light=window-left; stand=centre; headroom=cropped; eyes=product; background=clean counter; space=none; text=lower_middle; prop=centre-table\nS3: size=CU; height=chest; distance=30 cm; place=Kitchen counter; light=window-left; stand=left; headroom=cropped; eyes=product; background=clean counter; space=left; text=opposite_face; prop=left-hand; move=push\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card",
+      "cards": [
+        {
+          "size": "MCU",
+          "height": "eye",
+          "distance": "0.8-1 m",
+          "place": "Bedroom desk",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "small",
+          "eyes": "lens",
+          "background": "plain wall",
+          "space": "right",
+          "text": "top",
+          "prop": "right-hand",
+          "move": "still"
+        },
+        null,
+        {
+          "size": "CU",
+          "height": "chest",
+          "distance": "30 cm",
+          "place": "Kitchen counter",
+          "light": "window-left",
+          "stand": "left",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "clean counter",
+          "space": "left",
+          "text": "opposite_face",
+          "prop": "left-hand",
+          "move": "push"
+        }
+      ]
+    },
+    {
+      "name": "shot_cards_keys_out_of_order",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nShot cards:\nS1: height=eye; size=MCU; distance=0.8-1 m; place=Bedroom desk; light=window-left; stand=centre; headroom=small; eyes=lens; background=plain wall; space=right; text=top; prop=right-hand; move=still\nS2: size=OVERHEAD; height=overhead; distance=40 cm; place=Kitchen counter; light=window-left; stand=centre; headroom=cropped; eyes=product; background=clean counter; space=none; text=lower_middle; prop=centre-table; move=still\nS3: size=CU; height=chest; distance=30 cm; place=Kitchen counter; light=window-left; stand=left; headroom=cropped; eyes=product; background=clean counter; space=left; text=opposite_face; prop=left-hand; move push\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card",
+      "cards": [
+        null,
+        {
+          "size": "OVERHEAD",
+          "height": "overhead",
+          "distance": "40 cm",
+          "place": "Kitchen counter",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "clean counter",
+          "space": "none",
+          "text": "lower_middle",
+          "prop": "centre-table",
+          "move": "still"
+        },
+        null
+      ]
+    },
+    {
+      "name": "shot_cards_unknown_enum_values",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nShot cards:\nS1: size=WIDE; height=eye-level; distance=0.8-1 m; place=Bedroom desk; light=window your left; stand=center; headroom=large; eyes=camera; background=plain wall; space=bottom; text=middle; prop=right-shelf; move=run\nS2: size=overhead; height=Overhead; distance=40 cm; place=Kitchen counter; light=Ring_Light-Front; stand=Centre; headroom=CROPPED; eyes=Product; background=clean counter; space=None; text=Lower_Middle; prop=Centre-Table; move=Still\nS3: size=CU; height=chest; distance=30 cm; place=Kitchen counter; light=candle-left; stand=left; headroom=cropped; eyes=product; background=clean counter; space=left; text=opposite_face; prop=left; move=push\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card",
+      "cards": [
+        {
+          "size": "?",
+          "height": "?",
+          "distance": "0.8-1 m",
+          "place": "Bedroom desk",
+          "light": "?",
+          "stand": "?",
+          "headroom": "?",
+          "eyes": "?",
+          "background": "plain wall",
+          "space": "?",
+          "text": "?",
+          "prop": "?",
+          "move": "?"
+        },
+        {
+          "size": "OVERHEAD",
+          "height": "overhead",
+          "distance": "40 cm",
+          "place": "Kitchen counter",
+          "light": "ring_light-front",
+          "stand": "centre",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "clean counter",
+          "space": "none",
+          "text": "lower_middle",
+          "prop": "centre-table",
+          "move": "still"
+        },
+        {
+          "size": "CU",
+          "height": "chest",
+          "distance": "30 cm",
+          "place": "Kitchen counter",
+          "light": "?",
+          "stand": "left",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "clean counter",
+          "space": "left",
+          "text": "opposite_face",
+          "prop": "?",
+          "move": "push"
+        }
+      ]
+    },
+    {
+      "name": "shot_cards_light_and_prop_forms",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nShot cards:\nS1: size=MS; height=above; distance=1.5 m; place=Balcony; light=sun; stand=right; headroom=medium; eyes=off_lens; background=plants; space=left; text=none; prop=none; move=walk\nS2: size=FS; height=below; distance=3 m; place=Terrace; light=tube_light-behind; stand=left; headroom=small; eyes=lens; background=sky; space=top; text=top; prop=left-floor; move=pan\nS3: size=LS; height=eye; distance=4 m; place=Street; light=mixed-front; stand=centre; headroom=medium; eyes=lens; background=market stalls; space=right; text=top; prop=right-table; move=sit\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card",
+      "cards": [
+        {
+          "size": "MS",
+          "height": "above",
+          "distance": "1.5 m",
+          "place": "Balcony",
+          "light": "sun",
+          "stand": "right",
+          "headroom": "medium",
+          "eyes": "off_lens",
+          "background": "plants",
+          "space": "left",
+          "text": "none",
+          "prop": "none",
+          "move": "walk"
+        },
+        {
+          "size": "FS",
+          "height": "below",
+          "distance": "3 m",
+          "place": "Terrace",
+          "light": "tube_light-behind",
+          "stand": "left",
+          "headroom": "small",
+          "eyes": "lens",
+          "background": "sky",
+          "space": "top",
+          "text": "top",
+          "prop": "left-floor",
+          "move": "pan"
+        },
+        {
+          "size": "LS",
+          "height": "eye",
+          "distance": "4 m",
+          "place": "Street",
+          "light": "mixed-front",
+          "stand": "centre",
+          "headroom": "medium",
+          "eyes": "lens",
+          "background": "market stalls",
+          "space": "right",
+          "text": "top",
+          "prop": "right-table",
+          "move": "sit"
+        }
+      ]
+    },
+    {
+      "name": "shot_cards_free_text_at_and_over_the_cap",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nShot cards:\nS1: size=MCU; height=eye; distance=dddddddddddddddddddd; place=pppppppppppppppppppppppppppppppppppppppp; light=window-left; stand=centre; headroom=small; eyes=lens; background=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; space=right; text=top; prop=right-hand; move=still\nS2: size=MCU; height=eye; distance=ddddddddddddddddddddd; place=ppppppppppppppppppppppppppppppppppppppppp; light=window-left; stand=centre; headroom=small; eyes=lens; background=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; space=right; text=top; prop=right-hand; move=still\nS3: size=CU; height=chest; distance=30 cm; place=🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; light=window-left; stand=left; headroom=cropped; eyes=product; background=🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿🌿; space=left; text=opposite_face; prop=left-hand; move=push\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card",
+      "cards": [
+        {
+          "size": "MCU",
+          "height": "eye",
+          "distance": "dddddddddddddddddddd",
+          "place": "pppppppppppppppppppppppppppppppppppppppp",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "small",
+          "eyes": "lens",
+          "background": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "space": "right",
+          "text": "top",
+          "prop": "right-hand",
+          "move": "still"
+        },
+        {
+          "size": "MCU",
+          "height": "eye",
+          "distance": "?",
+          "place": "?",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "small",
+          "eyes": "lens",
+          "background": "?",
+          "space": "right",
+          "text": "top",
+          "prop": "right-hand",
+          "move": "still"
+        },
+        {
+          "size": "CU",
+          "height": "chest",
+          "distance": "30 cm",
+          "place": "🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "light": "window-left",
+          "stand": "left",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "?",
+          "space": "left",
+          "text": "opposite_face",
+          "prop": "left-hand",
+          "move": "push"
+        }
+      ]
+    },
+    {
+      "name": "shot_cards_fewer_lines_than_beats",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nShot cards:\nS1: size=MCU; height=eye; distance=0.8-1 m; place=Bedroom desk; light=window-left; stand=centre; headroom=small; eyes=lens; background=plain wall; space=right; text=top; prop=right-hand; move=still\nS3: size=CU; height=chest; distance=30 cm; place=Kitchen counter; light=window-left; stand=left; headroom=cropped; eyes=product; background=clean counter; space=left; text=opposite_face; prop=left-hand; move=push\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card",
+      "cards": [
+        {
+          "size": "MCU",
+          "height": "eye",
+          "distance": "0.8-1 m",
+          "place": "Bedroom desk",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "small",
+          "eyes": "lens",
+          "background": "plain wall",
+          "space": "right",
+          "text": "top",
+          "prop": "right-hand",
+          "move": "still"
+        },
+        null,
+        {
+          "size": "CU",
+          "height": "chest",
+          "distance": "30 cm",
+          "place": "Kitchen counter",
+          "light": "window-left",
+          "stand": "left",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "clean counter",
+          "space": "left",
+          "text": "opposite_face",
+          "prop": "left-hand",
+          "move": "push"
+        }
+      ]
+    },
+    {
+      "name": "shot_cards_out_of_range_and_doubled",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nShot cards:\nS0: size=MCU; height=eye; distance=0.8-1 m; place=Bedroom desk; light=window-left; stand=centre; headroom=small; eyes=lens; background=plain wall; space=right; text=top; prop=right-hand; move=still\nS1: size=MCU; height=eye; distance=0.8-1 m; place=Bedroom desk; light=window-left; stand=centre; headroom=small; eyes=lens; background=plain wall; space=right; text=top; prop=right-hand; move=still\nS2: size=OVERHEAD; height=overhead; distance=40 cm; place=Kitchen counter; light=window-left; stand=centre; headroom=cropped; eyes=product; background=clean counter; space=none; text=lower_middle; prop=centre-table; move=still\nS2: size=CU; height=overhead; distance=40 cm; place=Kitchen counter; light=window-left; stand=centre; headroom=cropped; eyes=product; background=clean counter; space=none; text=lower_middle; prop=centre-table; move=still\nS4: size=CU; height=chest; distance=30 cm; place=Kitchen counter; light=window-left; stand=left; headroom=cropped; eyes=product; background=clean counter; space=left; text=opposite_face; prop=left-hand; move=push\nS१: size=CU; height=chest; distance=30 cm; place=Kitchen counter; light=window-left; stand=left; headroom=cropped; eyes=product; background=clean counter; space=left; text=opposite_face; prop=left-hand; move=push\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card",
+      "cards": [
+        {
+          "size": "MCU",
+          "height": "eye",
+          "distance": "0.8-1 m",
+          "place": "Bedroom desk",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "small",
+          "eyes": "lens",
+          "background": "plain wall",
+          "space": "right",
+          "text": "top",
+          "prop": "right-hand",
+          "move": "still"
+        },
+        null,
+        null
+      ]
+    },
+    {
+      "name": "shot_cards_stray_lines_in_block_are_dropped",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nShot cards:\nS1: size=MCU; height=eye; distance=0.8-1 m; place=Bedroom desk; light=window-left; stand=centre; headroom=small; eyes=lens; background=plain wall; space=right; text=top; prop=right-hand; move=still\n\n(Beat 2 is a hands shot, no card.)\nS3: size=CU; height=chest; distance=30 cm; place=Kitchen counter; light=window-left; stand=left; headroom=cropped; eyes=product; background=clean counter; space=left; text=opposite_face; prop=left-hand; move=push\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card",
+      "cards": [
+        {
+          "size": "MCU",
+          "height": "eye",
+          "distance": "0.8-1 m",
+          "place": "Bedroom desk",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "small",
+          "eyes": "lens",
+          "background": "plain wall",
+          "space": "right",
+          "text": "top",
+          "prop": "right-hand",
+          "move": "still"
+        },
+        null,
+        {
+          "size": "CU",
+          "height": "chest",
+          "distance": "30 cm",
+          "place": "Kitchen counter",
+          "light": "window-left",
+          "stand": "left",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "clean counter",
+          "space": "left",
+          "text": "opposite_face",
+          "prop": "left-hand",
+          "move": "push"
+        }
+      ]
+    },
+    {
+      "name": "shot_cards_empty_block",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nShot cards:\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card",
+      "cards": [
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "name": "shot_cards_markdown_and_spacing",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\n**Shot cards:**\ns1 :size=mcu;height=Eye;distance=0.8-1 m;place=Bedroom desk;light=WINDOW-LEFT;stand=centre;headroom=small;eyes=lens;background=plain wall;space=right;text=top;prop=right-hand;move=still.\n  S2:  size = OVERHEAD ;  height = overhead ; distance = 40 cm ; place = Kitchen counter ; light = window-left ; stand = centre ; headroom = cropped ; eyes = product ; background = clean counter ; space = none ; text = lower_middle ; prop = centre-table ; move = still ;\nS3: size=CU; height=chest; distance=30 cm; place=Kitchen counter; light=window-left; stand=left; headroom=cropped; eyes=product; background=clean counter; space=left; text=opposite_face; prop=left-hand; move=push.\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card",
+      "cards": [
+        {
+          "size": "MCU",
+          "height": "eye",
+          "distance": "0.8-1 m",
+          "place": "Bedroom desk",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "small",
+          "eyes": "lens",
+          "background": "plain wall",
+          "space": "right",
+          "text": "top",
+          "prop": "right-hand",
+          "move": "still"
+        },
+        {
+          "size": "OVERHEAD",
+          "height": "overhead",
+          "distance": "40 cm",
+          "place": "Kitchen counter",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "clean counter",
+          "space": "none",
+          "text": "lower_middle",
+          "prop": "centre-table",
+          "move": "still"
+        },
+        {
+          "size": "CU",
+          "height": "chest",
+          "distance": "30 cm",
+          "place": "Kitchen counter",
+          "light": "window-left",
+          "stand": "left",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "clean counter",
+          "space": "left",
+          "text": "opposite_face",
+          "prop": "left-hand",
+          "move": "push"
+        }
+      ]
+    },
+    {
+      "name": "shot_cards_equals_inside_free_text",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nShot cards:\nS1: size=MCU; height=eye; distance=0.8-1 m; place=desk = by the window; light=window-left; stand=centre; headroom=small; eyes=lens; background=plain wall; space=right; text=top; prop=right-hand; move=still\nS2: size=OVERHEAD; height=overhead; distance=40 cm; place=Kitchen counter; light=window-left; stand=centre; headroom=cropped; eyes=product; background=clean counter; space=none; text=lower_middle; prop=centre-table; move=still\nS3: size=CU; height=chest; distance=30 cm; place=Kitchen counter; light=window-left; stand=left; headroom=cropped; eyes=product; background=clean counter; space=left; text=opposite_face; prop=left-hand; move=push\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "card",
+      "cards": [
+        {
+          "size": "MCU",
+          "height": "eye",
+          "distance": "0.8-1 m",
+          "place": "desk = by the window",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "small",
+          "eyes": "lens",
+          "background": "plain wall",
+          "space": "right",
+          "text": "top",
+          "prop": "right-hand",
+          "move": "still"
+        },
+        {
+          "size": "OVERHEAD",
+          "height": "overhead",
+          "distance": "40 cm",
+          "place": "Kitchen counter",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "clean counter",
+          "space": "none",
+          "text": "lower_middle",
+          "prop": "centre-table",
+          "move": "still"
+        },
+        {
+          "size": "CU",
+          "height": "chest",
+          "distance": "30 cm",
+          "place": "Kitchen counter",
+          "light": "window-left",
+          "stand": "left",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "clean counter",
+          "space": "left",
+          "text": "opposite_face",
+          "prop": "left-hand",
+          "move": "push"
+        }
+      ]
+    },
+    {
+      "name": "shot_cards_hindi_reply",
+      "text": "Idea: केसर की 3 गलतियाँ\nPlan: नए खरीदारों के लिए; जिज्ञासा; फॉलोअर्स बढ़ाना; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: केसर का डिब्बा पकड़ें और कैमरे से बात करें\nSet-up: खिड़की की ओर बैठें, रोशनी आपकी बाईं ओर; फ़ोन आँखों की ऊँचाई पर\nScript:\n0-10s. Shot: चेहरे का क्लोज़-अप - डिब्बा उठाएँ. Say: \"क्या आपका केसर असली है?\". On screen: असली या नकली\n10-20s. Shot: हाथों पर ऊपर से - पानी में टेस्ट करें. Say: \"देखिए पानी में क्या होता है\". On screen: पानी टेस्ट\n20-30s. Shot: सर्टिफिकेट का क्लोज़-अप - डिब्बे के पास रखें. Say: \"असली कश्मीरी केसर ऐसा दिखता है\". On screen: GI प्रमाणित\nShot cards:\nS1: size=MCU; height=eye; distance=0.8-1 मीटर; place=बेडरूम की डेस्क; light=window-left; stand=centre; headroom=small; eyes=lens; background=सादी दीवार; space=right; text=top; prop=right-hand; move=still\nS2: size=OVERHEAD; height=overhead; distance=40 सेमी; place=रसोई का काउंटर; light=window-left; stand=centre; headroom=cropped; eyes=product; background=साफ़ काउंटर; space=none; text=lower_middle; prop=centre-table; move=still\nS3: size=CU; height=chest; distance=?; place=रसोई का काउंटर; light=?; stand=left; headroom=cropped; eyes=?; background=साफ़ काउंटर; space=left; text=opposite_face; prop=?; move=?\nCaption: क्या आप नकली केसर पहचान पाते? #saffron\nBefore you shoot: 1) फ़ोन चार्ज करें 2) काउंटर साफ़ करें 3) सर्टिफिकेट पास रखें\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template\nवॉइस-ओवर किस भाषा में चाहिए?",
+      "expected": "card",
+      "cards": [
+        {
+          "size": "MCU",
+          "height": "eye",
+          "distance": "0.8-1 मीटर",
+          "place": "बेडरूम की डेस्क",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "small",
+          "eyes": "lens",
+          "background": "सादी दीवार",
+          "space": "right",
+          "text": "top",
+          "prop": "right-hand",
+          "move": "still"
+        },
+        {
+          "size": "OVERHEAD",
+          "height": "overhead",
+          "distance": "40 सेमी",
+          "place": "रसोई का काउंटर",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "cropped",
+          "eyes": "product",
+          "background": "साफ़ काउंटर",
+          "space": "none",
+          "text": "lower_middle",
+          "prop": "centre-table",
+          "move": "still"
+        },
+        {
+          "size": "CU",
+          "height": "chest",
+          "distance": "?",
+          "place": "रसोई का काउंटर",
+          "light": "?",
+          "stand": "left",
+          "headroom": "cropped",
+          "eyes": "?",
+          "background": "साफ़ काउंटर",
+          "space": "left",
+          "text": "opposite_face",
+          "prop": "?",
+          "move": "?"
+        }
+      ]
+    },
+    {
+      "name": "shot_cards_six_beats_with_follow_up",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-5s. Shot: Close-up on your face. Say: \"Stop scrolling\". On screen: STOP\n5-15s. Shot: Medium shot at the desk. Say: \"Here is the first tip\". On screen: TIP 1\n15-25s. Shot: Overhead on your hands. Say: \"Here is the second tip\". On screen: TIP 2\n25-35s. Shot: Medium shot at the desk. Say: \"Here is the third tip\". On screen: TIP 3\n35-45s. Shot: Full body by the window. Say: \"And the last one\". On screen: TIP 4\n45-60s. Shot: Close-up on your face. Say: \"Follow for more\". On screen: FOLLOW\nShot cards:\nS1: size=CU; height=eye; distance=50 cm; place=Bedroom desk; light=window-left; stand=centre; headroom=cropped; eyes=lens; background=plain wall; space=none; text=top; prop=none; move=still\nS2: size=MS; height=eye; distance=1.2 m; place=Bedroom desk; light=window-left; stand=left; headroom=small; eyes=lens; background=bookshelf; space=right; text=top; prop=right-table; move=sit\nS4: size=MS; height=eye; distance=1.2 m; place=Bedroom desk; light=window-left; stand=left; headroom=small; eyes=lens; background=bookshelf; space=right; text=top; prop=right-table; move=sit\nS5: size=FS; height=chest; distance=2.5 m; place=By the window; light=window-front; stand=centre; headroom=small; eyes=off_lens; background=curtains; space=top; text=top; prop=none; move=walk\nS6: size=CU; height=eye; distance=50 cm; place=Bedroom desk; light=window-left; stand=centre; headroom=cropped; eyes=lens; background=plain wall; space=none; text=top; prop=none; move=still\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template\nWhich language should the voice-over be in?",
+      "expected": "card",
+      "cards": [
+        {
+          "size": "CU",
+          "height": "eye",
+          "distance": "50 cm",
+          "place": "Bedroom desk",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "cropped",
+          "eyes": "lens",
+          "background": "plain wall",
+          "space": "none",
+          "text": "top",
+          "prop": "none",
+          "move": "still"
+        },
+        {
+          "size": "MS",
+          "height": "eye",
+          "distance": "1.2 m",
+          "place": "Bedroom desk",
+          "light": "window-left",
+          "stand": "left",
+          "headroom": "small",
+          "eyes": "lens",
+          "background": "bookshelf",
+          "space": "right",
+          "text": "top",
+          "prop": "right-table",
+          "move": "sit"
+        },
+        null,
+        {
+          "size": "MS",
+          "height": "eye",
+          "distance": "1.2 m",
+          "place": "Bedroom desk",
+          "light": "window-left",
+          "stand": "left",
+          "headroom": "small",
+          "eyes": "lens",
+          "background": "bookshelf",
+          "space": "right",
+          "text": "top",
+          "prop": "right-table",
+          "move": "sit"
+        },
+        {
+          "size": "FS",
+          "height": "chest",
+          "distance": "2.5 m",
+          "place": "By the window",
+          "light": "window-front",
+          "stand": "centre",
+          "headroom": "small",
+          "eyes": "off_lens",
+          "background": "curtains",
+          "space": "top",
+          "text": "top",
+          "prop": "none",
+          "move": "walk"
+        },
+        {
+          "size": "CU",
+          "height": "eye",
+          "distance": "50 cm",
+          "place": "Bedroom desk",
+          "light": "window-left",
+          "stand": "centre",
+          "headroom": "cropped",
+          "eyes": "lens",
+          "background": "plain wall",
+          "space": "none",
+          "text": "top",
+          "prop": "none",
+          "move": "still"
+        }
+      ]
+    },
+    {
+      "name": "shot_cards_header_with_value",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nShot cards: size=MCU; height=eye; distance=0.8-1 m; place=Bedroom desk; light=window-left; stand=centre; headroom=small; eyes=lens; background=plain wall; space=right; text=top; prop=right-hand; move=still\nS2: size=OVERHEAD; height=overhead; distance=40 cm; place=Kitchen counter; light=window-left; stand=centre; headroom=cropped; eyes=product; background=clean counter; space=none; text=lower_middle; prop=centre-table; move=still\nS3: size=CU; height=chest; distance=30 cm; place=Kitchen counter; light=window-left; stand=left; headroom=cropped; eyes=product; background=clean counter; space=left; text=opposite_face; prop=left-hand; move=push\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none",
+      "cards": null
+    },
+    {
+      "name": "shot_cards_lines_without_header",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nS1: size=MCU; height=eye; distance=0.8-1 m; place=Bedroom desk; light=window-left; stand=centre; headroom=small; eyes=lens; background=plain wall; space=right; text=top; prop=right-hand; move=still\nS2: size=OVERHEAD; height=overhead; distance=40 cm; place=Kitchen counter; light=window-left; stand=centre; headroom=cropped; eyes=product; background=clean counter; space=none; text=lower_middle; prop=centre-table; move=still\nS3: size=CU; height=chest; distance=30 cm; place=Kitchen counter; light=window-left; stand=left; headroom=cropped; eyes=product; background=clean counter; space=left; text=opposite_face; prop=left-hand; move=push\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none",
+      "cards": null
+    },
+    {
+      "name": "shot_cards_after_caption",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nCaption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir\nShot cards:\nS1: size=MCU; height=eye; distance=0.8-1 m; place=Bedroom desk; light=window-left; stand=centre; headroom=small; eyes=lens; background=plain wall; space=right; text=top; prop=right-hand; move=still\nS2: size=OVERHEAD; height=overhead; distance=40 cm; place=Kitchen counter; light=window-left; stand=centre; headroom=cropped; eyes=product; background=clean counter; space=none; text=lower_middle; prop=centre-table; move=still\nS3: size=CU; height=chest; distance=30 cm; place=Kitchen counter; light=window-left; stand=left; headroom=cropped; eyes=product; background=clean counter; space=left; text=opposite_face; prop=left-hand; move=push\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none",
+      "cards": null
+    },
+    {
+      "name": "shot_cards_block_but_no_caption",
+      "text": "Idea: 3 saffron mistakes to avoid\nPlan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook\nAction: hold up the saffron box and speak to camera\nSet-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens\nSuccess looks like: reel gets watched to the end and shared to a friend\nScript:\n0-10s. Shot: Close-up on your face - hold up the saffron box. Say: \"Is your saffron even real?\". Stress: even real. Pause: after \"saffron\", or none. On screen: REAL vs FAKE\n10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: \"Watch what happens in water\". On screen: THE WATER TEST\n20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: \"This is what real Kashmiri saffron looks like\". On screen: GI CERTIFIED\nShot cards:\nS1: size=MCU; height=eye; distance=0.8-1 m; place=Bedroom desk; light=window-left; stand=centre; headroom=small; eyes=lens; background=plain wall; space=right; text=top; prop=right-hand; move=still\nS2: size=OVERHEAD; height=overhead; distance=40 cm; place=Kitchen counter; light=window-left; stand=centre; headroom=cropped; eyes=product; background=clean counter; space=none; text=lower_middle; prop=centre-table; move=still\nS3: size=CU; height=chest; distance=30 cm; place=Kitchen counter; light=window-left; stand=left; headroom=cropped; eyes=product; background=clean counter; space=left; text=opposite_face; prop=left-hand; move=push\nBefore you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach\nWhy this works: Problem-agitate-solve structure, curiosity-gap hook template",
+      "expected": "none",
+      "cards": null
+    }
   ]
 }

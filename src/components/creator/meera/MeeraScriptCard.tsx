@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Camera, Check, Copy } from 'lucide-react';
+import { Camera, Check, ChevronDown, Copy, MessageCircle } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { copyPlainText } from '@/lib/clipboard';
@@ -17,7 +17,19 @@ import {
   SCRIPT_CARD_WHY_LABEL,
   pickLang,
 } from '@/lib/copy/meera-chat';
-import type { ParsedMeeraScript } from '@/lib/meera-result-cards';
+import { scriptCopyText, type ParsedMeeraScript, type ScriptBeat } from '@/lib/meera-result-cards';
+import {
+  SHOT_CARD_COPY,
+  SHOT_CARD_FIELDS,
+  SHOT_CARD_LABELS,
+  fillShotCardCopy,
+  shotCardFieldText,
+  type ShootCheckLang,
+  type ShotCardField,
+} from '@/lib/shoot-check/advice-copy';
+
+/** A beat's shot card, exactly as `parseMeeraScript` types it (spec v2 Phase 6 wire format). */
+type ShotCard = NonNullable<ScriptBeat['card']>;
 
 /** Label for the optional `Set-up:` line (persona 2026-09-25). Kept here rather than in
  *  `@/lib/copy/meera-chat` only because that file was outside this change's scope; move it there
@@ -26,6 +38,135 @@ const SCRIPT_CARD_SETUP_LABEL = { en: 'Set-up', hi: 'सेट-अप' };
 
 /** The per-beat photo-check button (SPEC section 1a). Same "kept here" reason as the label above. */
 const SCRIPT_CARD_CHECK_SHOT_LABEL = { en: 'Check my set-up', hi: 'सेट-अप चेक करें' };
+
+/** `language` (the chat's `en-IN`/`hi-IN`) to the shoot-check copy tables' language. */
+function shotCardLang(language: string): ShootCheckLang {
+  return language.startsWith('hi') ? 'hi-IN' : 'en-IN';
+}
+
+interface ShotCardRow {
+  field: ShotCardField;
+  label: string;
+  /** Plain words, or `undefined` for "Not set yet" (never guessed). */
+  text: string | undefined;
+}
+
+/** The card's 13 rows in the wire format's order. A field typed on `ScriptBeat['card']` under
+ *  another name is a compile error here (`card[field]`), which keeps this file on the contract. */
+function shotCardRows(card: ShotCard, lang: ShootCheckLang): ShotCardRow[] {
+  return SHOT_CARD_FIELDS.map((field) => {
+    const raw: unknown = card[field];
+    return {
+      field,
+      label: SHOT_CARD_LABELS[field][lang],
+      text: shotCardFieldText(field, typeof raw === 'string' ? raw : undefined, lang),
+    };
+  });
+}
+
+interface ShotCardPanelProps {
+  card: ShotCard;
+  beat: ScriptBeat;
+  beatIndex: number;
+  /** Id of the beat's timing-and-shot line, used as the buttons' description. */
+  beatLineId: string;
+  lang: ShootCheckLang;
+  onPrefill?: (text: string) => void;
+}
+
+/**
+ * One beat's shot card (spec v2 Phase 6): a disclosure button, then the 13 fields in plain words.
+ * A field Meera has no answer for reads "Not set yet" in words with a dashed border (never colour
+ * alone, spec section 9). "Ask Meera" only fills the message box with a question about the
+ * missing fields; the creator presses send.
+ */
+function ShotCardPanel({ card, beat, beatIndex, beatLineId, lang, onPrefill }: ShotCardPanelProps) {
+  const panelId = React.useId();
+  const [open, setOpen] = React.useState(false);
+  const rows = shotCardRows(card, lang);
+  const missing = rows.filter((row) => row.text === undefined);
+  const notSet = SHOT_CARD_COPY.not_set[lang];
+
+  const handleAsk = () => {
+    if (!onPrefill || missing.length === 0) return;
+    const fields = missing.map((row) => (lang === 'en-IN' ? row.label.toLowerCase() : row.label)).join(', ');
+    onPrefill(
+      fillShotCardCopy(SHOT_CARD_COPY.ask_prefill[lang], {
+        n: beatIndex + 1,
+        time: `${beat.from}-${beat.to}s`,
+        fields,
+      }),
+    );
+  };
+
+  return (
+    <div data-testid="script-card-shot-card" className="mt-1">
+      <button
+        type="button"
+        data-testid="script-card-shot-card-toggle"
+        aria-expanded={open}
+        aria-controls={panelId}
+        aria-describedby={beatLineId}
+        onClick={() => setOpen((value) => !value)}
+        className="-ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        <ChevronDown
+          className={cn('h-4 w-4 transition-transform duration-150 motion-reduce:transition-none', open && 'rotate-180')}
+          aria-hidden="true"
+        />
+        {SHOT_CARD_COPY.title[lang]}
+        {missing.length > 0 ? (
+          <span className="text-xs font-normal text-muted-foreground">
+            {/* Leading space: the accessible name reads "Shot card · 2 not set yet", not "card·". */}
+            {' · '}
+            {fillShotCardCopy(SHOT_CARD_COPY.missing_count[lang], { n: missing.length })}
+          </span>
+        ) : null}
+      </button>
+      <div
+        id={panelId}
+        data-testid="script-card-shot-card-panel"
+        hidden={!open}
+        className="mt-1 space-y-2 rounded-lg border border-border bg-muted/40 p-2"
+      >
+        <dl className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
+          {rows.map((row) => (
+            <div key={row.field} data-testid={`shot-card-field-${row.field}`} className="contents">
+              <dt className="text-xs font-medium text-muted-foreground">{row.label}</dt>
+              <dd className="min-w-0 break-words [overflow-wrap:anywhere]">
+                {row.text !== undefined ? (
+                  row.text
+                ) : (
+                  <span
+                    data-testid="shot-card-not-set"
+                    className="inline-block rounded border border-dashed border-muted-foreground/60 px-1.5 text-xs text-muted-foreground"
+                  >
+                    {notSet}
+                  </span>
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        {missing.length > 0 ? (
+          <p className="text-xs text-muted-foreground">{SHOT_CARD_COPY.from_answers_note[lang]}</p>
+        ) : null}
+        {onPrefill && missing.length > 0 ? (
+          <button
+            type="button"
+            data-testid="script-card-shot-card-ask"
+            aria-describedby={beatLineId}
+            onClick={handleAsk}
+            className="-ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-primary hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <MessageCircle className="h-4 w-4" aria-hidden="true" />
+            {SHOT_CARD_COPY.ask_meera[lang]}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 /**
  * The rich reel-script card — reads a `ParsedMeeraScript` (the "Full script format" in
@@ -55,6 +196,9 @@ export interface MeeraScriptCardProps {
   /** The chat is busy (a turn is streaming or a photo check is running) and would ignore a tap:
    *  the set-up buttons show as disabled instead of doing nothing. */
   checkShotDisabled?: boolean;
+  /** Fills the chat's message box (never sends). When passed, a beat's shot card with fields
+   *  "Not set yet" gets an "Ask Meera" button that prefills a question about those fields. */
+  onPrefill?: (text: string) => void;
 }
 
 export function MeeraScriptCard({
@@ -64,6 +208,7 @@ export function MeeraScriptCard({
   className,
   onCheckShot,
   checkShotDisabled = false,
+  onPrefill,
 }: MeeraScriptCardProps) {
   const beatIdPrefix = React.useId();
   const [copied, setCopied] = React.useState(false);
@@ -78,7 +223,8 @@ export function MeeraScriptCard({
   // Called synchronously from the click handler (see clipboard.ts's doc comment) — required for
   // mobile Safari, which only honours navigator.clipboard.writeText in direct response to a tap.
   const handleCopy = () => {
-    void copyPlainText(rawText).then((ok) => {
+    // The reply as sent, minus the machine `Shot cards:` block the card never shows as text.
+    void copyPlainText(scriptCopyText(rawText)).then((ok) => {
       if (!ok) return;
       setCopied(true);
       if (copiedTimeoutRef.current !== null) window.clearTimeout(copiedTimeoutRef.current);
@@ -90,6 +236,7 @@ export function MeeraScriptCard({
   const stressLabel = pickLang(language, SCRIPT_CARD_STRESS_LABEL);
   const pauseLabel = pickLang(language, SCRIPT_CARD_PAUSE_LABEL);
   const checkShotLabel = pickLang(language, SCRIPT_CARD_CHECK_SHOT_LABEL);
+  const cardLang = shotCardLang(language);
 
   return (
     <div
@@ -173,6 +320,18 @@ export function MeeraScriptCard({
                 <Camera className="h-4 w-4" aria-hidden="true" />
                 {checkShotLabel}
               </button>
+            ) : null}
+            {/* Shot card (spec v2 Phase 6): only when the reply carried an S-line for this beat.
+                A reply without the "Shot cards:" block renders exactly as before. */}
+            {beat.card ? (
+              <ShotCardPanel
+                card={beat.card}
+                beat={beat}
+                beatIndex={index}
+                beatLineId={`${beatIdPrefix}-beat-${index}`}
+                lang={cardLang}
+                onPrefill={onPrefill}
+              />
             ) : null}
           </li>
         ))}

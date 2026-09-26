@@ -352,6 +352,10 @@ export interface MeeraShotContext {
   light?: string;
   on_camera?: string;
   sit_or_walk?: string;
+  /** Where the prop sits, from the beat's shot card (spec v2 Phase 6): `none` or
+   *  `<left|centre|right>-<hand|table|floor>`, the creator's own side (e.g. `right-hand`). Only a
+   *  card value the creator's `prop_ready` answer settled; `serializeShotContext` drops a `?`. */
+  prop_position?: string;
   /** The planned beat and set-up line. */
   line?: string;
 }
@@ -360,11 +364,14 @@ export interface MeeraShotContext {
  *  `on_camera` and `sit_or_walk` sit right after `line` (Ash review 2026-09-25, item 10): they are
  *  the only keys that settle a coach question server-side (influora-ai frame_check.py
  *  `answered_question_ids`), and they are a few words each, so they must never be the first to
- *  go when a long `line`/`where` fills the budget. */
+ *  go when a long `line`/`where` fills the budget. `prop_position` (spec v2 Phase 6) comes right
+ *  after them for the same reason: one short structured value the creator's answer settled.
+ *  influora-ai frame_check.py `SHOT_CONTEXT_KEYS` must list every key here, or it drops it. */
 const SHOT_CONTEXT_KEYS: ReadonlyArray<keyof MeeraShotContext> = [
   'line',
   'on_camera',
   'sit_or_walk',
+  'prop_position',
   'angle',
   'action',
   'where',
@@ -380,7 +387,7 @@ export const ANSWERS_MAX_ITEMS = 3;
 
 /**
  * `shot_context` as a JSON object string that always fits `SHOT_CONTEXT_MAX_CHARS`: known keys
- * only, blank values dropped, whitespace collapsed, each value clipped to 300 characters, and — if
+ * only, blank and `?` values dropped, whitespace collapsed, each value clipped to 300 characters, and — if
  * it still does not fit — the lowest-priority keys dropped. `null` when nothing is left to send.
  */
 export function serializeShotContext(context: MeeraShotContext | undefined): string | null {
@@ -390,7 +397,8 @@ export function serializeShotContext(context: MeeraShotContext | undefined): str
     const value = context[key];
     if (typeof value !== 'string') continue;
     const clean = value.trim().replace(/\s+/g, ' ');
-    if (clean) entries.push([key, clean.slice(0, 300)]);
+    // `?` is the shot card's "not set yet" (spec v2 Phase 6): an unknown, never a value to send.
+    if (clean && clean !== '?') entries.push([key, clean.slice(0, 300)]);
   }
   while (entries.length > 0) {
     const json = JSON.stringify(Object.fromEntries(entries));

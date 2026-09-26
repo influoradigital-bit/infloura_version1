@@ -13,11 +13,35 @@
  *     question the script already answers. When the beat does not say, it is left out and the
  *     check may still ask;
  *   - `target` picks the framing guide: close -> closeup, overhead/top-down/hands ->
- *     hands-overhead, wide/full body -> wide, anything else -> medium.
+ *     hands-overhead, wide/full body -> wide, anything else -> medium. A beat with a shot card
+ *     (spec v2 Phase 6) takes the card's `size` first (`targetForShotSize`);
+ *   - `context.prop_position` is the card's `prop` ("right-hand", or "none"); a `?` is left out;
+ *   - `say`, `onScreen` and the validated `card` ride on the shot for the camera sheet (decision 3,
+ *     2026-09-26), never in `context`.
  */
 import type { ShootCheckShot } from '@/components/creator/shoot-check/ShootCheckPanel';
 import type { MeeraShotContext } from '@/lib/meera-api';
-import type { ParsedMeeraScript } from '@/lib/meera-result-cards';
+import {
+  CAMERA_HEIGHTS,
+  EYE_LINES,
+  HEADROOMS,
+  LIGHT_KINDS,
+  LIGHT_SIDES,
+  MOVEMENTS,
+  NEGATIVE_SPACES,
+  SHOT_CARD_TEXT_MAX,
+  SHOT_CARD_UNKNOWN,
+  SHOT_SIZES,
+  STAND_POSITIONS,
+  TEXT_POSITIONS,
+  type LightKind,
+  type LightSide,
+  type ParsedMeeraScript,
+  type PropSide,
+  type PropSurface,
+  type ShotCard,
+  type ShotProp,
+} from '@/lib/meera-result-cards';
 import type { ShotTarget } from '@/lib/shoot-check/metrics';
 
 /** Java's cut for `shot_label` (CreatorMeeraController). */
@@ -101,6 +125,84 @@ export function targetForShotSize(size: ShotSize): ShotTarget {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Shot card (spec v2 Phase 6 wire format, owner decisions 2026-09-26)
+// ---------------------------------------------------------------------------
+
+/** The parser's card type (`meera-result-cards.ts`), re-exported for the camera. */
+export type { ShotCard };
+
+/** A card field Meera does not know. Shown as "Not set yet"; the camera draws nothing for it. */
+export const CARD_UNKNOWN = SHOT_CARD_UNKNOWN;
+
+/** `prop_position` for a real spot: "<side>-<surface>", e.g. "right-hand" (the creator's own side). */
+export type PropPosition = Exclude<ShotProp, 'none'>;
+
+function cardString(value: unknown): string {
+  return typeof value === 'string' ? oneLine(value) : '';
+}
+
+function cardEnum<T extends string>(value: unknown, allowed: readonly T[]): T | typeof CARD_UNKNOWN {
+  const text = cardString(value);
+  return (allowed as readonly string[]).includes(text) ? (text as T) : CARD_UNKNOWN;
+}
+
+function cardFreeText(value: unknown, max: number): string {
+  const text = cardString(value);
+  if (!text || text === CARD_UNKNOWN) return CARD_UNKNOWN;
+  return Array.from(text).length <= max ? text : CARD_UNKNOWN;
+}
+
+/** "window" or "window-left" -> its parts; null for `?` or anything else. */
+export function parseCardLight(value: string | undefined): { kind: LightKind; side: LightSide | null } | null {
+  if (!value) return null;
+  const [kind, side, extra] = value.split('-');
+  if (extra !== undefined || !(LIGHT_KINDS as readonly string[]).includes(kind)) return null;
+  if (side === undefined) return { kind: kind as LightKind, side: null };
+  return (LIGHT_SIDES as readonly string[]).includes(side) ? { kind: kind as LightKind, side: side as LightSide } : null;
+}
+
+/** "right-hand" -> its parts; null for "none", `?` or anything else (no prop, nothing drawn). */
+export function parseCardProp(value: string | undefined): { side: PropSide; surface: PropSurface } | null {
+  if (!value) return null;
+  const match = /^(left|centre|right)-(hand|table|floor)$/.exec(value);
+  return match ? { side: match[1] as PropSide, surface: match[2] as PropSurface } : null;
+}
+
+/**
+ * A beat's card as the camera may draw it: every field re-checked against the wire contract (an
+ * unknown enum value or an over-long free text is `?`; a missing key, `null` or `undefined` is
+ * `?`). The parser already validates; this is the camera's own guard, so a shot built anywhere
+ * else (or an older parser) can never put an unchecked value on screen. `null` when there is no
+ * card object at all (a beat without a card, or a reply without the block).
+ */
+export function normalizeShotCard(raw: unknown): ShotCard | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const card = raw as Record<string, unknown>;
+  const light = cardString(card.light);
+  const prop = cardString(card.prop);
+  return {
+    size: cardEnum(card.size, SHOT_SIZES),
+    height: cardEnum(card.height, CAMERA_HEIGHTS),
+    distance: cardFreeText(card.distance, SHOT_CARD_TEXT_MAX.distance),
+    place: cardFreeText(card.place, SHOT_CARD_TEXT_MAX.place),
+    light: parseCardLight(light) ? (light as ShotCard['light']) : CARD_UNKNOWN,
+    stand: cardEnum(card.stand, STAND_POSITIONS),
+    headroom: cardEnum(card.headroom, HEADROOMS),
+    eyes: cardEnum(card.eyes, EYE_LINES),
+    background: cardFreeText(card.background, SHOT_CARD_TEXT_MAX.background),
+    space: cardEnum(card.space, NEGATIVE_SPACES),
+    text: cardEnum(card.text, TEXT_POSITIONS),
+    prop: prop === 'none' ? 'none' : parseCardProp(prop) ? (prop as PropPosition) : CARD_UNKNOWN,
+    move: cardEnum(card.move, MOVEMENTS),
+  };
+}
+
+/** A known card size, else null. */
+export function cardShotSize(card: ShotCard | null | undefined): ShotSize | null {
+  return card && card.size !== CARD_UNKNOWN ? card.size : null;
+}
+
 function onCameraFor(shot: string, target: ShotTarget): string | undefined {
   if (target === 'hands-overhead') return ON_CAMERA_HANDS_ONLY;
   if (/voice.?over/i.test(shot)) return ON_CAMERA_VOICE_OVER;
@@ -124,12 +226,25 @@ export function shotFromBeat(script: ParsedMeeraScript, beatIndex: number): Shoo
   if (!beat) throw new RangeError(`shotFromBeat: no beat ${beatIndex} in a script of ${script.beats.length}`);
 
   const shot = oneLine(beat.shot);
-  const target = targetForShot(shot);
+  // The beat's shot card (spec v2 Phase 6), when the reply had one for this beat. Read as unknown:
+  // the parser's type is the wire contract, and every value is re-checked here before it is drawn.
+  const card = normalizeShotCard((beat as { card?: unknown }).card);
+  const cardSize = cardShotSize(card);
+  // The card's size comes before the shot words; with no card (or `?`) the words decide as before.
+  const target = cardSize ? targetForShotSize(cardSize) : targetForShot(shot);
   const context: MeeraShotContext = { line: shot, ...splitAngleAction(shot) };
   const where = script.setup ? oneLine(script.setup) : '';
   if (where) context.where = where;
   const onCamera = onCameraFor(shot, target);
   if (onCamera) context.on_camera = onCamera;
+  // The card's prop value as the check's `prop_position`: a spot ("right-hand") or "none" (no
+  // prop in this beat). `?` is left out: the check may still ask `prop_ready`.
+  if (card && card.prop !== CARD_UNKNOWN) context.prop_position = card.prop;
+
+  // The Say line and On-screen text ride on the shot for the camera sheet only; they never go into
+  // `context` (the Say dialogue does nothing for framing and would eat the 1000-character budget).
+  const say = oneLine(beat.say ?? '');
+  const onScreen = oneLine(beat.onScreen ?? '');
 
   return {
     index: beatIndex,
@@ -137,6 +252,9 @@ export function shotFromBeat(script: ParsedMeeraScript, beatIndex: number): Shoo
     seconds: Math.max(0, beat.to - beat.from),
     target,
     context,
+    ...(say ? { say } : {}),
+    ...(onScreen ? { onScreen } : {}),
+    ...(card ? { card } : {}),
   };
 }
 

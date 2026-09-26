@@ -68,6 +68,10 @@ ALL_DATASETS = sorted(FEATURES)
 FIXTURES_NOT_RECORDABLE_HERE: dict[str, str] = {
     "outcome_recommendation": "model responses — record with `--live --record` and an ANTHROPIC_API_KEY",
     "campaign_performance": "Java executor outputs — dump from the Spring integration test",
+    "shot_card_plan": (
+        "model responses — an owner-approved paid run (about 120 full-script calls), "
+        "`--live --record` with SHOT_CARD_EVAL_APPROVED=1"
+    ),
 }
 
 

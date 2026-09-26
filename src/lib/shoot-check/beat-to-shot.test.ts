@@ -5,12 +5,16 @@
 import { describe, expect, it } from 'vitest';
 
 import { serializeShotContext } from '@/lib/meera-api';
-import type { ParsedMeeraScript } from '@/lib/meera-result-cards';
+import { SHOT_CARD_KEYS, type ParsedMeeraScript, type ScriptBeat } from '@/lib/meera-result-cards';
 import {
+  CARD_UNKNOWN,
   ON_CAMERA_FACE,
   ON_CAMERA_HANDS_ONLY,
   ON_CAMERA_VOICE_OVER,
   SHOT_LABEL_MAX_CHARS,
+  normalizeShotCard,
+  parseCardLight,
+  parseCardProp,
   shotFromBeat,
   shotFromLabel,
   shotSizeForShot,
@@ -203,5 +207,120 @@ describe('shotSizeForShot (spec v2 Phase 5a mapping)', () => {
     expect(targetForShotSize('OVERHEAD')).toBe('hands-overhead');
     // targetForShot keeps its own word order: the stored-card target never moves.
     expect(targetForShot('Medium close-up, talking')).toBe('closeup');
+  });
+});
+
+describe('shot card -> camera shot (spec v2 Phase 6, decision 3)', () => {
+  const CARD = {
+    size: 'OVERHEAD',
+    height: 'overhead',
+    distance: '0.5 m',
+    place: 'Kitchen counter',
+    light: 'window-left',
+    stand: 'centre',
+    headroom: 'cropped',
+    eyes: 'product',
+    background: 'plain counter',
+    space: 'top',
+    text: 'top',
+    prop: 'centre-table',
+    move: 'still',
+  };
+  /** SCRIPT with a card on beat 0 (a close-up by its words), as the parser hands it over. */
+  function withCard(card: unknown, beat = 0): ParsedMeeraScript {
+    return {
+      ...SCRIPT,
+      beats: SCRIPT.beats.map((b, i) => (i === beat ? ({ ...b, card } as ScriptBeat) : b)),
+    };
+  }
+
+  it('the card size comes before the shot words for the framing target', () => {
+    // Beat 0's words say close-up; its card says OVERHEAD.
+    const shot = shotFromBeat(withCard(CARD), 0);
+    expect(shot.target).toBe('hands-overhead');
+    expect(shot.card?.size).toBe('OVERHEAD');
+    // A `?` size leaves the words in charge.
+    expect(shotFromBeat(withCard({ ...CARD, size: '?' }), 0).target).toBe('closeup');
+  });
+
+  it('puts the card prop value in the context as prop_position (a spot or none), never `?`', () => {
+    const shot = shotFromBeat(withCard(CARD), 0);
+    expect(shot.context?.prop_position).toBe('centre-table');
+    expect(serializeShotContext(shot.context)).toContain('"prop_position":"centre-table"');
+    expect(shotFromBeat(withCard({ ...CARD, prop: 'none' }), 0).context?.prop_position).toBe('none');
+    for (const prop of ['?', 'right-shelf', 'RIGHT-HAND', '']) {
+      expect(shotFromBeat(withCard({ ...CARD, prop }), 0).context?.prop_position, prop).toBeUndefined();
+    }
+  });
+
+  it('carries the beat\'s Say line and On-screen text, never inside the check context', () => {
+    const shot = shotFromBeat(SCRIPT, 0);
+    expect(shot.say).toBe('Is your saffron even real?');
+    expect(shot.onScreen).toBe('REAL vs FAKE');
+    expect(JSON.stringify(shot.context)).not.toContain('Is your saffron even real?');
+    expect(serializeShotContext(shot.context)).not.toContain('REAL vs FAKE');
+    const blank = shotFromBeat({ ...SCRIPT, beats: [{ ...SCRIPT.beats[0], say: '  ', onScreen: '' }] }, 0);
+    expect(blank).not.toHaveProperty('say');
+    expect(blank).not.toHaveProperty('onScreen');
+  });
+
+  it('a beat without a card, or a reply without the block, is exactly as before', () => {
+    const shot = shotFromBeat(SCRIPT, 0);
+    expect(shot).not.toHaveProperty('card');
+    expect(shot.target).toBe('closeup');
+    expect(Object.keys(shot.context!)).not.toContain('prop_position');
+    // A non-object card (a malformed S-line the parser kept as something odd) is no card.
+    for (const odd of [null, 'size=MCU', 42, ['MCU']]) {
+      expect(shotFromBeat(withCard(odd), 0)).not.toHaveProperty('card');
+    }
+  });
+
+  it('re-validates every field: unknown enum values and over-long free text become "?"', () => {
+    const card = normalizeShotCard({
+      size: 'mcu',
+      height: 'waist',
+      distance: 'x'.repeat(21),
+      place: 'p'.repeat(41),
+      light: 'window-up',
+      stand: 'middle',
+      headroom: 'lots',
+      eyes: 'camera',
+      background: 'b'.repeat(40),
+      space: 'bottom',
+      text: 'bottom',
+      prop: 'right-hands',
+      move: 'run',
+    })!;
+    for (const key of SHOT_CARD_KEYS) {
+      if (key === 'background') continue;
+      expect(card[key], key).toBe(CARD_UNKNOWN);
+    }
+    // Exactly at the limit is kept.
+    expect(card.background).toBe('b'.repeat(40));
+    expect(normalizeShotCard({ distance: 'd'.repeat(20) })!.distance).toBe('d'.repeat(20));
+    // Missing keys, null and undefined are "?".
+    const sparse = normalizeShotCard({ size: 'MS', place: null, light: undefined })!;
+    expect(sparse.size).toBe('MS');
+    expect(sparse.place).toBe(CARD_UNKNOWN);
+    expect(sparse.light).toBe(CARD_UNKNOWN);
+    expect(sparse.move).toBe(CARD_UNKNOWN);
+  });
+
+  it('keeps every valid wire value, and Hindi free text by characters, not bytes', () => {
+    const card = normalizeShotCard({ ...CARD, place: 'रसोई का काउंटर', light: 'ring_light-behind', prop: 'none' })!;
+    expect(card).toEqual({ ...CARD, place: 'रसोई का काउंटर', light: 'ring_light-behind', prop: 'none' });
+    expect(parseCardLight('window')).toEqual({ kind: 'window', side: null });
+    expect(parseCardLight('tube_light-front')).toEqual({ kind: 'tube_light', side: 'front' });
+    expect(parseCardLight('window-left-right')).toBeNull();
+    expect(parseCardProp('left-floor')).toEqual({ side: 'left', surface: 'floor' });
+    expect(parseCardProp('none')).toBeNull();
+  });
+
+  it('shotFromLabel (an older stored check) has no card, Say or On-screen text', () => {
+    const shot = shotFromLabel(shotFromBeat(withCard(CARD), 0).label);
+    expect(shot).not.toHaveProperty('card');
+    expect(shot).not.toHaveProperty('say');
+    expect(shot).not.toHaveProperty('onScreen');
+    expect(shot.target).toBe('closeup');
   });
 });
