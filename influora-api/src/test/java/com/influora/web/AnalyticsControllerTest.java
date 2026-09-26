@@ -102,7 +102,7 @@ class AnalyticsControllerTest {
         ContentPerformanceResponse row =
                 new ContentPerformanceResponse(
                         "ig-media-1", "REEL", "https://instagram.com/p/abc123",
-                        5000L, 4000L, 200L, 150L, 20L, 10L, 5L, null, null,
+                        5000L, 4000L, 200L, 150L, 20L, 10L, 5L, null,
                         Instant.parse("2026-07-10T00:00:00Z"), new BigDecimal("5.00"));
         when(analyticsService.getContentPerformance(principal, CREATOR_ID)).thenReturn(List.of(row));
 

@@ -358,7 +358,6 @@ public class AnalyticsService {
                                         m.getSaves(),
                                         m.getShares(),
                                         m.getVideoViews(),
-                                        m.getAvgWatchTimeSeconds(),
                                         m.getPostedAt(),
                                         engagementRate(m.getEngagement(), m.getReach())))
                 .toList();

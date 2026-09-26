@@ -22,7 +22,9 @@ import com.influora.web.dto.admin.AdminSupportDtos.TicketDetailDto;
 import com.influora.web.dto.admin.AdminSupportDtos.TicketMessageDto;
 import com.influora.web.dto.admin.AdminSupportDtos.TicketSummaryDto;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.data.domain.Page;
@@ -296,10 +298,35 @@ public class AdminSupportService {
                                         .sum()
                                 / (double) resolved.size();
 
-        // Honest 0 -- see javadoc above, no first-response timestamp exists to average.
-        double avgResponseTime = 0.0;
+        double avgResponseTime = computeAvgResponseTimeHours();
 
         return new SupportStatsDto(open, inProgress, waitingUser, avgResponseTime, avgResolutionTime);
+    }
+
+    private double computeAvgResponseTimeHours() {
+        List<SupportTicketMessage> adminMessagesOldestFirst =
+                supportTicketMessageRepository.findBySenderTypeOrderByCreatedAtAsc(SenderType.ADMIN);
+        if (adminMessagesOldestFirst.isEmpty()) {
+            return 0.0;
+        }
+
+        Map<String, Instant> firstAdminReplyAtByTicketId = new LinkedHashMap<>();
+        for (SupportTicketMessage message : adminMessagesOldestFirst) {
+            firstAdminReplyAtByTicketId.putIfAbsent(message.getTicketId(), message.getCreatedAt());
+        }
+
+        List<SupportTicket> repliedTickets =
+                supportTicketRepository.findAllById(firstAdminReplyAtByTicketId.keySet());
+        if (repliedTickets.isEmpty()) {
+            return 0.0;
+        }
+
+        long totalHours = 0L;
+        for (SupportTicket ticket : repliedTickets) {
+            Instant firstReplyAt = firstAdminReplyAtByTicketId.get(ticket.getId());
+            totalHours += ChronoUnit.HOURS.between(ticket.getCreatedAt(), firstReplyAt);
+        }
+        return totalHours / (double) repliedTickets.size();
     }
 
     private SupportTicket requireTicket(String ticketId) {

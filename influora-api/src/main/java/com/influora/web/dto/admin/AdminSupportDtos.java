@@ -72,10 +72,10 @@ public final class AdminSupportDtos {
 
     /**
      * Matches {@code supportApi.getStats()}'s return shape exactly (api-contracts.ts lines
-     * 526-533). See {@code AdminSupportService#getStats} javadoc: {@code open}/{@code
-     * inProgress}/{@code waitingUser}/{@code avgResolutionTime} are real; {@code avgResponseTime}
-     * is an honest {@code 0} — {@link com.influora.domain.entity.SupportTicket} has no
-     * first-admin-reply timestamp column to average.
+     * 526-533). See {@code AdminSupportService#getStats} javadoc: every field is now a real
+     * computed value, including {@code avgResponseTime} (F-0525, dead-metric repair,
+     * T-DEADMETRIC-REPAIR-0915) — previously a hardcoded {@code 0.0}, now the real mean time to a
+     * ticket's first admin reply, derived from {@link com.influora.domain.entity.SupportTicketMessage}.
      */
     public record SupportStatsDto(
             long open, long inProgress, long waitingUser, double avgResponseTime, double avgResolutionTime) {}

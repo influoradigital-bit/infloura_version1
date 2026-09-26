@@ -19,10 +19,13 @@ import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.MediaMetricsRepository;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
@@ -220,6 +223,9 @@ public class MetricsPollingJob {
             InstagramUserResponse profile =
                     instagramClient.getProfile(igBusinessAccountId, token.get(), authPath);
 
+            List<MediaMetric> mediaRows =
+                    pollRecentMedia(creatorProfileId, igBusinessAccountId, token.get(), authPath);
+
             CreatorMetric metric =
                     CreatorMetric.builder()
                             .id(Ulids.newUlid())
@@ -233,18 +239,14 @@ public class MetricsPollingJob {
                             .following(profile.followsCount())
                             .mediaCount(
                                     profile.mediaCount() == null ? null : profile.mediaCount().intValue())
+                            .avgReachPerPost(averageOf(mediaRows, MediaMetric::getReach))
+                            .avgImpressionsPerPost(averageOf(mediaRows, MediaMetric::getImpressions))
+                            .avgEngagementRate(averageEngagementRate(mediaRows))
                             .dataSource(DATA_SOURCE_META_API)
                             .fetchedAt(Instant.now())
                             .build();
 
             creatorMetricsRepository.save(metric);
-
-            // F-0479 — media_metrics now has a writer. Deliberately AFTER the CreatorMetric save
-            // and inside its own try/catch: the profile poll is the row this method's contract is
-            // about, and a media/insights failure must never roll it back or flip this creator to
-            // "failed". Degrading here costs per-post detail; failing here would cost the follower
-            // snapshot too.
-            pollRecentMedia(creatorProfileId, igBusinessAccountId, token.get(), authPath);
 
             return true;
         } catch (MetaRateLimitException e) {
@@ -275,14 +277,14 @@ public class MetricsPollingJob {
      * so this appends rather than upserting. {@code ScoreCalculationJob} reads the newest
      * {@code RECENT_MEDIA_LIMIT} rows, which is exactly one poll's worth.
      */
-    private void pollRecentMedia(
+    private List<MediaMetric> pollRecentMedia(
             String creatorProfileId, String igBusinessAccountId, String token, MetaAuthPath authPath) {
         if (!metaProperties.isMediaMetricsEnabled()) {
             log.debug(
                     "MetricsPollingJob: media_metrics disabled (influora.meta.media-metrics-enabled=false),"
                             + " skipping per-post poll for creator {}",
                     creatorProfileId);
-            return;
+            return List.of();
         }
 
         try {
@@ -294,7 +296,7 @@ public class MetricsPollingJob {
                 // Either the creator has posted nothing, or the fetcher declined on rate limit. Both
                 // legitimately produce no rows; writing a placeholder would be F-0478 all over again.
                 log.debug("MetricsPollingJob: no media returned for creator {}", creatorProfileId);
-                return;
+                return List.of();
             }
 
             Instant fetchedAt = Instant.now();
@@ -319,6 +321,7 @@ public class MetricsPollingJob {
                     rows.size(),
                     creatorProfileId,
                     degraded);
+            return rows;
         } catch (Exception e) {
             // Includes anything the fetcher did not already absorb. The creator's CreatorMetric row
             // is already committed; per-post detail is the only thing lost.
@@ -326,6 +329,42 @@ public class MetricsPollingJob {
                     "MetricsPollingJob: media_metrics poll failed for creator {} (profile snapshot kept)",
                     creatorProfileId,
                     e);
+            return List.of();
         }
+    }
+
+    /** Package-private for direct unit testing (see MetricsPollingJobTest). */
+    static Long averageOf(
+            List<MediaMetric> media, java.util.function.Function<MediaMetric, Long> extractor) {
+        List<Long> present = media.stream().map(extractor).filter(Objects::nonNull).toList();
+        if (present.isEmpty()) {
+            return null;
+        }
+        long sum = 0L;
+        for (Long value : present) {
+            sum += value;
+        }
+        return Math.round((double) sum / present.size());
+    }
+
+    /** Package-private for direct unit testing (see MetricsPollingJobTest). */
+    static BigDecimal averageEngagementRate(List<MediaMetric> media) {
+        List<BigDecimal> perPostRates = new ArrayList<>();
+        for (MediaMetric m : media) {
+            Long reach = m.getReach();
+            Long engagement = m.getEngagement();
+            if (reach != null && reach > 0 && engagement != null) {
+                BigDecimal rate =
+                        BigDecimal.valueOf(engagement)
+                                .multiply(BigDecimal.valueOf(100))
+                                .divide(BigDecimal.valueOf(reach), 6, RoundingMode.HALF_UP);
+                perPostRates.add(rate);
+            }
+        }
+        if (perPostRates.isEmpty()) {
+            return null;
+        }
+        BigDecimal sum = perPostRates.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        return sum.divide(BigDecimal.valueOf(perPostRates.size()), 4, RoundingMode.HALF_UP);
     }
 }

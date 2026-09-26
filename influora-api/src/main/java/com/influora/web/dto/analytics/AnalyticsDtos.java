@@ -162,6 +162,16 @@ public final class AnalyticsDtos {
      * as every other derived field in this service. Purely additive: the creator-self route gains
      * this field too, but nothing there previously read a rate off this DTO, so no existing consumer
      * breaks.
+     *
+     * <p><b>{@code avgWatchTimeSeconds} REMOVED (F-0689, dead-metric repair, T-DEADMETRIC-REPAIR-
+     * 0915).</b> It used to be handed straight from {@code MediaMetric.avgWatchTimeSeconds}, a
+     * column nothing ever wrote — Meta was never asked for a watch-time insight metric ({@code
+     * InstagramInsightValues} requests exactly views/reach/likes/comments/saved/shares/
+     * total_interactions), so the field held its default forever while this DTO presented it as a
+     * measurement. No frontend consumer read it (checked before removing). Getting a real value
+     * requires requesting a new Meta insight metric, a permissions/App-Review question, not a code
+     * one — do not derive a substitute from {@code videoViews} or {@code engagement}; that would be
+     * fabricating a measurement and shipping it as real, the exact defect this removal closes.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ContentPerformanceResponse(
@@ -176,7 +186,6 @@ public final class AnalyticsDtos {
             Long saves,
             Long shares,
             Long videoViews,
-            BigDecimal avgWatchTimeSeconds,
             Instant postedAt,
             BigDecimal engagementRate) {}
 }

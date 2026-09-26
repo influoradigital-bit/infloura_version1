@@ -25,15 +25,18 @@ import com.influora.integration.meta.exception.MetaApiException;
 import com.influora.integration.meta.exception.MetaRateLimitException;
 import com.influora.integration.meta.exception.MetaTokenExpiredException;
 import com.influora.integration.meta.oauth.MetaTokenStorage;
+import com.influora.integration.meta.service.InstagramInsightValues;
 import com.influora.integration.meta.service.MetaRateLimitTracker;
 import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
 import com.influora.config.MetaApiProperties;
 import com.influora.domain.entity.MediaMetric;
+import com.influora.integration.meta.dto.InstagramInsightsResponse;
 import com.influora.integration.meta.dto.InstagramMediaResponse;
 import com.influora.integration.meta.service.InstagramMetricsFetcher;
 import com.influora.repository.MediaMetricsRepository;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -223,6 +226,122 @@ class MetricsPollingJobTest {
                         mediaId, "caption", "IMAGE", null, "https://instagram.com/p/" + mediaId,
                         "2026-08-20T10:30:00+0000", 10L, 2L),
                 null);
+    }
+
+    // ---- F-0506 (dead-metric repair, T-DEADMETRIC-REPAIR-0915): CreatorMetric averages ----
+
+    @Test
+    @DisplayName("F-0506: CreatorMetric averages aggregated from this poll media_metrics rows")
+    void testPollMetricsComputesCreatorMetricAveragesFromMediaMetrics() {
+        arrangeHappyPath();
+        when(metricsFetcher.fetchMediaWithInsights(
+                        eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenReturn(
+                        List.of(
+                                mediaWithRealInsights("m1", 1000L, 1200L, 100L),
+                                mediaWithRealInsights("m2", 2000L, 1800L, 300L)));
+
+        pollingJob.pollMetrics();
+
+        ArgumentCaptor<CreatorMetric> captor = ArgumentCaptor.forClass(CreatorMetric.class);
+        verify(creatorMetricsRepository).save(captor.capture());
+        CreatorMetric saved = captor.getValue();
+
+        assertEquals(1500L, saved.getAvgReachPerPost());
+        assertEquals(1500L, saved.getAvgImpressionsPerPost());
+        assertEquals(0, new BigDecimal("12.5000").compareTo(saved.getAvgEngagementRate()));
+    }
+
+    @Test
+    @DisplayName("F-0506: averages skip posts missing the metric (absence is not zero)")
+    void testPollMetricsAveragesSkipPostsMissingTheMetric() {
+        arrangeHappyPath();
+        when(metricsFetcher.fetchMediaWithInsights(
+                        eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenReturn(List.of(mediaWithInsights("m1"), mediaWithRealInsights("m2", 2000L, 1800L, 300L)));
+
+        pollingJob.pollMetrics();
+
+        ArgumentCaptor<CreatorMetric> captor = ArgumentCaptor.forClass(CreatorMetric.class);
+        verify(creatorMetricsRepository).save(captor.capture());
+        CreatorMetric saved = captor.getValue();
+
+        assertEquals(2000L, saved.getAvgReachPerPost());
+        assertEquals(1800L, saved.getAvgImpressionsPerPost());
+        assertEquals(0, new BigDecimal("15.0000").compareTo(saved.getAvgEngagementRate()));
+    }
+
+    @Test
+    @DisplayName("F-0506: averages null (not zero) when no media rows polled")
+    void testPollMetricsAveragesNullWhenNoMediaPolled() {
+        arrangeHappyPath();
+
+        pollingJob.pollMetrics();
+
+        ArgumentCaptor<CreatorMetric> captor = ArgumentCaptor.forClass(CreatorMetric.class);
+        verify(creatorMetricsRepository).save(captor.capture());
+        CreatorMetric saved = captor.getValue();
+
+        assertEquals(null, saved.getAvgReachPerPost());
+        assertEquals(null, saved.getAvgImpressionsPerPost());
+        assertEquals(null, saved.getAvgEngagementRate());
+    }
+
+    @Test
+    @DisplayName("averageOf: mean of Long extractor, ignoring nulls, null when nothing present")
+    void testAverageOfStaticHelper() {
+        MediaMetric withReach1000 = MediaMetric.builder().id("1").mediaId("m1").creatorProfileId(CREATOR_ID)
+                .platform("INSTAGRAM").mediaType("IMAGE").reach(1000L).build();
+        MediaMetric withReach2000 = MediaMetric.builder().id("2").mediaId("m2").creatorProfileId(CREATOR_ID)
+                .platform("INSTAGRAM").mediaType("IMAGE").reach(2000L).build();
+        MediaMetric withoutReach = MediaMetric.builder().id("3").mediaId("m3").creatorProfileId(CREATOR_ID)
+                .platform("INSTAGRAM").mediaType("IMAGE").build();
+
+        assertEquals(
+                1500L,
+                MetricsPollingJob.averageOf(
+                        List.of(withReach1000, withReach2000, withoutReach), MediaMetric::getReach));
+        assertEquals(null, MetricsPollingJob.averageOf(List.of(withoutReach), MediaMetric::getReach));
+        assertEquals(null, MetricsPollingJob.averageOf(List.of(), MediaMetric::getReach));
+    }
+
+    @Test
+    @DisplayName("averageEngagementRate: mean of per-post engagement/reach*100, ignoring zero reach")
+    void testAverageEngagementRateStaticHelper() {
+        MediaMetric rate10 = MediaMetric.builder().id("1").mediaId("m1").creatorProfileId(CREATOR_ID)
+                .platform("INSTAGRAM").mediaType("IMAGE").reach(1000L).engagement(100L).build();
+        MediaMetric rate15 = MediaMetric.builder().id("2").mediaId("m2").creatorProfileId(CREATOR_ID)
+                .platform("INSTAGRAM").mediaType("IMAGE").reach(2000L).engagement(300L).build();
+        MediaMetric zeroReach = MediaMetric.builder().id("3").mediaId("m3").creatorProfileId(CREATOR_ID)
+                .platform("INSTAGRAM").mediaType("IMAGE").reach(0L).engagement(50L).build();
+
+        assertEquals(
+                0,
+                new BigDecimal("12.5000")
+                        .compareTo(
+                                MetricsPollingJob.averageEngagementRate(List.of(rate10, rate15, zeroReach))));
+        assertEquals(null, MetricsPollingJob.averageEngagementRate(List.of(zeroReach)));
+        assertEquals(null, MetricsPollingJob.averageEngagementRate(List.of()));
+    }
+
+    private InstagramMetricsFetcher.MediaWithInsights mediaWithRealInsights(
+            String mediaId, long reach, long impressions, long engagement) {
+        InstagramInsightsResponse insights =
+                new InstagramInsightsResponse(
+                        List.of(
+                                insightMetric(InstagramInsightValues.REACH, reach),
+                                insightMetric(InstagramInsightValues.VIEWS, impressions),
+                                insightMetric(InstagramInsightValues.TOTAL_INTERACTIONS, engagement)));
+        return new InstagramMetricsFetcher.MediaWithInsights(
+                new InstagramMediaResponse.MediaItem(
+                        mediaId, "caption", "IMAGE", null, "https://instagram.com/p/" + mediaId,
+                        "2026-08-20T10:30:00+0000", 10L, 2L),
+                insights);
+    }
+
+    private InstagramInsightsResponse.InsightMetric insightMetric(String name, long value) {
+        return new InstagramInsightsResponse.InsightMetric(
+                name, "lifetime", null, null, List.of(new InstagramInsightsResponse.InsightValue(value, null)));
     }
 
     @Test
