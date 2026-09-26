@@ -1,0 +1,19 @@
+# F-0150 exemption list — read by ci/stale-comment-check.py::rule3_prompt_version.
+#
+# CI-1 round 3, F2 (PRIYA-LASTCALL-CI1-0917.md, "F2 ruling: an explicit, reviewed exemption
+# list, not an epoch or a date"): these four commits are real, historic PROMPT_VERSION-pairing
+# misses, committed 2026-09-03..09-15, before CI-1 existed and before this gate could have caught
+# them. None was deployed. The per-commit walk and the reused-value check in rule 3 skip exactly
+# the commits listed here, printing a NOTICE for each. A rebase changes a listed commit's SHA and
+# turns the build red again on purpose — that forces a deliberate re-list, not a silent pass.
+#
+# Format: one entry per line, "<40-character lowercase-hex SHA>: <one-line reason>". A SHA listed
+# here that isn't in the commit range a given run happens to walk is simply not relevant to that
+# run (ignored), not an error. A malformed line IS an error (exit 2) — see
+# ci/stale-comment-check.py::_load_exemptions.
+#
+# Adding a line needs priya or kavya in review (PRIYA-LASTCALL-CI1-0917.md, "Owners" table).
+1792c37b6b29d04bb3b30c40a94bdfd9b931116c: T-CREATORCONNECT-0902, before CI-1
+8c7b18b1cf5a6afc651d0aca220291b8f9660972: Phase A gate fixes, before CI-1
+a33f07eb20b592a1e38471eba0abeb40eba30f1e: B0 Wave 3, before CI-1
+df2009179a4445fbec3786ff15e269b776840cd2: B0 Phase 1, before CI-1

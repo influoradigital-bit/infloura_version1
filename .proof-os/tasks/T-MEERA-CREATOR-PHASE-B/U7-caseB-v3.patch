@@ -1,0 +1,205 @@
+diff --git a/src/components/meera/ConsentScreen.tsx b/src/components/meera/ConsentScreen.tsx
+index 0524966..4e61eeb 100644
+--- a/src/components/meera/ConsentScreen.tsx
++++ b/src/components/meera/ConsentScreen.tsx
+@@ -18,16 +18,37 @@ import { Button } from '@/components/ui/button';
+  * `/creator/agent-preferences/consent` and let the caller retry the turn.
+  */
+ 
++/**
++ * U-7 (RULINGS-U-0917.md Round 3 §3, KABIR-CONSENT-0917.md "U-7" item 2) — switched from Case A
++ * to Case B, in the SAME change as the saved-briefs delete table
++ * (`MeeraSettingsSection.tsx`), because Case B is only honest once a delete control exists to
++ * point at. Case B's third paragraph replaces "deleting your conversations does not delete it"
++ * with "Influora saves a copy until you delete it. Your briefs and your conversations are
++ * deleted separately." — a real promise now that U-7's delete route ships, and a plain fact
++ * that deleting a brief and deleting a conversation are two different actions, neither implying
++ * the other (a reply that paraphrased the brief can still survive in chat history — Kabir's U-7
++ * review, item 1). Copied character for character from NISHA-CONSENT-0917.md "Final — Case B".
++ * Text bumped `v2` -> `v3` in this same commit (Kabir C3): Vikram bumps the backend constant in
++ * his U-7 route change, and the two ship in one deploy, never one without the other.
++ *
++ * Kabir's G-2 (KABIR-CONSENT-0917.md "Last call — U-6 words") — a substring check (`toContain`)
++ * on the body would still pass if a line were silently ADDED. `CONSENT_TEXT_VERSION` is exported
++ * so the test can pin an exact-equality check against its own constants (not read from here) AND
++ * pin this version string, so a future wording change forces a version bump to be visible in the
++ * same diff instead of drifting quietly.
++ */
++export const CONSENT_TEXT_VERSION = 'v3';
++
+ const CONSENT_TEXT: Record<string, { title: string; body: string; accept: string; decline: string }> = {
+   'hi-IN': {
+     title: 'Meera से बात करें',
+-    body: 'Meera आपकी AI मैनेजर है। वह आपके डील्स, पेमेंट, और मेट्रिक्स को समझने में मदद करती है।\n\nMeera आपके प्रोफाइल डेटा, डील हिस्ट्री, पेमेंट स्टेटस और मेट्रिक्स को access करेगी। आप कभी भी अपनी conversations को Settings में जाकर export या delete कर सकते हैं।',
++    body: 'Meera आपकी AI मैनेजर है। वह आपके डील्स, पेमेंट, और मेट्रिक्स को समझने में मदद करती है।\n\nMeera आपके प्रोफाइल डेटा, डील हिस्ट्री, पेमेंट स्टेटस और मेट्रिक्स को access करेगी। आप कभी भी अपनी conversations को Settings में जाकर export या delete कर सकते हैं।\n\nजब आप किसी ब्रांड का brief या message पेस्ट करते हैं, तो Meera की AI उसमें लिखे नाम, email, phone number, पता, या बैंक या UPI details समेत पूरा text पढ़ती है। Influora उसकी एक copy तब तक save रखता है जब तक आप उसे delete नहीं करते। आपके briefs और conversations अलग-अलग delete होते हैं। पेस्ट करने से पहले वो सब हटा दें जो आप नहीं चाहते कि Meera पढ़े।',
+     accept: 'स्वीकार करें',
+     decline: 'अभी नहीं',
+   },
+   'en-IN': {
+     title: 'Talk to Meera',
+-    body: "Meera is your AI manager. She helps you understand your deals, payments, and metrics.\n\nMeera will access your profile data, deal history, payment status, and metrics. You can export or delete your conversations anytime from Settings.",
++    body: "Meera is your AI manager. She helps you understand your deals, payments, and metrics.\n\nMeera will access your profile data, deal history, payment status, and metrics. You can export or delete your conversations anytime from Settings.\n\nWhen you paste a brand's brief or message, Meera's AI reads all of it, including any names, emails, phone numbers, addresses, or bank or UPI details in it. Influora saves a copy until you delete it. Your briefs and your conversations are deleted separately. Before you paste, remove anything you don't want Meera to read.",
+     accept: 'Accept',
+     decline: 'Not now',
+   },
+@@ -56,10 +77,18 @@ export function ConsentScreen({ open, language, onAccept, onDecline }: ConsentSc
+ 
+   return (
+     <Dialog open={open} onOpenChange={(next) => !next && onDecline()}>
+-      <DialogContent>
++      {/* G-3 (KABIR-CONSENT-0917.md MEDIUM) — the shared dialog.tsx is fixed-position, vertically
++          centred, with no max-height or scroll. The Hindi notice is now roughly twice as tall as
++          before U-6, and on a short phone viewport the top/bottom (including Accept/Not now) can
++          clip off-screen. Fixed LOCALLY here, not in the shared component: a max-height capped to
++          the viewport plus its own scrollbar. jsdom cannot prove real layout/scroll/clipping —
++          this is pinned only as "the class is present", not as a visual proof. */}
++      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+         <DialogHeader>
+           <DialogTitle>{text.title}</DialogTitle>
+-          <DialogDescription className="whitespace-pre-line text-left">{text.body}</DialogDescription>
++          <DialogDescription data-testid="consent-body" className="whitespace-pre-line text-left">
++            {text.body}
++          </DialogDescription>
+         </DialogHeader>
+         <DialogFooter>
+           <Button variant="ghost" onClick={onDecline} disabled={accepting}>
+diff --git a/src/lib/api.ts b/src/lib/api.ts
+index 3e0e74c..d5f84a8 100644
+--- a/src/lib/api.ts
++++ b/src/lib/api.ts
+@@ -6639,7 +6639,11 @@ const MOCK_CREATOR_AGENT_PREFS: CreatorAgentPreferences = {
+   represented: false,
+   agency_name: null,
+   consent_accepted: false,
+-  consent_version: 'v1',
++  // U-7 (RULINGS-U-0917.md Round 3 §3, Kabir C3) — Vikram bumps
++  // CreatorAgentPreferences.CURRENT_CONSENT_VERSION v2 -> v3 in his U-7 backend route change,
++  // the same deploy as the Case A -> Case B switch (ConsentScreen.tsx); this mock follows so
++  // mock mode matches. (Was v1 -> v2 for U-6's new paste-consent paragraph.)
++  consent_version: 'v3',
+   rate_card_shareable: false,
+   rate_card: null,
+   negotiation_holdout: false,
+@@ -6867,15 +6871,32 @@ export interface PackageQuote {
+  */
+ export interface BriefAnalysisResponse {
+   brief_id: string;
++  /**
++   * U-2: added — `BriefDtos.BriefAnalysisResponse.source`. Null-guarded on the Java side
++   * (`brief.getSource() == null ? null : ...name()`), so optional here.
++   */
++  source?: 'PASTED' | 'PLATFORM';
+   status: 'NEW' | 'ANALYZED' | 'DRAFTED' | 'SECURED' | 'DISMISSED';
+-  extraction: BriefExtraction;
+-  flags: RiskFlag[];
+-  quote: PackageQuote;
+-  extraction_source: 'AI' | 'FALLBACK';
++  /** U-2: added — `deal_id`, the collaboration a PLATFORM brief was built from. Omitted otherwise. */
++  deal_id?: string;
++  /**
++   * U-2: corrected from required to optional, together with `flags`, `quote` and
++   * `extraction_source`. The paste route always fills them, but this type is also `GET
++   * /creator/briefs/:id`'s, and `CreatorBriefService.toResponse` rebuilds from a stored snapshot
++   * that "yields nulls rather than a 500" when it cannot be parsed — so on that route each of the
++   * four can arrive as an ABSENT KEY (`@JsonInclude(NON_NULL)`). Required types let a `.map()`
++   * on `flags` compile against a payload that does not carry it.
++   */
++  extraction?: BriefExtraction;
++  flags?: RiskFlag[];
++  quote?: PackageQuote;
++  extraction_source?: 'AI' | 'FALLBACK';
+   /** Omitted (NON_NULL) when the extractor produced no summary lines. */
+   summary_lines?: string[];
+   /** Omitted (NON_NULL) outside a degraded analysis (AMEND-0904, §14.4.a). */
+   degraded_reason?: 'cap' | 'ai_unavailable';
++  /** U-2: added — `created_at`, null-guarded on the Java side. */
++  created_at?: string;
+ }
+ 
+ /**
+@@ -7008,6 +7029,77 @@ export interface CampaignFit {
+   below_floor: boolean;
+ }
+ 
++/**
++ * U-2 (SPEC.md §8.1, §8.5) — `CreatorBriefController`'s four routes. The three secure-link methods
++ * §8.1 lists are NOT here: the controller's own javadoc defers those routes to Phase B1, so a
++ * client method for them would call a 404.
++ *
++ * Every method passes `{ role: 'creator' }` explicitly — `HttpClient.request` defaults `role` to
++ * `'brand'`, which would send the brand token to a creator-only route.
++ *
++ * Mock mode never invents an analysis. `paste` and `get` reject with `NOT_AVAILABLE` (the
++ * `campaignTemplates` idiom) rather than resolving a made-up brief that a demo would render as a
++ * real reading of the creator's text.
++ */
++export const creatorBriefs = {
++  /** POST /creator/briefs — 201, body `{ text }` (`PasteBriefRequest`, `@NotBlank @Size(max = 8000)`). */
++  paste: (text: string): Promise<BriefAnalysisResponse> =>
++    isLive()
++      ? http.request<BriefAnalysisResponse>('POST', '/creator/briefs', {
++          role: 'creator',
++          body: { text },
++        })
++      : Promise.reject(new ApiError('NOT_AVAILABLE', 'Brief analysis is not available in mock mode')),
++
++  /** GET /creator/briefs?limit=20 — newest first. */
++  list: (limit = 20): Promise<BriefListItem[]> =>
++    isLive()
++      ? http.request<BriefListItem[]>('GET', '/creator/briefs', {
++          role: 'creator',
++          query: { limit },
++        })
++      : mockOr<BriefListItem[]>([]),
++
++  /**
++   * GET /creator/briefs/:id — U-1 fix (RULINGS-U-0917.md §0, "Vikram's F1 fix"): no longer a
++   * plain rebuild from the stored snapshot. A brief still being read now refuses with 409
++   * `BRIEF_STILL_READING` instead of returning an empty NEW snapshot as if it were a clean read,
++   * and a brief whose first reading died gets re-analysed on this call (one blocking AI call,
++   * no retry). Only an already-ANALYZED brief is still a plain, no-AI-call rebuild. This method's
++   * own error handling is unchanged here — how the frontend should react to the 409 is Kavya's
++   * call, once she reports what it does today.
++   */
++  get: (id: string): Promise<BriefAnalysisResponse> =>
++    isLive()
++      ? http.request<BriefAnalysisResponse>('GET', `/creator/briefs/${encodeURIComponent(id)}`, {
++          role: 'creator',
++        })
++      : Promise.reject(new ApiError('NOT_AVAILABLE', 'Brief analysis is not available in mock mode')),
++
++  /** POST /creator/briefs/:id/dismiss — 204, idempotent. */
++  dismiss: (id: string): Promise<void> =>
++    isLive()
++      ? http.request<void>('POST', `/creator/briefs/${encodeURIComponent(id)}/dismiss`, {
++          role: 'creator',
++        })
++      : mockOr(undefined),
++
++  /**
++   * U-7 (RULINGS-U-0917.md Round 3 §2-3) — DELETE /creator/briefs/:id, 204, hard delete. A
++   * repeat delete (already gone, or never hers — `requireOwnedBrief` returns the same 404 for
++   * both, no enumeration oracle) answers 404 `BRIEF_NOT_FOUND`; the UI (`MeeraSettingsSection`'s
++   * saved-briefs table) treats that as "already gone" and removes the row with no error, not as
++   * a failure. Skips the feature flag and consent gates on the backend (§7) — this call still
++   * succeeds with the feature off or consent withdrawn, matching the identity-only gate.
++   */
++  delete: (id: string): Promise<void> =>
++    isLive()
++      ? http.request<void>('DELETE', `/creator/briefs/${encodeURIComponent(id)}`, {
++          role: 'creator',
++        })
++      : mockOr(undefined),
++};
++
+ // ---------------------------------------------------------------------------
+ // Public verified-metrics (A9, SPEC.md §2.8) — no auth required
+ // ---------------------------------------------------------------------------
+@@ -7262,6 +7354,7 @@ export const api = {
+   trendspark,
+   creatorCopilot,
+   creatorAgentPrefs,
++  creatorBriefs,
+   publicCreators,
+   clientErrors,
+   festivalEnquiry,

@@ -406,6 +406,32 @@ and a tag rename passes as a substring. F-0770 can close; F-0771 stays open. Vik
   - vitest: **1337 / 1337**. The earlier 1348 included the 11 tests in the excluded U-7 saved-briefs file.
   - Committed `ci/stale-comment-check.py`: OK with `--since` at both CI bases (`origin/feat/meera-creator-phase-b0` = `3d88d58`, and `origin/main`). It was non-vacuous: it saw 117 files and the `.2` → `.4` bump.
   - 0 markers in any staged source file.
+- **COMMITTED: `757f491`** on `feat/meera-creator-phase-b0`, local only; **not pushed** (Swapnil's call).
+  - **Base:** HEAD moved to `3802155` (the brief_extract lane's RR3, which touches only its 2 files) just before the commit. The tree was rebuilt on it, and pytest re-ran on the combined tree: **1259 passed**. The Java and frontend trees are byte-identical to the verified ones.
+  - **Checks:** the commit tree equals the verified tree, and the shared index was re-synced for the 117 paths.
+  - **Left uncommitted in the tree:** U-7 and CI-1 only, including the 14-line `delete` block in `api.ts`.
+- **Next in b0:**
+  - after the merge into phase-e: F-0963, per-row reads only, on the other lane's finder;
+  - K-5 test weakness + pin the anthropic logger;
+  - U-7 backend (DELETE route + resurrection fix) + review;
+  - CI-1 redesign;
+  - F-0777, F-0780, F-0781, F-0782 before go-live or in the next rule round.
+
+**2026-09-19: B0 is merged and pushed.**
+- release/0919 at `27500f8` contains phase-e `7846d93` plus B0 through `63f5fe4` (so Wave U `757f491` is in). The merge commit is `e8d0aab`.
+- The trends session reports: mvn 4168/0/0, pytest 1457, tsc 0, vitest 1479/1479, from a git archive.
+- **F-0963 is unblocked.** It was waiting for this merge.
+
+**⚠ Ledger ID collision, F-0765..F-0782 (18 IDs).** Phase-e and B0 each issued these IDs for different records. The merged ledger has both: phase-e's at lines 764-781, B0's at lines 862-879.
+- `promote.py:364` closes the FIRST row with a matching id.
+- So promoting any open B0 colliding record would close phase-e's record instead. The seven affected are F-0772, F-0774, F-0775, F-0777, F-0780, F-0781 and F-0782.
+- **Do not promote any id in F-0765..F-0782 until the B0 rows are renumbered.** The renumbering must also update the five gate file names and headers, the journal and these task docs.
+- **DONE on release/0919, not pushed:**
+  - `d863249` renumbers B0's records to F-1765..F-1782 (old id + 1000). It covers the ledger, 45 journal rows, the 5 gates renamed and 13 task docs. All 5 gates PROVED from a git archive of that exact tree.
+  - `9bfe7dc` (optional, separate) drops 22 stale open copies of records phase-e had closed. It fixes the false `--recurrence` BLOCKs; ids are now all unique.
+  - **Verified and PUSHED by the trends session:** release/0919 is at `9bfe7dc` on origin. The freeze is lifted.
+- **This b0 branch still uses the OLD ids.** Don't merge it into release again as-is; new B0 work starts from release/0919.
+- **Code comments fixed:** `2ceb04e` on branch `chore/b0-ledger-id-comments`, cut from `9bfe7dc`. It swaps 73 id tokens in 13 B0 files, comment-only; all 5 gates PROVED from its archive. `src/lib/api.ts:997` was left alone because its F-0780 is phase-e's. Local only; the trends session merges or pushes it.
 
 **K-5 PASS** (kabir, fresh-context, `KABIR-K5-LASTCALL-0919.md`).
 - **Mutations:** removing either key, or disabling the key check, turned red; everything restored by sha.

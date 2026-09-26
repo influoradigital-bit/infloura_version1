@@ -7089,6 +7089,20 @@ export const creatorBriefs = {
         })
       : mockOr(undefined),
 
+  /**
+   * U-7 (RULINGS-U-0917.md Round 3 §2-3) — DELETE /creator/briefs/:id, 204, hard delete. A
+   * repeat delete (already gone, or never hers — `requireOwnedBrief` returns the same 404 for
+   * both, no enumeration oracle) answers 404 `BRIEF_NOT_FOUND`; the UI (`MeeraSettingsSection`'s
+   * saved-briefs table) treats that as "already gone" and removes the row with no error, not as
+   * a failure. Skips the feature flag and consent gates on the backend (§7) — this call still
+   * succeeds with the feature off or consent withdrawn, matching the identity-only gate.
+   */
+  delete: (id: string): Promise<void> =>
+    isLive()
+      ? http.request<void>('DELETE', `/creator/briefs/${encodeURIComponent(id)}`, {
+          role: 'creator',
+        })
+      : mockOr(undefined),
 };
 
 // ---------------------------------------------------------------------------

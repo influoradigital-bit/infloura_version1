@@ -97,6 +97,13 @@ vi.mock('@/lib/api', async () => {
         exportConversation: vi.fn(),
         deleteConversation: vi.fn(),
       },
+      // U-7 — MeeraSettingsSection's saved-briefs table (SavedBriefsSection) is now mounted
+      // unconditionally on this page, including when the rest of the section is hidden; its own
+      // list call needs to be present or property access on the mock throws.
+      creatorBriefs: {
+        list: vi.fn().mockResolvedValue([]),
+        delete: vi.fn(),
+      },
       // CR-101/F-0114 — ConnectedAccounts is now mounted on this page; its useMetaConnection
       // hook needs both members present or property access on the mock throws.
       metaOAuth: {

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Loader2, Sparkles, Download, Trash2 } from 'lucide-react';
+import { Loader2, Sparkles, Download, Trash2, FileText } from 'lucide-react';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,7 @@ import {
   type CreatorAgentPreferences,
   type CreatorAgentPreferencesUpdate,
   type CreatorAgentConversationItem,
+  type BriefListItem,
 } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 
@@ -314,12 +315,19 @@ export function MeeraSettingsSection() {
     }
   };
 
-  // Gate review fix (item 3) — feature off for this account: hide the whole section. No card,
-  // no message, no toast, no retry loop; creator-copilot.tsx's chat entry carries the one calm
-  // "not available yet" message so it isn't duplicated here.
-  if (featureDisabled) return null;
+  // Gate review fix (item 3) — feature off for this account: hide the rest of the section. No
+  // card, no message, no toast, no retry loop; creator-copilot.tsx's chat entry carries the one
+  // calm "not available yet" message so it isn't duplicated here.
+  //
+  // U-7 (RULINGS-U-0917.md Round 3 §7) — the saved-briefs table is DELIBERATELY excluded from
+  // this hide. It has its own list/delete calls, gated by identity only on the backend (no
+  // feature flag, no consent) — a creator with the feature off, or with consent withdrawn, must
+  // still be able to see and delete her own saved briefs. If it did not, (a) (skip the flag on
+  // the erasure routes) would be a backend-only right nobody could reach from the UI.
+  if (featureDisabled) return <SavedBriefsSection />;
 
   return (
+    <>
     <Card className="mb-6">
       <CardHeader>
         <div className="flex items-center gap-2">
@@ -715,6 +723,199 @@ export function MeeraSettingsSection() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={!!deletingId}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700" disabled={!!deletingId}>
+              {deletingId ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
+    <SavedBriefsSection />
+    </>
+  );
+}
+
+/** U-7 (RULINGS-U-0917.md Round 3 §3) — the service's `MAX_LIST_LIMIT`. Fetching exactly this
+ *  many back means older briefs exist and are not shown; Priya's wording call is to keep the
+ *  note plain. */
+const SAVED_BRIEFS_LIMIT = 100;
+
+/**
+ * U-7 (RULINGS-U-0917.md Round 3 §3, §7) — the "saved briefs" table, cloned from "My Meera
+ * Conversations" above (loading/empty/error states, one delete per row behind a confirm dialog)
+ * but a DELIBERATELY SEPARATE component with its own list/delete calls. Two reasons it cannot be
+ * folded into the state above it:
+ *   1. It must keep rendering (and stay usable) even when the rest of `MeeraSettingsSection` is
+ *      hidden on `FEATURE_DISABLED` — see the `if (featureDisabled)` branch in the parent.
+ *   2. Both routes are identity-gated only on the backend (no feature flag, no consent — §4, §7),
+ *      so this component makes no reference to `featureDisabled` or consent state at all; it is
+ *      correct by construction for "visible with the flag off" and "visible with consent
+ *      withdrawn" alike.
+ *
+ * Copy Nisha-approved (NISHA-U7-COPY-0917.md) — 5 of 8 strings shipped as first written; the
+ * confirm-dialog PLATFORM/PASTED bodies and the 429 error text were revised per her exact
+ * replacement text: the PASTED body now states briefs and conversations are deleted separately
+ * (Kabir's Case B fact — a chat reply that paraphrased the brief survives until the conversation
+ * itself is deleted), the PLATFORM body names Meera as the one who re-reads/re-saves instead of
+ * leaving "reading" unattributed, and the rate-limit error gets its trailing period to match the
+ * other three error strings in this file.
+ */
+function SavedBriefsSection() {
+  const [briefs, setBriefs] = React.useState<BriefListItem[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = React.useState<string | null>(null);
+  const [deletingId, setDeletingId] = React.useState<string | null>(null);
+  const [rowError, setRowError] = React.useState<{ id: string; message: string } | null>(null);
+
+  const loadBriefs = React.useCallback(() => {
+    setLoading(true);
+    setLoadError(null);
+    api.creatorBriefs
+      .list(SAVED_BRIEFS_LIMIT)
+      .then((rows) => setBriefs(rows))
+      .catch((err) => {
+        setLoadError(err instanceof ApiError ? err.message : 'Could not load your saved briefs.');
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  React.useEffect(() => {
+    loadBriefs();
+  }, [loadBriefs]);
+
+  const handleDeleteBrief = async () => {
+    if (!deleteTarget) return;
+    // U-7 (RULINGS-U-0917.md Round 3 §2) — "the delete control is disabled while its request is
+    // in flight; the existing conversations table already does this." `setDeletingId` is the
+    // FIRST thing this handler does, synchronously, before any `await` — so the confirm button's
+    // own `disabled={!!deletingId}` (below) is what stops a second click from sending a second
+    // DELETE, the same pattern as `handleDelete` above. No separate ref needed: unlike "Ask Meera
+    // about this brief" (which awaited a consent probe BEFORE disabling anything, leaving a real
+    // window for two requests), there is no async gap here before the button disables.
+    setDeletingId(deleteTarget);
+    setRowError(null);
+    const target = deleteTarget;
+    try {
+      await api.creatorBriefs.delete(target);
+      setBriefs((prev) => prev.filter((b) => b.brief_id !== target));
+      setDeleteTarget(null);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        // U-7 (Round 3 §2) — the UI only ever lists her own briefs, so a 404 here can only mean
+        // it is already gone (another tab, or this same double-click). Remove the row, no error.
+        setBriefs((prev) => prev.filter((b) => b.brief_id !== target));
+        setDeleteTarget(null);
+      } else if (err instanceof ApiError && err.status === 429) {
+        setRowError({ id: target, message: 'Too many deletes, try again in a minute.' });
+      } else {
+        setRowError({
+          id: target,
+          message: err instanceof ApiError && err.message ? err.message : 'Could not delete this brief.',
+        });
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const deleteTargetBrief = briefs.find((b) => b.brief_id === deleteTarget);
+
+  return (
+    <Card className="mb-6" data-testid="saved-briefs-card">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <FileText className="h-5 w-5 text-muted-foreground" />
+          <CardTitle className="text-base">Saved briefs</CardTitle>
+        </div>
+        <CardDescription>
+          Briefs you&apos;ve pasted, or that came from a deal. Delete any of them below.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {loading && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading saved briefs…
+          </div>
+        )}
+        {!loading && loadError && <p className="text-sm text-destructive-foreground">{loadError}</p>}
+        {!loading && !loadError && briefs.length === 0 && (
+          <p className="text-sm text-muted-foreground">No saved briefs yet.</p>
+        )}
+        {!loading && !loadError && briefs.length > 0 && (
+          <>
+            <div className="overflow-x-auto rounded-md border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Brand</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {briefs.map((brief) => (
+                    <React.Fragment key={brief.brief_id}>
+                      <TableRow>
+                        <TableCell className="whitespace-nowrap text-sm">
+                          {brief.source === 'PLATFORM' ? 'From a deal' : 'Pasted'}
+                        </TableCell>
+                        {/* Round 3 §3 item 4 — React text only, never HTML. Brand text is
+                            brand-written (K-3); a plain string child is inert either way. */}
+                        <TableCell className="text-sm">{brief.brand_name_guess || 'Brand not identified'}</TableCell>
+                        <TableCell className="whitespace-nowrap text-sm">{formatDateTime(brief.created_at)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-stage-disputed-fg hover:text-red-700"
+                            title="Delete brief"
+                            disabled={deletingId === brief.brief_id}
+                            onClick={() => setDeleteTarget(brief.brief_id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                      {rowError?.id === brief.brief_id && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-sm text-destructive-foreground">
+                            {rowError.message}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            {briefs.length >= SAVED_BRIEFS_LIMIT && (
+              <p data-testid="saved-briefs-cap-note" className="text-xs text-muted-foreground">
+                Showing your latest 100 saved briefs. Delete some to see older ones.
+              </p>
+            )}
+          </>
+        )}
+      </CardContent>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this brief?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTargetBrief?.source === 'PLATFORM'
+                ? 'This deletes your saved copy of this brief. Meera saves a new copy automatically the next time she reads that deal.'
+                : 'This permanently deletes this brief. Your briefs and your conversations are deleted separately. This cannot be undone.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!deletingId}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteBrief}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={!!deletingId}
+            >
               {deletingId ? 'Deleting…' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
