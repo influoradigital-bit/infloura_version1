@@ -38,6 +38,7 @@ import com.influora.service.meera.MeeraSessionService;
 import com.influora.service.meera.OnBehalfTokenService;
 import com.influora.service.meera.StreamTokenService;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
+import com.influora.service.creatorcopilot.CreatorRecommendationService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -312,6 +313,7 @@ class CreatorTurnChargeAtomicityTest {
                 mock(CreatorAgentConversationService.class),
                 creatorAgentPreferencesService,
                 creatorCreditService,
-                mock(PlatformTransactionManager.class));
+                mock(PlatformTransactionManager.class),
+                mock(CreatorRecommendationService.class));
     }
 }

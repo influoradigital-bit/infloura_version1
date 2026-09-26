@@ -190,4 +190,143 @@ class MeeraPhaseB0BootValidationTest extends AbstractIntegrationTest {
                 .as("CHAR columns found -- this is the boot failure V20260718150000 was written to repair")
                 .isEmpty();
     }
+
+    /**
+     * Goal memory (Meera intelligence v1, spec T28) -- V20260925150000 adds four columns to
+     * {@code creator_agent_preferences}. Reaching this method already proves ddl-auto=validate
+     * accepted the entity's four new {@code @Column}s against the live table; this pins the exact
+     * MySQL types too, because a VARCHAR declared as the wrong width or a TEXT declared as
+     * VARCHAR would validate against a differently-written entity and drift silently.
+     */
+    @Test
+    @DisplayName(
+            "V20260925150000 applied: creator_agent_preferences has content_goal VARCHAR(20),"
+                    + " weekly_time_band VARCHAR(12), equipment TEXT and content_dislikes TEXT, all nullable")
+    void goalMemoryColumnsMatchTheEntity() {
+        Integer applied =
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM flyway_schema_history WHERE version = ? AND success = true",
+                        Integer.class,
+                        "20260925150000");
+        assertThat(applied).as("migration V20260925150000 should have applied successfully").isEqualTo(1);
+
+        Map<String, String> expectedType =
+                Map.of(
+                        "content_goal", "varchar(20)",
+                        "weekly_time_band", "varchar(12)",
+                        "equipment", "text",
+                        "content_dislikes", "text");
+        expectedType.forEach(
+                (column, type) -> {
+                    Map<String, Object> row =
+                            jdbcTemplate.queryForMap(
+                                    "SELECT column_type, is_nullable FROM information_schema.columns"
+                                            + " WHERE table_schema = DATABASE()"
+                                            + " AND table_name = 'creator_agent_preferences' AND column_name = ?",
+                                    column);
+                    assertThat(String.valueOf(row.get("COLUMN_TYPE")).toLowerCase(java.util.Locale.ROOT))
+                            .as("creator_agent_preferences.%s type", column)
+                            .isEqualTo(type);
+                    assertThat(row.get("IS_NULLABLE")).as("creator_agent_preferences.%s nullable", column).isEqualTo("YES");
+                });
+    }
+
+    /**
+     * Meera intelligence v1, slice 2 (spec 8.2) -- V20260925150100 creates {@code
+     * creator_recommendations}. Reaching this method already proves ddl-auto=validate accepted
+     * {@code CreatorRecommendation} against the live table; this pins every MySQL type too (INT
+     * never TINYINT, BIGINT, BOOLEAN = tinyint(1), DATE, TIME, DATETIME(6)), the two unique keys that
+     * make replay and one-post-one-recommendation database guarantees, and the profile cascade the
+     * DPDP rule relies on for challenge rows.
+     */
+    @Test
+    @DisplayName(
+            "V20260925150100 applied: creator_recommendations column types match the entity, both"
+                    + " unique keys exist with the right columns, FK to creator_profiles is ON DELETE CASCADE")
+    void creatorRecommendationsMatchTheEntity() {
+        Integer applied =
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM flyway_schema_history WHERE version = ? AND success = true",
+                        Integer.class,
+                        "20260925150100");
+        assertThat(applied).as("migration V20260925150100 should have applied successfully").isEqualTo(1);
+
+        Map<String, String> expectedType = new java.util.LinkedHashMap<>();
+        expectedType.put("id", "varchar(26)");
+        expectedType.put("creator_user_id", "varchar(26)");
+        expectedType.put("creator_profile_id", "varchar(26)");
+        expectedType.put("source", "varchar(16)");
+        expectedType.put("source_ref", "varchar(64)");
+        expectedType.put("conversation_id", "varchar(26)");
+        expectedType.put("recommended_for", "date");
+        expectedType.put("match_until", "date");
+        expectedType.put("post_type", "varchar(12)");
+        expectedType.put("window_label", "varchar(24)");
+        expectedType.put("window_from", "time");
+        expectedType.put("window_to", "time");
+        expectedType.put("structure_name", "varchar(80)");
+        expectedType.put("hook_template", "varchar(80)");
+        expectedType.put("topic", "varchar(160)");
+        expectedType.put("festival", "varchar(80)");
+        expectedType.put("prompt_version", "varchar(32)");
+        expectedType.put("knowledge_version", "varchar(32)");
+        expectedType.put("status", "varchar(12)");
+        expectedType.put("matched_media_id", "varchar(50)");
+        expectedType.put("matched_type", "tinyint(1)");
+        expectedType.put("matched_window", "tinyint(1)");
+        expectedType.put("reach", "bigint");
+        expectedType.put("engagement", "bigint");
+        expectedType.put("baseline_median_reach", "bigint");
+        expectedType.put("baseline_sample_size", "int");
+        expectedType.put("reach_vs_baseline_pct", "int");
+        expectedType.put("settled_at", "datetime(6)");
+        expectedType.put("created_at", "datetime(6)");
+        // Kabir L-3 / L-1 fix round: the account an outcome was decided on, and the optimistic lock.
+        expectedType.put("outcome_ig_account_id", "varchar(64)");
+        expectedType.put("version", "bigint");
+        List<Map<String, Object>> columns =
+                jdbcTemplate.queryForList(
+                        "SELECT column_name AS column_name, column_type AS column_type FROM information_schema.columns"
+                                + " WHERE table_schema = DATABASE() AND table_name = 'creator_recommendations'");
+        Map<String, String> actual = new java.util.HashMap<>();
+        for (Map<String, Object> c : columns) {
+            actual.put(
+                    String.valueOf(c.get("column_name")),
+                    String.valueOf(c.get("column_type")).toLowerCase(java.util.Locale.ROOT));
+        }
+        assertThat(actual).as("creator_recommendations columns and MySQL types").isEqualTo(Map.copyOf(expectedType));
+
+        for (Map.Entry<String, String> key :
+                Map.of(
+                                "uk_creator_rec_source", "creator_profile_id,source,source_ref",
+                                "uk_creator_rec_media", "creator_profile_id,matched_media_id")
+                        .entrySet()) {
+            String cols =
+                    jdbcTemplate.queryForObject(
+                            "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics"
+                                    + " WHERE table_schema = DATABASE() AND table_name = 'creator_recommendations'"
+                                    + " AND index_name = ? AND non_unique = 0",
+                            String.class,
+                            key.getKey());
+            assertThat(cols).as("unique key %s", key.getKey()).isEqualTo(key.getValue());
+        }
+
+        String deleteRule =
+                jdbcTemplate.queryForObject(
+                        "SELECT delete_rule FROM information_schema.referential_constraints"
+                                + " WHERE constraint_schema = DATABASE() AND constraint_name = 'fk_creator_rec_profile'"
+                                + " AND referenced_table_name = 'creator_profiles'",
+                        String.class);
+        assertThat(deleteRule).isEqualTo("CASCADE");
+
+        // Kabir L-2: deleting a conversation takes its recommendation rows with it, and a late
+        // insert for a deleted conversation fails instead of leaving an orphan.
+        String conversationDeleteRule =
+                jdbcTemplate.queryForObject(
+                        "SELECT delete_rule FROM information_schema.referential_constraints"
+                                + " WHERE constraint_schema = DATABASE() AND constraint_name = 'fk_creator_rec_conversation'"
+                                + " AND referenced_table_name = 'meera_creator_conversations'",
+                        String.class);
+        assertThat(conversationDeleteRule).isEqualTo("CASCADE");
+    }
 }

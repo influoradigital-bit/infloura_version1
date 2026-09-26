@@ -44,6 +44,10 @@ CHECK_DEAL_RISKS = "check_deal_risks"
 DRAFT_REPLY = "draft_reply"
 GET_TODAYS_TOPICS = "get_todays_topics"
 PLAN_MY_WEEK = "plan_my_week"
+# Meera intelligence v1 (2026-09-25): the Creator Intelligence Profile, read on
+# demand. Spring: `CreatorToolName.get_my_content_patterns`, served by
+# `GetMyContentPatternsExecutor` at `/internal/meera/creator/get_my_content_patterns`.
+GET_MY_CONTENT_PATTERNS = "get_my_content_patterns"
 
 # B0 order matches §3.1's tool catalogue. B1 appends send_routine_reply,
 # rank_open_campaigns and draft_application to the END of this tuple.
@@ -56,6 +60,7 @@ CREATOR_TOOL_NAMES: tuple[str, ...] = (
     DRAFT_REPLY,
     GET_TODAYS_TOPICS,
     PLAN_MY_WEEK,
+    GET_MY_CONTENT_PATTERNS,
 )
 
 # Every creator tool forwards to `/internal/meera/creator/<name>`
@@ -434,6 +439,21 @@ CREATOR_TOOL_SCHEMAS: list[dict[str, Any]] = [
             "properties": {},
             "required": [],
         },
+    },
+    {
+        "name": GET_MY_CONTENT_PATTERNS,
+        "description": (
+            "Read what has worked for THIS creator, from their own settled posts only: their usual "
+            "post (median reach, views, interactions and engagement rate of reach), their best and "
+            "weakest recent posts against that usual, and the post types and time windows that beat "
+            "it, each with the number of posts it rests on. Call it before you say what works for "
+            "them, which posts did best, or what to post more of, and before you recommend a post "
+            "type or time from their own history. Quote the strings exactly; never compute a new "
+            "percentage, average or ranking. When enough_data is false, say how many settled posts "
+            "they have and how many are needed, and claim no pattern. When available is false, say "
+            "Instagram is not connected. Read-only."
+        ),
+        "input_schema": {"type": "object", "properties": {}, "required": []},
     },
 ]
 

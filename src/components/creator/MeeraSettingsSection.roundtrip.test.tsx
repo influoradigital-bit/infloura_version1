@@ -65,6 +65,8 @@ const basePrefs: CreatorAgentPreferences = {
   negotiation_holdout: false,
   approved_draft_count: 0,
   level_up_eligible: false,
+  equipment: [],
+  content_dislikes: [],
 };
 
 describe('MeeraSettingsSection — currency & timezone round-trip', () => {

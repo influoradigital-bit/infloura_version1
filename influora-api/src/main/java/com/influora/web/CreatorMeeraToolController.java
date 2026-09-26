@@ -15,6 +15,7 @@ import com.influora.service.meera.tool.creator.CheckDealRisksExecutor;
 import com.influora.service.meera.tool.creator.CreatorToolCallValidator;
 import com.influora.service.meera.tool.creator.EstimateMyRateExecutor;
 import com.influora.service.meera.tool.creator.GetBriefExecutor;
+import com.influora.service.meera.tool.creator.GetMyContentPatternsExecutor;
 import com.influora.service.meera.tool.creator.GetMyDealsExecutor;
 import com.influora.service.meera.tool.creator.GetMyMetricsExecutor;
 import com.influora.service.meera.tool.creator.GetPlanMyWeekExecutor;
@@ -22,6 +23,7 @@ import com.influora.service.meera.tool.creator.GetTodaysTopicsExecutor;
 import com.influora.web.dto.meera.CreatorToolDtos.CheckDealRisksResult;
 import com.influora.web.dto.meera.CreatorToolDtos.EstimateMyRateResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetBriefResult;
+import com.influora.web.dto.meera.CreatorToolDtos.GetMyContentPatternsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyDealsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyMetricsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetTodaysTopicsResult;
@@ -45,7 +47,8 @@ import org.springframework.web.bind.annotation.RestController;
  * on-behalf JWT authenticates the creator. Neither alone is sufficient, and this controller re-proves
  * the human on every call rather than trusting the body.
  *
- * <p><b>Seven routes, not the nine in SPEC.md &sect;3.1.</b> {@code estimate_my_rate} and
+ * <p><b>Eight routes, not the nine in SPEC.md &sect;3.1</b> ({@code get_my_content_patterns},
+ * Meera intelligence v1, is the eighth). {@code estimate_my_rate} and
  * {@code check_deal_risks} joined the first two in Wave 3, with {@code RateQuoteService} and
  * {@code DealRiskService}; {@code get_brief} followed once {@code CreatorBriefService} existed to
  * read; {@code get_todays_topics} (T-CONTENT-TOPICS) and {@code plan_my_week} (T-PLAN-MY-WEEK) are
@@ -84,6 +87,7 @@ public class CreatorMeeraToolController {
     private final GetBriefExecutor getBriefExecutor;
     private final GetTodaysTopicsExecutor getTodaysTopicsExecutor;
     private final GetPlanMyWeekExecutor getPlanMyWeekExecutor;
+    private final GetMyContentPatternsExecutor getMyContentPatternsExecutor;
 
     public CreatorMeeraToolController(
             OnBehalfAuthResolver onBehalfAuthResolver,
@@ -97,7 +101,8 @@ public class CreatorMeeraToolController {
             CheckDealRisksExecutor checkDealRisksExecutor,
             GetBriefExecutor getBriefExecutor,
             GetTodaysTopicsExecutor getTodaysTopicsExecutor,
-            GetPlanMyWeekExecutor getPlanMyWeekExecutor) {
+            GetPlanMyWeekExecutor getPlanMyWeekExecutor,
+            GetMyContentPatternsExecutor getMyContentPatternsExecutor) {
         this.onBehalfAuthResolver = onBehalfAuthResolver;
         this.creatorToolCallValidator = creatorToolCallValidator;
         this.preferencesService = preferencesService;
@@ -110,6 +115,7 @@ public class CreatorMeeraToolController {
         this.getBriefExecutor = getBriefExecutor;
         this.getTodaysTopicsExecutor = getTodaysTopicsExecutor;
         this.getPlanMyWeekExecutor = getPlanMyWeekExecutor;
+        this.getMyContentPatternsExecutor = getMyContentPatternsExecutor;
     }
 
     @PostMapping("/get_my_deals")
@@ -182,6 +188,23 @@ public class CreatorMeeraToolController {
             @RequestBody Map<String, Object> body) {
         return handleRead(
                 onBehalfJwt, body, CreatorToolName.plan_my_week, getPlanMyWeekExecutor::execute);
+    }
+
+    /**
+     * Meera intelligence v1 -- {@code get_my_content_patterns}: the creator's usual post, her best
+     * and weakest posts against it, and the post types and windows that beat it, each with the
+     * posts it rests on. Read-only, through the same {@link #handleRead} chain as every route here;
+     * the executor is handed the JWT-verified user id only, and decides {@code now} itself.
+     */
+    @PostMapping("/get_my_content_patterns")
+    public ResponseEntity<ApiResponse<GetMyContentPatternsResult>> getMyContentPatterns(
+            @RequestHeader(ON_BEHALF_HEADER) String onBehalfJwt,
+            @RequestBody Map<String, Object> body) {
+        return handleRead(
+                onBehalfJwt,
+                body,
+                CreatorToolName.get_my_content_patterns,
+                getMyContentPatternsExecutor::execute);
     }
 
     /**

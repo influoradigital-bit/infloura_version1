@@ -39,6 +39,7 @@ Block A).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -1430,6 +1431,26 @@ _check_playbook_framing_topics(CREATOR_KNOWLEDGE_ROWS)
 LOOKUP_TEXT: dict[str, str] = {
     topic: render_lookup_topic(CREATOR_KNOWLEDGE_ROWS, topic) for topic in LOOKUP_TOPICS
 }
+
+
+def knowledge_version(knowledge_text: str, lookup_text: dict[str, str]) -> str:
+    """A short, stable id for exactly the knowledge text Meera reads: the always-sent block plus
+    every lookup topic. Meera intelligence v1, slice 2 (spec 8.3) stamps it on each recorded
+    recommendation, so an outcome can be traced to the knowledge that produced it.
+
+    DERIVED, not a hand-bumped constant, on purpose: a manual version is one more thing to forget
+    on a knowledge edit, and a forgotten bump silently files new advice under the old version.
+    Hashing the RENDERED text (not the .jsonl bytes) means a row edit, a renderer change and a new
+    lookup topic all move it, while a CRLF checkout of the same file does not. "ck-" + 16 hex
+    characters fits `creator_recommendations.knowledge_version` (VARCHAR(32))."""
+    digest = hashlib.sha256()
+    digest.update(knowledge_text.encode("utf-8"))
+    for topic in sorted(lookup_text):
+        digest.update(b"\x00" + topic.encode("utf-8") + b"\x00" + lookup_text[topic].encode("utf-8"))
+    return "ck-" + digest.hexdigest()[:16]
+
+
+CREATOR_KNOWLEDGE_VERSION: str = knowledge_version(CREATOR_KNOWLEDGE_TEXT, LOOKUP_TEXT)
 
 
 def render_lookup_section(topic: str) -> str | None:

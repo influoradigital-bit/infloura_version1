@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.influora.domain.entity.AiConversation;
@@ -15,6 +16,7 @@ import com.influora.domain.enums.MessageRole;
 import com.influora.repository.AiConversationRepository;
 import com.influora.repository.AiMessageRepository;
 import com.influora.repository.CreatorProfileRepository;
+import com.influora.repository.CreatorRecommendationRepository;
 import com.influora.repository.MeeraCreatorConversationRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationExportMessage;
@@ -49,6 +51,7 @@ class CreatorAgentConversationServiceTest {
     @Mock private CreatorProfileRepository creatorProfileRepository;
     @Mock private AiConversationRepository aiConversationRepository;
     @Mock private AiMessageRepository aiMessageRepository;
+    @Mock private CreatorRecommendationRepository recommendationRepository;
 
     private CreatorAgentConversationService service;
 
@@ -56,7 +59,11 @@ class CreatorAgentConversationServiceTest {
     void setUp() {
         service =
                 new CreatorAgentConversationService(
-                        conversationRepository, creatorProfileRepository, aiConversationRepository, aiMessageRepository);
+                        conversationRepository,
+                        creatorProfileRepository,
+                        aiConversationRepository,
+                        aiMessageRepository,
+                        recommendationRepository);
 
         CreatorProfile profile = mock(CreatorProfile.class);
         when(profile.getId()).thenReturn(CREATOR_PROFILE_ID);
@@ -170,5 +177,23 @@ class CreatorAgentConversationServiceTest {
         assertEquals("Whether the audio is clear", result.get("cant_tell").get(0).asText());
         // Only the card: nothing else from the metadata (prompt_version, ...) is exported.
         assertNull(exportedCheck.photoCheck().get("prompt_version"));
+    }
+
+    @Test
+    @DisplayName(
+            "DPDP (intelligence v1 slice 2): deleting a conversation also deletes the plan/script"
+                    + " recommendations recorded from it, scoped to the creator's OWN profile")
+    void deleteConversationDeletesItsRecommendationRows() {
+        MeeraCreatorConversation tracking =
+                MeeraCreatorConversation.start("row-1", CREATOR_PROFILE_ID, CONVERSATION_ID, Instant.now());
+        when(conversationRepository.findByConversationIdAndCreatorId(CONVERSATION_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(tracking));
+        when(aiMessageRepository.findByConversationIdOrderByCreatedAtAsc(CONVERSATION_ID)).thenReturn(List.of());
+        when(aiConversationRepository.findById(CONVERSATION_ID)).thenReturn(Optional.empty());
+
+        service.deleteConversation(CREATOR_USER_ID, CONVERSATION_ID);
+
+        verify(recommendationRepository).deleteByCreatorProfileIdAndConversationId(CREATOR_PROFILE_ID, CONVERSATION_ID);
+        verify(conversationRepository).delete(tracking);
     }
 }

@@ -10,6 +10,7 @@ import com.influora.web.dto.creator.CreatorAgentDtos.ConsentResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationExportResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationListResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
+import com.influora.web.dto.creator.CreatorAgentDtos.UpdateContentGoalRequest;
 import com.influora.web.dto.creator.CreatorAgentDtos.UpdatePhoneModelRequest;
 import com.influora.web.dto.creator.CreatorAgentDtos.UpdatePreferencesRequest;
 import jakarta.validation.Valid;
@@ -88,6 +89,21 @@ public class CreatorAgentController {
         requireFeatureEnabled();
         return ResponseEntity.ok(
                 ApiResponse.ok(preferencesService.updatePhoneModel(principal.getUserId(), req)));
+    }
+
+    /**
+     * Goal memory (Meera intelligence v1) — saves the "My goals" chips: content goal, time per
+     * week, kit and rather-not, as fixed codes only (an unknown code is 400
+     * INVALID_CONTENT_GOAL_CODE). Its own route, not fields on the full-replace PUT above, so
+     * saving the rest of the settings page never wipes it — and a creator tap is the ONLY writer:
+     * Meera has no tool that reaches this.
+     */
+    @PutMapping("/content-goal")
+    public ResponseEntity<ApiResponse<PreferencesResponse>> updateContentGoal(
+            @AuthenticationPrincipal AuthPrincipal principal, @Valid @RequestBody UpdateContentGoalRequest req) {
+        requireFeatureEnabled();
+        return ResponseEntity.ok(
+                ApiResponse.ok(preferencesService.updateContentGoal(principal.getUserId(), req)));
     }
 
     @PostMapping("/consent")

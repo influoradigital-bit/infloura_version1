@@ -61,6 +61,8 @@ public class CreatorToolCallValidator {
         // T-PLAN-MY-WEEK -- deterministic arithmetic over the creator's own posts, never a money
         // tool.
         TIER_BY_TOOL.put(CreatorToolName.plan_my_week, MeeraToolTier.R);
+        // Meera intelligence v1 -- a read of her own settled post results, never a money tool.
+        TIER_BY_TOOL.put(CreatorToolName.get_my_content_patterns, MeeraToolTier.R);
     }
 
     private final AuditLogService auditLogService;

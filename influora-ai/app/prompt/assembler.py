@@ -136,6 +136,11 @@ _FORBIDDEN_BRAND_FIELDS = {
     # Account insights (2026-09-24): the creator's own last-28-day reach,
     # views and interactions. Hers; never a brand's.
     "account_insights_summary",
+    # Goal memory (intelligence v1, 2026-09-25): her own saved goal chips.
+    "content_goal",
+    "weekly_time_band",
+    "equipment",
+    "content_dislikes",
 }
 
 # Canonical snake_case field set for POST /internal/meera/context's response
@@ -193,9 +198,17 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
     # computed against. Read by the consent gate's logging in the routes, not
     # rendered (the creator is never asked to reason about notice versions).
     "consent_version",
+    # Goal memory (Meera intelligence v1, 2026-09-25): the creator's "My goals"
+    # chips, saved only by her tap (never by Meera). Fixed codes: `content_goal`
+    # and `weekly_time_band` are nullable strings, `equipment` and
+    # `content_dislikes` always-present lists. Rendered as ONE line of fixed words
+    # by `_creator_goal_line`; an unknown code is dropped, never echoed.
+    "content_dislikes",
+    "content_goal",
     "creator_language",
     "deals_summary",
     "display_name",
+    "equipment",
     "excluded_categories",
     "first_name",
     # Gate fix round 2 (Q8): ISO 4217 code the `floors` are denominated in.
@@ -230,6 +243,7 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
     # used to describe.
     "tools_enabled",
     "weekly_sponsored_limit",
+    "weekly_time_band",
     "working_days",
     "working_hours_end",
     "working_hours_start",
@@ -687,6 +701,76 @@ def _creator_rules_lines(ctx: dict[str, Any], first_name: str) -> list[str]:
     return lines
 
 
+# Goal memory (Meera intelligence v1, spec 6): the creator's "My goals" chips arrive as fixed
+# codes (`ContentGoalCodes` in Java). Only these words ever reach the prompt -- a code is looked
+# up here and an unknown one is DROPPED, never echoed, so no chip value can carry text into a
+# system block. Keep the keys in step with ContentGoalCodes.java.
+_CONTENT_GOAL_WORDS: dict[str, str] = {
+    "GROW_FOLLOWERS": "grow followers",
+    "BRAND_DEALS": "get brand deals",
+    "SELL_PRODUCT": "sell something",
+}
+_WEEKLY_TIME_BAND_WORDS: dict[str, str] = {
+    "UNDER_2H": "under 2 hours a week",
+    "H2_TO_5": "2-5 hours a week",
+    "OVER_5H": "over 5 hours a week",
+}
+_EQUIPMENT_WORDS: dict[str, str] = {
+    "PHONE_ONLY": "phone",
+    "TRIPOD": "tripod",
+    "EXTERNAL_MIC": "external mic",
+    "RING_LIGHT": "ring light",
+    "GIMBAL": "gimbal",
+}
+_CONTENT_DISLIKE_WORDS: dict[str, str] = {
+    "NO_FACE": "show their face",
+    "NO_VOICE": "use their own voice",
+    "NO_DANCING": "dance",
+    "NO_TRENDING_AUDIO": "use trending audio",
+    "NO_OUTDOOR": "shoot outdoors",
+}
+
+
+def _goal_words(value: Any, words: dict[str, str]) -> list[str]:
+    """The fixed words for a list of codes, in the order sent, duplicates and unknown codes
+    dropped. Anything that is not a list of strings gives []."""
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for code in value:
+        word = words.get(code) if isinstance(code, str) else None
+        if word is not None and word not in out:
+            out.append(word)
+    return out
+
+
+def _creator_goal_line(ctx: dict[str, Any]) -> str:
+    """ONE Block B line for the creator's saved goal, time per week, kit and rather-nots.
+
+    Always a line, so an unsaved goal reads as "not saved" and Meera asks (once, in the intake)
+    rather than assumes. Built only from `_CONTENT_GOAL_WORDS` and its siblings."""
+    goal_raw = ctx.get("content_goal")
+    goal = _CONTENT_GOAL_WORDS.get(goal_raw) if isinstance(goal_raw, str) else None
+    time_raw = ctx.get("weekly_time_band")
+    time_band = _WEEKLY_TIME_BAND_WORDS.get(time_raw) if isinstance(time_raw, str) else None
+    kit = _goal_words(ctx.get("equipment"), _EQUIPMENT_WORDS)
+    rather_not = _goal_words(ctx.get("content_dislikes"), _CONTENT_DISLIKE_WORDS)
+
+    rest: list[str] = []
+    if time_band:
+        rest.append(f"Time: {time_band}.")
+    if kit:
+        rest.append(f"Kit: {', '.join(kit)}.")
+    if rather_not:
+        rest.append(f"Rather not: {', '.join(rather_not)}.")
+    head = f"- Their goal (they saved it): {goal}." if goal else "- Their goal: not saved"
+    if not rest:
+        return head
+    if not goal:
+        head += "."
+    return head + " " + " ".join(rest)
+
+
 def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
     """Per-creator cached block for the CREATOR audience (spec §3.2), keyed by
     (prompt_version, "CREATOR", workspace_id, session_id) via `cache_key_for`.
@@ -750,6 +834,9 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
         "- Your account (from Instagram): "
         + _creator_str(ctx, "account_insights_summary", ACCOUNT_INSIGHTS_NOT_AVAILABLE_TEXT)
     )
+    # Goal memory (intelligence v1, 2026-09-25): what the creator saved on the "My goals"
+    # chips, as fixed words. Always a line ("not saved" when nothing is).
+    lines.append(_creator_goal_line(ctx))
 
     # Camera knowledge v5 (2026-09-24): the phone they film on, as they typed it
     # (neutralized), and whether the Phone notes cover it. Always a line, so an

@@ -110,6 +110,8 @@ const PREFS: CreatorAgentPreferences = {
   negotiation_holdout: false,
   approved_draft_count: 0,
   level_up_eligible: false,
+  equipment: [],
+  content_dislikes: [],
 };
 
 function renderPage() {

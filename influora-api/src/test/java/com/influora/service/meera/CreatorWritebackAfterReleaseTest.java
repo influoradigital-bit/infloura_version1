@@ -25,6 +25,7 @@ import com.influora.service.CreatorAgentConversationService;
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.IdempotencyService;
 import com.influora.service.credits.CreatorCreditService;
+import com.influora.service.creatorcopilot.CreatorRecommendationService;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -71,6 +72,7 @@ class CreatorWritebackAfterReleaseTest {
     @Mock private CreatorAgentPreferencesService creatorAgentPreferencesService;
     @Mock private CreatorCreditService creatorCreditService;
     @Mock private PlatformTransactionManager transactionManager;
+    @Mock private CreatorRecommendationService creatorRecommendationService;
     @Mock private AICreditService creditService;
 
     private MeeraSessionService service;
@@ -91,7 +93,8 @@ class CreatorWritebackAfterReleaseTest {
                         creatorAgentConversationService,
                         creatorAgentPreferencesService,
                         creatorCreditService,
-                        transactionManager);
+                        transactionManager,
+                        creatorRecommendationService);
 
         // executeOnce invokes the supplier directly, the same stub technique
         // MeeraSessionServiceTest uses.

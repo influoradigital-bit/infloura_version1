@@ -39,6 +39,7 @@ from app.tools.creator_schemas import (
     CREATOR_TOOL_TO_SPRING_PATH,
     GET_BRIEF,
     GET_CREATOR_KNOWLEDGE,
+    GET_MY_CONTENT_PATTERNS,
     GET_MY_DEALS,
     GET_TODAYS_TOPICS,
     PLAN_MY_WEEK,
@@ -883,6 +884,81 @@ _TRUSTED_KEYS_QUOTE_LINE = (
 )
 _TRUSTED_KEYS_ADD_ON = ("code", "label", "amount", "amount_value", "basis")
 
+# get_my_content_patterns (Meera intelligence v1, spec 4.4/4.5): every field is computed by
+# Spring from the creator's OWN stored post readings (CreatorIntelligenceService, rendered by
+# GetMyContentPatternsExecutor) plus Meta's own permalinks and fixed vocabulary (metric names,
+# REEL/CAROUSEL/POST/OTHER, "weekday evening", "Reels and videos"). No caption, no brand text,
+# no editorial text ever reaches it, so the whole record is trusted -- but only field-for-field,
+# one allow-list per Java record (CreatorToolDtos.GetMyContentPatternsResult / BaselineMetric /
+# PostReading / WorkingPattern / Evidence), so an element carrying a key nobody classified pulls
+# its WHOLE list into the wrapper (the F-1771 rule: a container is never trusted whole).
+# tests/tools/test_content_patterns_real_payload.py parses the Java @JsonProperty names and fails
+# on any field that lands on neither side.
+_TRUSTED_KEYS_GET_MY_CONTENT_PATTERNS = (
+    "available",
+    "reason",
+    "enough_data",
+    "settled_posts",
+    "unsettled_posts",
+    "min_posts_needed",
+    "lookback_days",
+    "as_of",
+    "baseline",
+    "best_posts",
+    "weak_posts",
+    "what_works",
+    "followed_recommendations",
+    "note",
+)
+_TRUSTED_KEYS_CONTENT_EVIDENCE = ("type", "sample_size", "post_ids", "baseline_sample_size")
+_TRUSTED_KEYS_CONTENT_BASELINE = ("metric", "median", "evidence")
+_TRUSTED_KEYS_CONTENT_POST = (
+    "post_id",
+    "post_type",
+    "posted_date",
+    "posted_time",
+    "window",
+    "permalink",
+    "reach",
+    "reach_vs_usual",
+    "engagement_rate",
+    "evidence",
+)
+_TRUSTED_KEYS_CONTENT_PATTERN = (
+    "kind",
+    "label",
+    "posts",
+    "median_reach",
+    "reach_vs_usual",
+    "median_engagement_rate",
+    "engagement_vs_usual",
+    "beats_on",
+    "evidence",
+)
+# Slice 2 (spec 8.4): CreatorToolDtos.FollowedGroup -- how many recommendations of one source
+# (PLAN_MY_WEEK | CHALLENGE | SCRIPT_CARD) the creator was given and posted, and the median reach
+# of the ones she posted vs her usual. All server-computed counts and a pre-written percentage from
+# her own post readings; `evidence.post_ids` are the matched posts (dropped from the model copy).
+_TRUSTED_KEYS_CONTENT_FOLLOWED = (
+    "source",
+    "recommended",
+    "followed",
+    "median_reach_vs_usual",
+    "evidence",
+)
+# The list containers of the result and the per-element allow-list each one is held to.
+_CONTENT_PATTERNS_LISTS: dict[str, tuple[str, ...]] = {
+    "baseline": _TRUSTED_KEYS_CONTENT_BASELINE,
+    "best_posts": _TRUSTED_KEYS_CONTENT_POST,
+    "weak_posts": _TRUSTED_KEYS_CONTENT_POST,
+    "what_works": _TRUSTED_KEYS_CONTENT_PATTERN,
+    "followed_recommendations": _TRUSTED_KEYS_CONTENT_FOLLOWED,
+}
+# Spec 4.5 (token control): the model copy drops every `evidence.post_ids` -- up to 150 ids per
+# baseline metric -- and keeps `sample_size` / `baseline_sample_size`, which is what Meera quotes
+# ("based on 8 of your Reels"). The browser's copy (`LoopEvent.tool_result_data`) keeps the ids.
+_MODEL_DROPPED_EVIDENCE_KEYS = frozenset({"post_ids"})
+
 
 _JSON_SCALAR_TYPES = (str, int, float, bool, type(None))
 
@@ -980,6 +1056,67 @@ def _split_trusted_scalar(
     return trusted, brand
 
 
+def _strip_post_ids(value: Any) -> Any:
+    """A new copy of `value` with every `post_ids` key removed from every dict at any depth.
+    Used on the WRAPPED part of a get_my_content_patterns model copy, so the token control of
+    spec 4.5 holds even for a list that failed its allow-list; never mutates `value`."""
+    if isinstance(value, dict):
+        return {
+            k: _strip_post_ids(v) for k, v in value.items() if k not in _MODEL_DROPPED_EVIDENCE_KEYS
+        }
+    if isinstance(value, list):
+        return [_strip_post_ids(v) for v in value]
+    return value
+
+
+def _content_evidence_for_model(evidence: Any) -> dict[str, Any] | None:
+    """The model's copy of one `Evidence`: `post_ids` dropped, `type` / `sample_size` /
+    `baseline_sample_size` kept. None when the shape is not the Java record's (an unknown key,
+    a non-scalar value, `post_ids` not a list of scalars) -- the caller then wraps the list."""
+    if not isinstance(evidence, dict) or not set(evidence) <= set(_TRUSTED_KEYS_CONTENT_EVIDENCE):
+        return None
+    out: dict[str, Any] = {}
+    for key, value in evidence.items():
+        if key in _MODEL_DROPPED_EVIDENCE_KEYS:
+            if not isinstance(value, list) or not all(_is_json_scalar(v) for v in value):
+                return None
+            continue
+        if not _is_json_scalar(value):
+            return None
+        out[key] = value
+    return out
+
+
+def _content_list_for_model(items: Any, element_keys: tuple[str, ...]) -> list[Any] | None:
+    """The model's copy of one of get_my_content_patterns' four lists, element by element.
+    Every element must be a dict whose keys are all in `element_keys`, whose values are
+    scalars, except `evidence` (checked by `_content_evidence_for_model`) and `beats_on` (a list
+    of strings, WorkingPattern only). Any miss returns None and the WHOLE list is wrapped."""
+    if not isinstance(items, list):
+        return None
+    out: list[Any] = []
+    for item in items:
+        if not isinstance(item, dict) or not set(item) <= set(element_keys):
+            return None
+        element: dict[str, Any] = {}
+        for key, value in item.items():
+            if key == "evidence":
+                evidence = _content_evidence_for_model(value)
+                if evidence is None:
+                    return None
+                element[key] = evidence
+            elif key == "beats_on":
+                if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+                    return None
+                element[key] = list(value)
+            elif _is_json_scalar(value):
+                element[key] = value
+            else:
+                return None
+        out.append(element)
+    return out
+
+
 def _model_copy_of_tool_result(tool_name: str, data: Any) -> str:
     """The JSON string the MODEL reads for a creator tool's result. The ONLY thing this may
     change — `LoopEvent.tool_result_data` (what the browser card renders) must stay the exact
@@ -997,8 +1134,11 @@ def _model_copy_of_tool_result(tool_name: str, data: Any) -> str:
     Scoped to get_brief, check_deal_risks and get_my_deals — the three creator tools whose
     result carries brand-authored free text today (Priya's audit, round 3 §5 point 4;
     estimate_my_rate's `PackageQuote` carries none, and Block A/B context fields are a separate
-    surface this item does not touch). Every other tool, and a non-dict payload (an error shape,
-    or `None`), passes through as plain `_safe_json` — unchanged from before this fix.
+    surface this item does not touch). plan_my_week and get_todays_topics wrap editorial text;
+    get_my_content_patterns (intelligence v1) is trusted field-for-field and has every
+    `evidence.post_ids` dropped for token control, while the browser's copy keeps them. Every
+    other tool, and a non-dict payload (an error shape, or `None`), passes through as plain
+    `_safe_json` — unchanged from before this fix.
     """
     if not isinstance(data, dict):
         return _safe_json(data)
@@ -1032,6 +1172,31 @@ def _model_copy_of_tool_result(tool_name: str, data: Any) -> str:
         if not editorial:
             return _safe_json(trusted)
         return _safe_json(trusted) + "\n" + wrap_untrusted("editorial", _safe_json(editorial))
+
+    if tool_name == GET_MY_CONTENT_PATTERNS:
+        # Spec 4.4/4.5: trusted field-for-field, `evidence.post_ids` dropped everywhere. The four
+        # lists are the only containers; each is rebuilt element by element (never trusted
+        # whole), and one that fails its allow-list moves, whole, into the wrapper.
+        trusted, unclassified = _split_trusted_scalar(
+            data,
+            _TRUSTED_KEYS_GET_MY_CONTENT_PATTERNS,
+            container_keys=frozenset(_CONTENT_PATTERNS_LISTS),
+        )
+        for key, element_keys in _CONTENT_PATTERNS_LISTS.items():
+            if key not in trusted:
+                continue
+            cleaned = _content_list_for_model(trusted[key], element_keys)
+            if cleaned is None:
+                unclassified[key] = trusted.pop(key)
+            else:
+                trusted[key] = cleaned
+        if not unclassified:
+            return _safe_json(trusted)
+        return (
+            _safe_json(trusted)
+            + "\n"
+            + wrap_untrusted("unclassified", _safe_json(_strip_post_ids(unclassified)))
+        )
 
     if tool_name == GET_TODAYS_TOPICS:
         # Everything except the server-computed date goes in the wrapper, `topics` included --

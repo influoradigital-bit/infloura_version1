@@ -216,4 +216,21 @@ class MediaMetricsNewestSnapshotQueryTest {
 
         assertEquals(2, rows.size(), "an untagged row cannot be attributed, so it is kept");
     }
+
+    @Test
+    @DisplayName("the tagged-only read leaves untagged rows out (account-switchers, Kabir M-1)")
+    void taggedOnlyReadDropsUntaggedRows() {
+        Instant postedAt = NOW.minus(5, ChronoUnit.DAYS);
+        repository.save(snapshot("legacy3", "post-legacy", PROFILE_ID, NOW.minus(2, ChronoUnit.DAYS), postedAt, 500L));
+        repository.save(
+                snapshotOnAccount("new3", "post-new", PROFILE_ID, NOW.minus(1, ChronoUnit.DAYS), postedAt, 100L, "acct-influora"));
+        repository.save(
+                snapshotOnAccount("old3", "post-old", PROFILE_ID, NOW.minus(1, ChronoUnit.DAYS), postedAt, 900L, "acct-snapsby"));
+
+        List<MediaMetric> rows =
+                repository.findNewestSnapshotPerPostSinceForAccountTaggedOnly(
+                        PROFILE_ID, NOW.minus(90, ChronoUnit.DAYS), "acct-influora");
+
+        assertEquals(List.of("post-new"), rows.stream().map(MediaMetric::getMediaId).toList());
+    }
 }

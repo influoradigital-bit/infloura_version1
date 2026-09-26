@@ -308,14 +308,16 @@ class MeeraContextServiceTest {
                     "get_my_metrics",
                     "check_deal_risks",
                     "get_todays_topics",
-                    "plan_my_week");
+                    "plan_my_week",
+                    "get_my_content_patterns");
 
     /**
      * The represented-creator variant of {@link #WIRED_CREATOR_TOOLS}: {@code
      * CreatorToolScopes.SCOPE_REPRESENTED} was deliberately NOT given {@code get_todays_topics} or
      * {@code plan_my_week} (both were added only to {@code SCOPE_LEVEL_0} and {@code
-     * WIRED_TOOL_NAMES}), so a represented creator's offered set is still exactly the original five
-     * -- this is that original list, kept as its own constant so a future SCOPE_REPRESENTED
+     * WIRED_TOOL_NAMES}), so a represented creator's offered set is the original five plus {@code
+     * get_my_content_patterns} (Meera intelligence v1, spec Q1: a read of her own posts, added to
+     * SCOPE_REPRESENTED on purpose) -- this is that list, kept as its own constant so a future SCOPE_REPRESENTED
      * widening has to change this literal deliberately rather than by drifting alongside
      * {@link #WIRED_CREATOR_TOOLS}.
      */
@@ -325,7 +327,9 @@ class MeeraContextServiceTest {
                     "get_brief",
                     "estimate_my_rate",
                     "get_my_metrics",
-                    "check_deal_risks");
+                    "check_deal_risks",
+                    // Meera intelligence v1 (spec Q1) -- a read of her own post results.
+                    "get_my_content_patterns");
 
     @Test
     @DisplayName(
@@ -813,5 +817,61 @@ class MeeraContextServiceTest {
                         service.assemble(WORKSPACE_ID, "CREATOR");
 
         assertEquals(null, creatorContext.phoneModel());
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Goal memory (Meera intelligence v1) -- the creator's own tapped "My goals" chips.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "goal memory: saved chips reach the CREATOR context as content_goal, weekly_time_band,"
+                    + " equipment and content_dislikes (fixed codes)")
+    void testCreatorContextCarriesSavedGoal() throws Exception {
+        stubBareCreatorProfileForPhoneTests();
+        com.influora.domain.entity.CreatorAgentPreferences prefs =
+                com.influora.domain.entity.CreatorAgentPreferences.newWithDefaults(
+                        "prefs1", "profile1", null, null, null, null);
+        prefs.updateContentGoal("BRAND_DEALS", "H2_TO_5", "[\"PHONE_ONLY\",\"TRIPOD\"]", "[\"NO_FACE\"]");
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.of(prefs));
+
+        var creatorContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
+                        service.assemble(WORKSPACE_ID, "CREATOR");
+
+        assertEquals("BRAND_DEALS", creatorContext.contentGoal());
+        assertEquals("H2_TO_5", creatorContext.weeklyTimeBand());
+        assertEquals(List.of("PHONE_ONLY", "TRIPOD"), creatorContext.equipment());
+        assertEquals(List.of("NO_FACE"), creatorContext.contentDislikes());
+        String json = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()
+                .writeValueAsString(creatorContext);
+        assertTrue(json.contains("\"content_goal\":\"BRAND_DEALS\""), json);
+        assertTrue(json.contains("\"weekly_time_band\":\"H2_TO_5\""), json);
+        assertTrue(json.contains("\"equipment\":[\"PHONE_ONLY\",\"TRIPOD\"]"), json);
+        assertTrue(json.contains("\"content_dislikes\":[\"NO_FACE\"]"), json);
+    }
+
+    @Test
+    @DisplayName(
+            "goal memory: nothing saved -> content_goal/weekly_time_band absent (NON_NULL), equipment and"
+                    + " content_dislikes are [] -- and with no preferences row at all the same")
+    void testCreatorContextGoalNotSaved() throws Exception {
+        stubBareCreatorProfileForPhoneTests();
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.empty());
+
+        var creatorContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
+                        service.assemble(WORKSPACE_ID, "CREATOR");
+
+        assertEquals(null, creatorContext.contentGoal());
+        assertEquals(null, creatorContext.weeklyTimeBand());
+        assertEquals(List.of(), creatorContext.equipment());
+        assertEquals(List.of(), creatorContext.contentDislikes());
+        String json = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()
+                .writeValueAsString(creatorContext);
+        assertFalse(json.contains("content_goal"), json);
+        assertFalse(json.contains("weekly_time_band"), json);
+        assertTrue(json.contains("\"equipment\":[]"), json);
+        assertTrue(json.contains("\"content_dislikes\":[]"), json);
     }
 }

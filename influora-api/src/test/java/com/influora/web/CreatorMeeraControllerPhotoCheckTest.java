@@ -840,7 +840,8 @@ class CreatorMeeraControllerPhotoCheckTest {
                         creatorAgentConversationService,
                         null,
                         creatorCreditService,
-                        transactionManager);
+                        transactionManager,
+                        null); // CreatorRecommendationService: listMessagesBefore never records one
         AiMessage a = AiMessage.builder().id("01HW0000000000000000000001").conversationId(CONV).role(MessageRole.USER).content("a").build();
         AiMessage b = AiMessage.builder().id("01HW0000000000000000000002").conversationId(CONV).role(MessageRole.ASSISTANT).content("b").build();
         when(messageRepository.findByConversationIdAndIdLessThanOrderByIdDesc(

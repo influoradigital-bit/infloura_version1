@@ -5,12 +5,9 @@ import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.MediaMetric;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.MediaMetricsRepository;
-import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.ZoneId;
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -56,19 +53,19 @@ public class CreatorPostingPatternService {
      * exactly {@link #LOOKBACK_DAYS} days before {@code today} is INCLUDED (the boundary is
      * inclusive on both ends); a post one day older than that is excluded.
      */
-    static final int LOOKBACK_DAYS = 90;
+    public static final int LOOKBACK_DAYS = 90;
 
     /** A bucket is reported only when at least this many valid posts fall in it. */
-    static final int MIN_BUCKET_POSTS = 3;
+    public static final int MIN_BUCKET_POSTS = 3;
 
     /** A media type is eligible as "best post type" only with at least this many valid posts. */
-    static final int MIN_BEST_TYPE_POSTS = 3;
+    public static final int MIN_BEST_TYPE_POSTS = 3;
 
     /**
      * Below this many valid (deduped, in-window, non-null/non-zero-reach) posts, the whole pattern
      * is withheld rather than reported off a thin sample.
      */
-    static final int MIN_POSTS_FOR_PATTERN = 10;
+    public static final int MIN_POSTS_FOR_PATTERN = 10;
 
     private final MediaMetricsRepository mediaMetricsRepository;
     private final CreatorProfileRepository creatorProfileRepository;
@@ -235,7 +232,7 @@ public class CreatorPostingPatternService {
     private static List<PatternWindow> buildWindows(List<MediaMetric> valid) {
         Map<String, List<MediaMetric>> byBucket = new LinkedHashMap<>();
         for (MediaMetric post : valid) {
-            byBucket.computeIfAbsent(bucketLabel(post.getPostedAt()), key -> new ArrayList<>()).add(post);
+            byBucket.computeIfAbsent(CreatorPostRules.windowLabel(post.getPostedAt()), key -> new ArrayList<>()).add(post);
         }
 
         record ScoredWindow(String label, int posts, double rate) {}
@@ -253,36 +250,6 @@ public class CreatorPostingPatternService {
         return scored.stream()
                 .map(w -> new PatternWindow(w.label(), w.posts(), formatRate(w.rate())))
                 .toList();
-    }
-
-    /**
-     * "weekday"/"weekend" x "morning"/"afternoon"/"evening"/"night", both decided from {@code
-     * postedAt} converted to Asia/Kolkata -- never from the instant's own (UTC) calendar day or
-     * clock time, which can disagree with the IST one near either boundary.
-     */
-    private static String bucketLabel(Instant postedAt) {
-        ZonedDateTime ist = postedAt.atZone(IST);
-        boolean weekend =
-                ist.getDayOfWeek() == DayOfWeek.SATURDAY || ist.getDayOfWeek() == DayOfWeek.SUNDAY;
-        return (weekend ? "weekend" : "weekday") + " " + daypartOf(ist.toLocalTime());
-    }
-
-    /**
-     * morning 05:00-11:59, afternoon 12:00-16:59, evening 17:00-21:59, night 22:00-04:59 (wraps
-     * past midnight). Lower bound of each named range is inclusive; 16:59:59.999999999 is the last
-     * instant of "afternoon" and 17:00:00 exactly is the first instant of "evening".
-     */
-    private static String daypartOf(LocalTime time) {
-        if (!time.isBefore(LocalTime.of(5, 0)) && time.isBefore(LocalTime.of(12, 0))) {
-            return "morning";
-        }
-        if (!time.isBefore(LocalTime.of(12, 0)) && time.isBefore(LocalTime.of(17, 0))) {
-            return "afternoon";
-        }
-        if (!time.isBefore(LocalTime.of(17, 0)) && time.isBefore(LocalTime.of(22, 0))) {
-            return "evening";
-        }
-        return "night";
     }
 
     /**

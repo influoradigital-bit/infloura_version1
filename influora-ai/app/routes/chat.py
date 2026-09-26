@@ -81,7 +81,9 @@ from app.costs.spend_tracker import (
 from app.prompt.assembler import assemble_prompt
 from app.providers.claude import ClaudeProvider
 from app.security.redaction import log_event, shape_of
-from app.tools.creator_schemas import is_creator_local_tool
+from app.prompt.content_knowledge import CREATOR_KNOWLEDGE_VERSION
+from app.recommendations.record import recommendations_for_turn
+from app.tools.creator_schemas import PLAN_MY_WEEK, is_creator_local_tool
 from app.tools.loop import ToolLoopCapExceeded, ToolLoopContext, run_tool_loop
 
 logger = logging.getLogger(__name__)
@@ -808,6 +810,9 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         # "error" tool_result (unknown tool / Spring call failure) carries nothing usable
         # and must not suppress a refund on its own.
         tool_result_delivered = False
+        # Meera intelligence v1, slice 2 (spec 8.3.2): this turn's own plan_my_week results -- the
+        # ONLY dates a recorded week-plan recommendation may resolve against.
+        plan_results: list[Any] = []
 
         def is_cancelled() -> bool:
             return disconnected
@@ -960,6 +965,8 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                     # 2026-09-25).
                     if event.tool_status == "ok" and not is_creator_local_tool(event.tool_name or ""):
                         tool_result_delivered = True
+                    if event.tool_status == "ok" and event.tool_name == PLAN_MY_WEEK:
+                        plan_results.append(event.tool_result_data)
                 elif event.type == "done":
                     finish_reason = event.finish_reason or "stop"
                     final_usage = event.usage
@@ -1113,15 +1120,42 @@ async def chat(request: Request, authorization: str | None = Header(default=None
             # Usable text reached the client -- persist and keep the charge, exactly like the
             # clean-success path, even when provider_failed is True (e.g. the stream completed
             # but a later cleanup/usage-accounting step threw).
+            metadata: dict[str, Any] = {
+                "prompt_version": prompt.prompt_version,
+                "token_usage": final_usage,
+                "request_id": request_id,
+            }
+            if audience == AUDIENCE_CREATOR:
+                # Meera intelligence v1, slice 2 (spec 8.3): what this reply recommended, read by
+                # deterministic parsers (app/recommendations/record.py), which never raise and
+                # return [] for a failed, refused or cut-off turn. Spring records the items
+                # (CreatorRecommendationService.recordFromWriteback) after the message is saved.
+                metadata["knowledge_version"] = CREATOR_KNOWLEDGE_VERSION
+                try:
+                    recommendations = recommendations_for_turn(
+                        audience=audience,
+                        final_text=real_answer_text,
+                        plan_results=plan_results,
+                        provider_failed=provider_failed,
+                        finish_reason=finish_reason,
+                        stop_reason=stop_reason,
+                        workspace_id=workspace_id,
+                        request_id=request_id,
+                    )
+                except Exception as exc:  # noqa: BLE001 - never costs the write-back
+                    log_event(
+                        logger, logging.WARNING, "meera_recommendations_parse_failed",
+                        workspace_id=workspace_id, request_id=request_id,
+                        fields={"error_type": type(exc).__name__},
+                    )
+                    recommendations = []
+                if recommendations:
+                    metadata["recommendations"] = recommendations
             try:
                 await spring.persist_assistant_message(
                     conversation_id=body.get("conversation_id", ""),
                     content=real_answer_text,
-                    metadata={
-                        "prompt_version": prompt.prompt_version,
-                        "token_usage": final_usage,
-                        "request_id": request_id,
-                    },
+                    metadata=metadata,
                     turn_id=turn_id,
                     onbehalf_jwt=onbehalf_jwt,
                 )

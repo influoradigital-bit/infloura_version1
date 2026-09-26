@@ -63,6 +63,8 @@ const basePrefs: CreatorAgentPreferences = {
   approved_draft_count: 0,
   level_up_eligible: false,
   phone_model: 'OPPO A78 5G',
+  equipment: [],
+  content_dislikes: [],
 };
 
 describe('MeeraSettingsSection — My phone', () => {

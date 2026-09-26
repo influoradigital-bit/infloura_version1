@@ -34,7 +34,9 @@ public enum CreatorToolName {
     check_deal_risks,
     draft_reply,
     get_todays_topics,
-    plan_my_week;
+    plan_my_week,
+    /** Meera intelligence v1 -- what has worked for her, from her own settled posts. */
+    get_my_content_patterns;
 
     /**
      * Exact {@link #name()} match — never case-insensitive, never trimmed. A model that emits

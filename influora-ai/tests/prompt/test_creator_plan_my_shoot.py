@@ -280,8 +280,12 @@ def test_version_note_keeps_the_previously_chain():
 
     source = Path(config_module.__file__).read_text(encoding="utf-8")
     note = source[source.index('PROMPT_VERSION = "') : source.index("# Previously (.12):")]
-    assert 'PROMPT_VERSION = "meera-2026.09.25.8"' in note
+    assert 'PROMPT_VERSION = "meera-2026.09.25.9"' in note
+    assert "merge of feat/meera-intelligence (slices 1-2)" in note
+    assert "# Previously (.25.8):" in note
     assert "explainer Reel formats (Swapnil 2026-09-26)" in note
+    assert "Meera intelligence v1, slice 2" in note
+    assert "Meera intelligence v1, slice 1 + goal memory" in note
     assert "# Previously (.25.7):" in note
     assert "shoot guide grid (spec v2 2026-09-26" in note
     assert "# Previously (.25.6):" in note

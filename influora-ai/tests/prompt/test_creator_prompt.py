@@ -405,3 +405,95 @@ def test_the_fixed_shapes_are_only_for_replies_the_creator_asked_for():
     assert "Profile review format (only when asked to review their profile):" in persona
     # The short-reply rail still stands for everything else.
     assert "KEEP IT SHORT" in persona
+
+
+# --- Meera intelligence v1 (2026-09-25, spec 5, T24): their own results, their own goal ---
+
+
+def _flat_persona() -> str:
+    return " ".join(MEERA_CREATOR_PERSONA.split())
+
+
+def test_persona_has_the_their_own_results_block():
+    flat = _flat_persona()
+    assert "Their own results (what works for them):" in MEERA_CREATOR_PERSONA
+    # Sample size in words, every time.
+    assert "always say how many posts it rests on" in flat
+    assert '"based on 8 of your Reels"' in flat
+    # Quote, never compute.
+    assert "never work out a new percentage, average, total or ranking yourself" in flat
+    # Their own usual only -- never other creators.
+    assert "Their usual is the only yardstick." in flat
+    assert "Never compare them with other creators, an average creator, their category" in flat
+    assert "never say what other creators get" in flat
+    # No trend talk.
+    assert "Never say they are growing, improving, going viral, declining or doing well overall." in flat
+    # Thin data and the settle rule.
+    assert "Say thin data plainly." in flat
+    assert "say how many settled posts they have and how many are needed" in flat
+    assert "Never call a handful of posts a pattern." in flat
+    assert "A post counts once it has settled." in flat
+    assert "it will count once it has settled" in flat
+    # Reels and videos are one group; a pattern is a lead.
+    assert 'Say "Reels and videos"; never claim Reels beat videos' in flat
+    assert "A pattern is a lead, not a promise." in flat
+    assert "offer a Reel version of what worked" in flat
+
+
+def test_persona_counts_only_the_recommendations_they_posted():
+    """Slice 2 (spec 8.4): followed_recommendations. Say how many of the ones they posted it rests
+    on; one they did not post is never their failure; never "you didn't follow my advice"."""
+    flat = _flat_persona()
+    rule_start = flat.index("Your own recommendations.")
+    rule = flat[rule_start : flat.index("Their own goal.", rule_start)]
+    assert "the week plan days, challenge days and scripts you gave them" in rule
+    assert 'call them "the ones you posted"' in rule
+    assert "Say how many of those it rests on" in rule
+    assert "quote how they did against their usual only when the result gives it" in rule
+    assert "A recommendation they did not post is never their failure and is never counted against them" in rule
+    assert "never say \"you didn't follow my advice\"" in rule
+    assert "never say they skipped, missed or ignored one" in rule
+    # It lives in the "Their own results" block, so that block's rails (sample sizes, their own
+    # usual only, no trend talk) govern it too.
+    text = MEERA_CREATOR_PERSONA
+    results = text.index("Their own results (what works for them):")
+    assert results < text.index("- Your own recommendations.") < text.index("Dates and today's topics:")
+
+
+def test_persona_uses_a_saved_goal_and_never_claims_to_save_one():
+    flat = _flat_persona()
+    assert 'If "Their goal" in your context is saved, use it and do not ask for it again.' in flat
+    assert "save it under My goals in Meera settings" in flat
+    assert "Never say you saved it." in flat
+    # The intake and the skip override both know about a saved goal.
+    assert "only for what is genuinely unknown (a saved goal is known)" in flat
+    assert "and the grow-followers goal, or their saved goal when they have saved one" in flat
+
+
+def test_engagement_bases_rule_names_the_content_results_as_per_reach():
+    flat = _flat_persona()
+    assert (
+        "the posting pattern's rates, the challenge's and their content results' are per reach"
+        in flat
+    )
+
+
+def test_the_results_block_sits_in_the_content_section_before_the_dates_section():
+    """Its own heading, placed AFTER the last content bullet: a heading dropped mid-list would
+    re-parent the camera, delivery and hook bullets under "Their own results"."""
+    text = MEERA_CREATOR_PERSONA
+    results = text.index("Their own results (what works for them):")
+    assert text.index("Content and growth questions") < results
+    assert text.index("Platform background entries are confidence medium") < results
+    assert results < text.index("Dates and today's topics:")
+
+
+def test_content_patterns_capability_bullet_says_when_to_call_it():
+    bullet = CREATOR_CAPABILITY_LINES["get_my_content_patterns"]
+    flat = " ".join(bullet.split())
+    assert "their own settled posts" in flat
+    assert "each with how many posts it rests on" in flat
+    assert "Call it before saying what works for them" in flat
+    # Slice 2: the same result carries how her posted recommendations did.
+    assert "how the recommendations they posted did against their usual" in flat
+    assert "how your past suggestions did" in flat

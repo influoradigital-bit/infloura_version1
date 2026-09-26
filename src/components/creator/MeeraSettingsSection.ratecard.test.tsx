@@ -71,6 +71,8 @@ const basePrefs: CreatorAgentPreferences = {
   negotiation_holdout: true,
   approved_draft_count: 12,
   level_up_eligible: true,
+  equipment: [],
+  content_dislikes: [],
 };
 
 describe('MeeraSettingsSection — PUT payload carries rate_card, never the server-owned Phase B fields', () => {

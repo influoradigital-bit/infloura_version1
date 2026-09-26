@@ -16,6 +16,7 @@ import com.influora.repository.UserRepository;
 import com.influora.security.AuthCookieService;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.AuthService;
+import com.influora.service.creatorcopilot.CreatorRecommendationWriter;
 import com.influora.web.dto.user.UserDtos.DeleteAccountResponse;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Optional;
@@ -47,6 +48,7 @@ class AccountControllerTest {
     @Mock private UserRepository userRepository;
     @Mock private AuthService authService;
     @Mock private AuthCookieService authCookieService;
+    @Mock private CreatorRecommendationWriter creatorRecommendations;
     @Mock private HttpServletResponse response;
 
     private AccountController controller;
@@ -56,7 +58,7 @@ class AccountControllerTest {
 
     @BeforeEach
     void setUp() {
-        controller = new AccountController(userRepository, authService, authCookieService);
+        controller = new AccountController(userRepository, authService, authCookieService, creatorRecommendations);
     }
 
     private User creatorUser() {
@@ -107,5 +109,24 @@ class AccountControllerTest {
         InOrder order = inOrder(userRepository, authService);
         order.verify(userRepository).save(any(User.class));
         order.verify(authService).purgePasswordResetTokens(USER_ID);
+    }
+
+    /**
+     * Meera intelligence slice 2, Kabir M-1 (DPDP): the soft delete keeps the users row and never
+     * deletes creator_profiles, so the creator_recommendations FK cascade never fires. The delete
+     * path itself must remove them, and before the soft delete, so a failure leaves a live account
+     * the creator can retry from.
+     */
+    @Test
+    @DisplayName("DELETE /me/account M-1: the creator's recommendation rows are deleted, before the soft delete")
+    void testDeleteAccountDeletesCreatorRecommendations() {
+        User user = creatorUser();
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+
+        controller.deleteAccount(principal, response);
+
+        InOrder order = inOrder(creatorRecommendations, userRepository);
+        order.verify(creatorRecommendations).deleteAllForCreator(USER_ID);
+        order.verify(userRepository).save(any(User.class));
     }
 }

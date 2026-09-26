@@ -11,6 +11,8 @@ import com.influora.domain.enums.CreatorChallengeStatus;
 import com.influora.repository.CreatorChallengeDayRepository;
 import com.influora.repository.CreatorChallengeRepository;
 import com.influora.repository.MediaMetricsRepository;
+import com.influora.service.creatorcopilot.CreatorPostRules;
+import com.influora.service.creatorcopilot.CreatorRecommendationService;
 import com.influora.service.creatorcopilot.CreatorPostingPatternService;
 import com.influora.service.creatorcopilot.CreatorPostingPatternService.PatternWindow;
 import com.influora.service.creatorcopilot.CreatorPostingPatternService.PostingPattern;
@@ -83,12 +85,13 @@ public class CreatorChallengeService {
                     ChallengeDayType.CAROUSEL,
                     ChallengeDayType.REEL);
 
-    /** Instagram numbers still grow for ~2 days (CHALLENGE-SPEC.md Backend &sect;6). */
-    static final Duration SETTLING_PERIOD = Duration.ofHours(48);
+    // SETTLING_PERIOD (48 h) moved to CreatorPostRules (Meera intelligence v1, spec 3.2), shared
+    // with CreatorIntelligenceService.
 
     /** Data refreshes every 6h (MetricsPollingJob) -- a day less than this old that has not yet
-     * shown a post is "still checking", not yet "missed" (CHALLENGE-SPEC.md Backend &sect;3). */
-    static final Duration CHECKING_GRACE = Duration.ofHours(12);
+     * shown a post is "still checking", not yet "missed" (CHALLENGE-SPEC.md Backend &sect;3).
+     * Defined once in {@link CreatorPostRules#CHECKING_GRACE} (slice 2 reuses it). */
+    static final Duration CHECKING_GRACE = CreatorPostRules.CHECKING_GRACE;
 
     /** Never a change computed off a single settled post either week (CHALLENGE-SPEC.md &sect;6). */
     static final int MIN_SETTLED_TO_COMPARE = 2;
@@ -101,18 +104,21 @@ public class CreatorChallengeService {
     private final MediaMetricsRepository mediaMetricsRepository;
     private final CreatorPostingPatternService postingPatternService;
     private final MetaConnectionService metaConnectionService;
+    private final CreatorRecommendationService recommendationService;
 
     public CreatorChallengeService(
             CreatorChallengeRepository challengeRepository,
             CreatorChallengeDayRepository dayRepository,
             MediaMetricsRepository mediaMetricsRepository,
             CreatorPostingPatternService postingPatternService,
-            MetaConnectionService metaConnectionService) {
+            MetaConnectionService metaConnectionService,
+            CreatorRecommendationService recommendationService) {
         this.challengeRepository = challengeRepository;
         this.dayRepository = dayRepository;
         this.mediaMetricsRepository = mediaMetricsRepository;
         this.postingPatternService = postingPatternService;
         this.metaConnectionService = metaConnectionService;
+        this.recommendationService = recommendationService;
     }
 
     // ============================== Reads ==============================
@@ -208,7 +214,12 @@ public class CreatorChallengeService {
             throw new ApiException(
                     "CHALLENGE_ALREADY_ACTIVE", "A challenge is already active", HttpStatus.CONFLICT);
         }
-        dayRepository.saveAll(buildPlan(challenge.getId(), pattern, today));
+        List<CreatorChallengeDay> plan = buildPlan(challenge.getId(), pattern, today);
+        dayRepository.saveAll(plan);
+        // Meera intelligence v1, slice 2 (spec 8.3): one creator_recommendations row per non-REST
+        // day, in THIS transaction -- deterministic server data that stands or falls with the
+        // challenge it describes. source_ref = challengeId:dayIndex; a replay is a no-op.
+        recommendationService.recordChallengePlan(challenge, plan, now);
 
         return getState(profile, today, now);
     }
@@ -284,7 +295,7 @@ public class CreatorChallengeService {
                 if (usedMediaIds.contains(candidate.getMediaId())) {
                     continue;
                 }
-                boolean matched = mediaTypeMatches(day.getPlannedType(), candidate.getMediaType());
+                boolean matched = CreatorPostRules.typeMatches(day.getPlannedType(), candidate.getMediaType());
                 day.markDone(candidate.getMediaId(), candidate.getMediaType(), matched, candidate.getPostedAt());
                 usedMediaIds.add(candidate.getMediaId());
                 changed.add(day);
@@ -294,17 +305,6 @@ public class CreatorChallengeService {
         if (!changed.isEmpty()) {
             dayRepository.saveAll(changed);
         }
-    }
-
-    /** REELS/VIDEO satisfies REEL, CAROUSEL_ALBUM satisfies CAROUSEL, IMAGE satisfies POST --
-     * "facts already verified" in CHALLENGE-SPEC.md. */
-    private static boolean mediaTypeMatches(ChallengeDayType planned, String mediaType) {
-        return switch (planned) {
-            case REEL -> "VIDEO".equals(mediaType) || "REELS".equals(mediaType);
-            case CAROUSEL -> "CAROUSEL_ALBUM".equals(mediaType);
-            case POST -> "IMAGE".equals(mediaType);
-            case REST -> false;
-        };
     }
 
     // ============================== Status derivation ==============================
@@ -492,7 +492,7 @@ public class CreatorChallengeService {
      * default mix uses. Otherwise the fixed default mix.
      */
     private List<ChallengeDayType> determineTypeSequence(PostingPattern pattern) {
-        ChallengeDayType best = mapBestType(pattern.bestPostType());
+        ChallengeDayType best = CreatorPostRules.canonicalType(pattern.bestPostType());
         if (best == null) {
             return DEFAULT_TYPE_SEQUENCE;
         }
@@ -507,19 +507,6 @@ public class CreatorChallengeService {
         slots[3] = others.get(1);
         slots[5] = others.get(0);
         return List.of(slots);
-    }
-
-    /** VIDEO/REELS -> REEL, CAROUSEL_ALBUM -> CAROUSEL, IMAGE -> POST (facts already verified). */
-    private static ChallengeDayType mapBestType(String bestPostType) {
-        if (bestPostType == null) {
-            return null;
-        }
-        return switch (bestPostType) {
-            case "VIDEO", "REELS" -> ChallengeDayType.REEL;
-            case "CAROUSEL_ALBUM" -> ChallengeDayType.CAROUSEL;
-            case "IMAGE" -> ChallengeDayType.POST;
-            default -> null; // unrecognised media_type -- fall back to the default mix rather than guess
-        };
     }
 
     private record WindowPlan(String label, LocalTime from, LocalTime to, String source) {}
@@ -609,7 +596,7 @@ public class CreatorChallengeService {
                         .toList();
         List<MediaMetric> settled =
                 inWeek.stream()
-                        .filter(p -> Duration.between(p.getPostedAt(), now).compareTo(SETTLING_PERIOD) >= 0)
+                        .filter(p -> Duration.between(p.getPostedAt(), now).compareTo(CreatorPostRules.SETTLING_PERIOD) >= 0)
                         .toList();
         long reach = settled.stream().mapToLong(p -> p.getReach() == null ? 0L : p.getReach()).sum();
         List<MediaMetric> validForRate =

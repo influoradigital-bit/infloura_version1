@@ -76,7 +76,16 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.25.8"
+PROMPT_VERSION = "meera-2026.09.25.9"
+# ^ .25.9 = merge of feat/meera-intelligence (slices 1-2) into the release line (2026-09-26,
+# Swapnil: Meera must see the creator's own posts). Adds the Spring-backed read tool
+# get_my_content_patterns (own best/weak posts and what beats their usual, thin-data guarded), the
+# creator persona block "Their own results (what works for them)" with "Your own recommendations",
+# the goal line in creator Block B, CREATOR_KNOWLEDGE_VERSION, and the write-back's
+# metadata.recommendations (app/recommendations/record.py). Every release rule (.25.1-.25.8: Plan my
+# shoot, photo checks, framing, reel_formats, ASCI) is kept. BRAND prompt unchanged.
+#
+# Previously (.25.8):
 # ^ .25.8 = explainer Reel formats (Swapnil 2026-09-26): lookup-only reel_format and
 # reel_format_rule rows (topic reel_formats, from the 10 transcribed Reels of a creator-education
 # Reel audit pack; structure only, never the script); one creator persona line "Reel formats";
@@ -149,6 +158,27 @@ PROMPT_VERSION = "meera-2026.09.25.8"
 # filters, ok, cant_tell and one bank question, and reads the planned shot and the creator's
 # answers. BRAND prompt unchanged.
 # Review round (still .25.1, unreleased): fixed the intake budget (at most 3 questions in total per shooting plan or full script, one bank question after an idea intake, "the time of day", plan capped at 5 steps) and the grounding checks (the general fallback excludes shooting instructions).
+#
+# Merged in by .25.9 -- feat/meera-intelligence's own notes. Its numbers (.25.2, .25.4) were that
+# branch's only and never released; they are not the release line's .25.2/.25.4 above.
+# ^ (intelligence) .25.4 = Meera intelligence v1, slice 2 (recommendation -> outcome record, 2026-09-25). The
+# creator persona's "Their own results" block gains the "Your own recommendations" rule (count
+# only the ones they posted, say how many it rests on, a recommendation they did not post is
+# never their failure), get_my_content_patterns' model copy carries `followed_recommendations`
+# (trusted, evidence.post_ids dropped), and content_knowledge.py gains CREATOR_KNOWLEDGE_VERSION
+# (a hash of the rendered knowledge, stamped on each recorded recommendation). The creator
+# write-back now carries metadata.recommendations from app/recommendations/record.py
+# (deterministic parsers, no model call). .25.3 is already used, uncommitted, on
+# feat/camera-knowledge-phone (C:/ph), so this branch skips to .25.4. BRAND prompt unchanged.
+#
+# Previously (intelligence .25.2):
+# ^ (intelligence) .25.2 = Meera intelligence v1, slice 1 + goal memory (2026-09-25). A new Spring-backed read tool,
+# get_my_content_patterns (the creator's own settled-post baseline, best/weak posts and what beats
+# their usual, every claim with its sample size; the model copy drops evidence.post_ids), its
+# capability bullet, the persona block "Their own results (what works for them)", and the goal line
+# in creator Block B (content_goal / weekly_time_band / equipment / content_dislikes, fixed words).
+# .25.1 is already taken on release/0924 (Plan my shoot), so this branch takes .25.2, not the
+# spec's ".14" (the N counter restarts per date).
 #
 # Previously (.13):
 # ^ .13 = the creator knowledge lookup tool (Swapnil 2026-09-24, the lookup design the .12 note

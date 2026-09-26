@@ -39,6 +39,7 @@ import com.influora.service.IdempotencyService;
 import com.influora.service.credits.ChargeResult;
 import com.influora.service.credits.CreatorCreditService;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
+import com.influora.service.creatorcopilot.CreatorRecommendationService;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -103,6 +104,7 @@ class MeeraSessionServiceTest {
      * "no real transaction, but no NPE either" behavior these repository-mocked unit tests need.
      */
     @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
+    @Mock private CreatorRecommendationService creatorRecommendationService;
 
     private MeeraSessionService service;
 
@@ -122,7 +124,8 @@ class MeeraSessionServiceTest {
                         creatorAgentConversationService,
                         creatorAgentPreferencesService,
                         creatorCreditService,
-                        transactionManager);
+                        transactionManager,
+                        creatorRecommendationService);
         // Default: creator credits are DISABLED, so every existing creator-path test (written
         // before T-CREATOR-CREDITS-V2) keeps its pre-existing, uncharged behavior. Tests that
         // specifically exercise the charge/refusal/release wiring override this per-test.

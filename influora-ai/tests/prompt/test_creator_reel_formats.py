@@ -482,4 +482,5 @@ def test_the_persona_line_says_look_up_adapt_and_never_copy():
 
 
 def test_prompt_version_bumped_for_reel_formats():
-    assert PROMPT_VERSION == "meera-2026.09.25.8"
+    # .25.8 shipped reel_formats; .25.9 (the Meera intelligence merge) keeps it.
+    assert PROMPT_VERSION == "meera-2026.09.25.9"
