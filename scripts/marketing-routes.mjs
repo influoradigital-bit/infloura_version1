@@ -24,6 +24,7 @@ export const INDEXABLE_ROUTES = [
   { path: '/pricing', changefreq: 'monthly', priority: '0.9' },
   { path: '/how-it-works/brands', changefreq: 'monthly', priority: '0.9' },
   { path: '/how-it-works/creators', changefreq: 'monthly', priority: '0.9' },
+  { path: '/meera', changefreq: 'monthly', priority: '0.8' },
   { path: '/meera-for-creators', changefreq: 'monthly', priority: '0.8' },
   { path: '/festival-box', changefreq: 'weekly', priority: '0.9' },
   { path: '/festival-box/mumbai-2026', changefreq: 'weekly', priority: '0.8' },

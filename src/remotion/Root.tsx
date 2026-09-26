@@ -12,6 +12,10 @@ import { IntroScene } from './components/IntroScene';
 import { OutroScene } from './components/OutroScene';
 import { MEERA_DEMO_DURATION, TIMED_SCENES } from './demo-meta';
 import { LANG_ORDER } from './locales';
+import { BRIEF_READ_DURATION, BriefRead } from './example/BriefRead';
+import { SPLIT_SCREEN_DURATION, SplitScreen } from './example/SplitScreen';
+import { MeeraIntro } from './intro/MeeraIntro';
+import { INTRO_FPS, MEERA_INTRO_DURATION } from './intro/timeline';
 import { MeeraDemo } from './MeeraDemo';
 import { VIDEO } from './theme';
 import { introFrames, outroFrames } from './timing';
@@ -47,6 +51,38 @@ export function RemotionRoot() {
         fps={CAMPAIGN_VIDEO.fps}
         width={CAMPAIGN_VIDEO.width}
         height={CAMPAIGN_VIDEO.height}
+      />
+      <Composition
+        id="SplitScreen-LookExample"
+        component={SplitScreen}
+        durationInFrames={SPLIT_SCREEN_DURATION}
+        fps={30}
+        width={1920}
+        height={1080}
+      />
+      <Composition
+        id="BriefRead-LookExample"
+        component={BriefRead}
+        durationInFrames={BRIEF_READ_DURATION}
+        fps={30}
+        width={1920}
+        height={1080}
+      />
+      <Composition
+        id="MeeraIntro"
+        component={MeeraIntro}
+        durationInFrames={MEERA_INTRO_DURATION}
+        fps={INTRO_FPS}
+        width={1920}
+        height={1080}
+      />
+      <Composition
+        id="MeeraIntro-Portrait"
+        component={MeeraIntro}
+        durationInFrames={MEERA_INTRO_DURATION}
+        fps={INTRO_FPS}
+        width={1080}
+        height={1920}
       />
       {LANG_ORDER.map((lang) => (
         <Composition
