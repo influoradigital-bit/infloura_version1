@@ -63,6 +63,8 @@ TOPICS = [
     "framing_comedy_lifestyle",
     "framing_groups",
     "framing_motivational",
+    # explainer Reel formats (2026-09-26): one topic for both reel types.
+    "reel_formats",
 ]
 
 # The v8 audio / movement rows: lookup only, never in the always-sent block.

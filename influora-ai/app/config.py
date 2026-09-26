@@ -76,7 +76,13 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.25.7"
+PROMPT_VERSION = "meera-2026.09.25.8"
+# ^ .25.8 = explainer Reel formats (Swapnil 2026-09-26): lookup-only reel_format and
+# reel_format_rule rows (topic reel_formats, from the 10 transcribed Reels of a creator-education
+# Reel audit pack; structure only, never the script); one creator persona line "Reel formats";
+# the always-sent block gains only its "More on request" line. BRAND prompt unchanged.
+#
+# Previously (.25.7):
 # ^ .25.7 = shoot guide grid (spec v2 2026-09-26, Phases 4-6, one bump for the whole branch).
 # Knowledge: dataset 9's 161 framing and shot-planning rows (8 new types) join the file as
 # lookup-only topics -- shot_planning plus one framing_<category> topic per composition category,

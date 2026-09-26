@@ -111,10 +111,15 @@ def test_committed_knowledge_file_loads_every_row_by_type():
     # bank (2026-09-25): 10 always-sent coach_question rows -> 359. Plus dataset 9 (2026-09-26,
     # shoot guide spec v2 Phase 6): its 162 rows in 8 new types minus the TikTok safe-zone row
     # (the file never names TikTok) -> 161 lookup-only framing and shot-planning rows -> 520.
-    assert len(rows) == 520
+    # Plus the explainer Reel format rows (2026-09-26, lookup only, topic reel_formats): 6-8
+    # formats and 10-15 rules by contract, pinned in test_creator_reel_formats.py.
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["data_type"]] = counts.get(r["data_type"], 0) + 1
+    reel = {t: counts.pop(t, 0) for t in ("reel_format", "reel_format_rule")}
+    assert 6 <= reel["reel_format"] <= 8, reel
+    assert 10 <= reel["reel_format_rule"] <= 15, reel
+    assert len(rows) == 520 + sum(reel.values())
     assert counts == {
         "camera_angle": 28,
         "storytelling_structure": 11,
@@ -390,6 +395,9 @@ LOOKUP_ONLY_TYPES: dict[str, str] = {
     "platform_safe_zone_fact": "shot_planning",
     "lighting_movement_principle": "shot_planning",
     "smartphone_perspective_principle": "shot_planning",
+    # explainer Reel formats (2026-09-26): both types in the one topic reel_formats.
+    "reel_format": "reel_formats",
+    "reel_format_rule": "reel_formats",
     "category_composition_rule": "framing",
     "category_composition_example": "framing",
 }
@@ -458,6 +466,8 @@ def test_every_row_reaches_the_knowledge_text():
             "camera_movement_principle": "movement",
             "lighting_movement_principle": "principle",
             "smartphone_perspective_principle": "principle",
+            "reel_format": "format_name",
+            "reel_format_rule": "rule",
         }[r["data_type"]]
         topic = LOOKUP_ONLY_TYPES.get(r["data_type"])
         if topic == "framing":

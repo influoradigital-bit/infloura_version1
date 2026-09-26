@@ -350,9 +350,11 @@ def test_knowledge_block_stays_under_the_size_budget():
     assert len(always_sent) <= 320
     # 520 rows in the file (349 + the 10 always-sent coach questions of 2026-09-25 + dataset 9's
     # 161 of 2026-09-26), 215 behind the tool (12 delivery examples + 42 v8 audio/movement + 161
-    # dataset 9 framing and shot planning).
+    # dataset 9 framing and shot planning), plus every explainer Reel format row (2026-09-26).
+    reel_rows = [r for r in CREATOR_KNOWLEDGE_ROWS if r["data_type"] in ("reel_format", "reel_format_rule")]
+    assert reel_rows, "no Reel format rows -- the lookup-only count below would pass vacuously"
     assert len(always_sent) == 305
-    assert len(CREATOR_KNOWLEDGE_ROWS) - len(always_sent) == 215
+    assert len(CREATOR_KNOWLEDGE_ROWS) - len(always_sent) == 215 + len(reel_rows)
     lookup_only_types = {r["data_type"] for r in CREATOR_KNOWLEDGE_ROWS} - {
         r["data_type"] for r in always_sent
     }

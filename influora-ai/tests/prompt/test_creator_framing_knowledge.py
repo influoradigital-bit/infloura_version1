@@ -78,6 +78,11 @@ DATASET_9_COUNTS: dict[str, int] = {
     "smartphone_perspective_principle": 3,
 }
 DATASET_9_TYPES = tuple(DATASET_9_COUNTS)
+# Lookup-only rows and topics added AFTER dataset 9 (explainer Reel formats, 2026-09-26,
+# test_creator_reel_formats.py). They are appended after dataset 9's rows, their topic follows
+# dataset 9's topics, and they add one "More on request" line to the always-sent block.
+LATER_TYPES = ("reel_format", "reel_format_rule")
+LATER_TOPICS = ["reel_formats"]
 GENERAL_TYPES = tuple(t for t in DATASET_9_TYPES if not t.startswith("category_composition"))
 
 NEW_TOPICS = [
@@ -134,10 +139,12 @@ def test_dataset_9_rows_load_by_type():
     counts = {t: len(_rows(t)) for t in DATASET_9_TYPES}
     assert counts == DATASET_9_COUNTS
     assert sum(counts.values()) == 161
-    assert len(CREATOR_KNOWLEDGE_ROWS) == PRE_MERGE_ROWS + 161
-    # Appended after the old rows, never mixed in.
+    later = [r for r in CREATOR_KNOWLEDGE_ROWS if r["data_type"] in LATER_TYPES]
+    assert len(CREATOR_KNOWLEDGE_ROWS) == PRE_MERGE_ROWS + 161 + len(later)
+    # Appended after the old rows, never mixed in; later lookup-only rows come after them.
     assert all(r["data_type"] not in DATASET_9_TYPES for r in CREATOR_KNOWLEDGE_ROWS[:PRE_MERGE_ROWS])
-    assert all(r["data_type"] in DATASET_9_TYPES for r in CREATOR_KNOWLEDGE_ROWS[PRE_MERGE_ROWS:])
+    assert all(r["data_type"] in DATASET_9_TYPES for r in CREATOR_KNOWLEDGE_ROWS[PRE_MERGE_ROWS : PRE_MERGE_ROWS + 161])
+    assert CREATOR_KNOWLEDGE_ROWS[PRE_MERGE_ROWS + 161 :] == later
 
 
 def test_the_pre_merge_rows_are_unchanged_and_in_order():
@@ -265,7 +272,7 @@ def _expected_every_turn_text() -> str:
     text = pre.replace(old_line, head + row["safe_zones"] + tail)
     # The "More on request" list is the block's last section: the new topics follow it.
     assert text.endswith(f"- delivery_examples: {LOOKUP_TOPICS['delivery_examples']}\n")
-    return text + "".join(f"- {t}: {LOOKUP_TOPICS[t]}\n" for t in NEW_TOPICS)
+    return text + "".join(f"- {t}: {LOOKUP_TOPICS[t]}\n" for t in NEW_TOPICS + LATER_TOPICS)
 
 
 def test_the_fixture_is_the_pre_merge_snapshot():
@@ -273,12 +280,13 @@ def test_the_fixture_is_the_pre_merge_snapshot():
 
 
 def test_every_turn_block_is_byte_identical_except_the_two_planned_edits():
+    # (Plus one "More on request" line per later lookup topic -- LATER_TOPICS.)
     expected = _expected_every_turn_text()
     assert CREATOR_KNOWLEDGE_TEXT.encode("utf-8") == expected.encode("utf-8")
 
 
 def test_the_new_rows_add_nothing_to_the_every_turn_block_or_the_frame_check():
-    without = [r for r in CREATOR_KNOWLEDGE_ROWS if r["data_type"] not in DATASET_9_TYPES]
+    without = [r for r in CREATOR_KNOWLEDGE_ROWS if r["data_type"] not in DATASET_9_TYPES + LATER_TYPES]
     assert len(without) == PRE_MERGE_ROWS
     assert render_knowledge_block(CREATOR_KNOWLEDGE_ROWS) == render_knowledge_block(without)
     assert render_shooting_lines(CREATOR_KNOWLEDGE_ROWS, with_phone_notes=False) == render_shooting_lines(
@@ -289,14 +297,15 @@ def test_the_new_rows_add_nothing_to_the_every_turn_block_or_the_frame_check():
 def test_the_more_on_request_list_names_the_new_topics_last():
     section = CREATOR_KNOWLEDGE_TEXT[CREATOR_KNOWLEDGE_TEXT.index(MORE_ON_REQUEST_HEADING) :]
     lines = section.rstrip("\n").splitlines()
-    assert [line.split(":", 1)[0] for line in lines[-len(NEW_TOPICS) :]] == [f"- {t}" for t in NEW_TOPICS]
+    tail = NEW_TOPICS + LATER_TOPICS
+    assert [line.split(":", 1)[0] for line in lines[-len(tail) :]] == [f"- {t}" for t in tail]
 
 
 # --- the lookup topics ---------------------------------------------------------------------------
 
 
 def test_the_new_topics_are_lookup_topics_in_order():
-    assert list(LOOKUP_TOPICS)[-len(NEW_TOPICS) :] == NEW_TOPICS
+    assert list(LOOKUP_TOPICS)[-len(NEW_TOPICS + LATER_TOPICS) :] == NEW_TOPICS + LATER_TOPICS
     assert list(FRAMING_TOPICS) == NEW_TOPICS[1:]
     # One framing topic per composition category in the file, and no other.
     categories = {r["category"] for t in ("category_composition_rule", "category_composition_example") for r in _rows(t)}

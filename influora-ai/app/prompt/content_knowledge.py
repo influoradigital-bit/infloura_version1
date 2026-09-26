@@ -14,10 +14,12 @@ Data: `app/prompt/knowledge/video_content_concepts.jsonl` (359 rows: 307 through
 2026-09-22 + the 2026-09-21 go-live additions + the 38 v5 camera rows + the v6 outdoor-light
 and delivery rows + the v7 lighting and positioning rows of 2026-09-24 -- plus 42 v8 audio and
 movement rows of 2026-09-24, plus the 10 coach questions of 2026-09-25, plus dataset 9's 161
-framing and shot-planning rows of 2026-09-26 -> 520). Not every row is always
-sent: 305 rows render into the cached
-block `CREATOR_KNOWLEDGE_TEXT` on every creator turn; the other 215 (the 12 delivery examples,
-the 42 v8 rows and the 161 dataset 9 rows) render into `LOOKUP_TEXT`, which the model fetches
+framing and shot-planning rows of 2026-09-26 -> 520), plus the explainer Reel format rows of
+2026-09-26 (`reel_format`, `reel_format_rule`). Not every row is always sent: 305 rows render
+into the cached
+block `CREATOR_KNOWLEDGE_TEXT` on every creator turn; the others (the 12 delivery examples,
+the 42 v8 rows, the 161 dataset 9 rows and the Reel format rows) render into `LOOKUP_TEXT`, which
+the model fetches
 per topic with the local `get_creator_knowledge` tool (`LOOKUP_TOPICS`). The block ends with a "More on request"
 list naming each topic, so the model knows what it can look up. It sits
 under `app/prompt/` on purpose: `ci/stale-comment-check.py` watches that prefix
@@ -169,12 +171,41 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "platform_safe_zone_fact": ("platform", "documented_organic_facts", "ad_only_safe_zone"),
     "lighting_movement_principle": ("principle", "definition"),
     "smartphone_perspective_principle": ("principle", "definition"),
+    # Explainer Reel formats (2026-09-26, Swapnil): the reusable STRUCTURE of the explainer Reels in
+    # a creator-education Reel audit pack -- only the Reels whose audio was transcribed -- plus the
+    # pack's "copy the structure, not the script" rules. NOT in the always-sent block: both types
+    # render only into the lookup topic "reel_formats". `beats`, `avoid` and `adapt` are lists on
+    # reel_format only (TYPE_LIST_FIELDS: "avoid" is a plain string on lav_placement_rule); 4 to 8
+    # beats, and every `adapt` item reads "Category: one-line idea" (checked at load). The data
+    # contract carries no `confidence` for these two types, so it is optional on them
+    # (CONFIDENCE_OPTIONAL_TYPES) and checked only when present.
+    "reel_format": (
+        "format_name", "best_for", "hook", "beats", "layout", "pacing", "text_style", "cta", "avoid",
+        "adapt", "evidence",
+    ),
+    "reel_format_rule": ("rule", "why"),
 }
 
 # Fields that are non-empty lists of non-empty strings, not plain strings.
 LIST_FIELDS: frozenset[str] = frozenset(
     {"steps", "formats", "camera", "home_actions", "outdoor_actions", "guardrails", "options", "options_hi"}
 )
+
+# List fields that are lists on ONE type only, because the same field name is a plain string on
+# another type ("avoid" on lav_placement_rule). Same rule as LIST_FIELDS: a non-empty list of
+# non-empty strings.
+TYPE_LIST_FIELDS: dict[str, frozenset[str]] = {
+    "reel_format": frozenset({"beats", "avoid", "adapt"}),
+}
+
+# Types whose rows may leave out `confidence` (their data contract has none). When a row does
+# carry one, it must still be a known value.
+CONFIDENCE_OPTIONAL_TYPES: frozenset[str] = frozenset({"reel_format", "reel_format_rule"})
+
+# A Reel format is 4 to 8 short beats, and each adaptation names its category first.
+REEL_MIN_BEATS = 4
+REEL_MAX_BEATS = 8
+_REEL_ADAPT = re.compile(r"^[^:\s][^:]*:\s*\S")
 
 # "15-35": a starting range in whole seconds, low before high.
 _SECONDS_RANGE = re.compile(r"^(\d+)-(\d+)$")
@@ -250,6 +281,9 @@ NAME_FIELD: dict[str, str] = {
     "camera_movement_principle": "movement",
     "lighting_movement_principle": "principle",
     "smartphone_perspective_principle": "principle",
+    # Explainer Reel format rows (lookup only).
+    "reel_format": "format_name",
+    "reel_format_rule": "rule",
 }
 
 KNOWN_CONFIDENCE: frozenset[str] = frozenset({"high", "medium", "low", "template"})
@@ -323,9 +357,13 @@ def _validate_row(row: Any, lineno: int) -> dict[str, Any]:
     data_type = row.get("data_type")
     if data_type not in REQUIRED_FIELDS:
         raise KnowledgeFileError(f"line {lineno}: unknown data_type {data_type!r}")
-    for key in _COMMON_REQUIRED + REQUIRED_FIELDS[data_type]:
+    common = _COMMON_REQUIRED
+    if data_type in CONFIDENCE_OPTIONAL_TYPES:
+        common = tuple(k for k in _COMMON_REQUIRED if k != "confidence")
+    type_lists = TYPE_LIST_FIELDS.get(data_type, frozenset())
+    for key in common + REQUIRED_FIELDS[data_type]:
         value = row.get(key)
-        if key in LIST_FIELDS:
+        if key in LIST_FIELDS or key in type_lists:
             if not isinstance(value, list) or not value or not all(
                 isinstance(s, str) and s.strip() for s in value
             ):
@@ -337,9 +375,11 @@ def _validate_row(row: Any, lineno: int) -> dict[str, Any]:
             raise KnowledgeFileError(
                 f"line {lineno}: {data_type} missing required field {key!r}"
             )
-    if row["confidence"] not in KNOWN_CONFIDENCE:
+    if (data_type not in CONFIDENCE_OPTIONAL_TYPES or "confidence" in row) and row.get(
+        "confidence"
+    ) not in KNOWN_CONFIDENCE:
         raise KnowledgeFileError(
-            f"line {lineno}: unknown confidence {row['confidence']!r}"
+            f"line {lineno}: unknown confidence {row.get('confidence')!r}"
         )
     if "limits" in row and not isinstance(row["limits"], str):
         raise KnowledgeFileError(f"line {lineno}: {data_type} field 'limits' must be a string")
@@ -370,6 +410,19 @@ def _validate_row(row: Any, lineno: int) -> dict[str, Any]:
             raise KnowledgeFileError(
                 f"line {lineno}: {data_type} category {row['category']!r} has no framing topic"
             )
+    if data_type == "reel_format":
+        n_beats = len(row["beats"])
+        if not REEL_MIN_BEATS <= n_beats <= REEL_MAX_BEATS:
+            raise KnowledgeFileError(
+                f"line {lineno}: reel_format {row['format_name']!r} needs {REEL_MIN_BEATS}-{REEL_MAX_BEATS}"
+                f" beats, has {n_beats}"
+            )
+        for item in row["adapt"]:
+            if not _REEL_ADAPT.match(item.strip()):
+                raise KnowledgeFileError(
+                    f"line {lineno}: reel_format {row['format_name']!r} adapt item {item!r} must read"
+                    " 'Category: one-line idea'"
+                )
     if data_type == "action_to_shot_planning_step":
         step_number = row.get("step_number")
         if not isinstance(step_number, int) or isinstance(step_number, bool) or step_number < 1:
@@ -964,6 +1017,13 @@ LOOKUP_TOPICS.update({
     for topic, (_, label, who) in FRAMING_TOPICS.items()
 })
 
+# Explainer Reel formats (2026-09-26): both reel types render into this one topic, listed last.
+LOOKUP_TOPICS["reel_formats"] = (
+    "Explainer Reel formats that teach one concept: question and answer, A-vs-B contrast, analogy,"
+    " logic-to-tool, technique lists, result-tease demos -- structure, pacing, layout and what to"
+    " avoid."
+)
+
 # Live playbook category -> the topics a shoot plan for it looks up (spec v2 Phase 6 table).
 # Parenting, Wellness and Gaming have no composition rows of their own (Q8): shot_planning only.
 # Every playbook category must be here and every topic must name it (checked at import), so the
@@ -1228,6 +1288,63 @@ def render_framing_lines(rows: list[dict[str, Any]], topic: str) -> list[str]:
     )
 
 
+REEL_FORMATS_HEADING = (
+    "Explainer Reel formats (structures seen in public explainer Reels. Copy the structure, never"
+    " the script: build it on the creator's own topic, words, examples and footage. A format is a"
+    " way to teach one idea clearly, never a promise of views, reach or retention. The source"
+    " Reels' own technical claims are not facts to teach. You cannot verify facts: name each"
+    " technical claim and number the creator must check before recording, and never present one"
+    " as checked. Pacing is what the source Reels ran, not a target; the script length by goal"
+    " sets the length. A learner on camera can be any second person or an on-screen question; a"
+    " child on camera only with a parent's or guardian's consent. The Evidence notes are for you,"
+    " not the creator; if asked where a format comes from, say it is a structure seen in public"
+    " explainer Reels, never yours or proven):"
+)
+
+
+def _end(value: str) -> str:
+    """A field used as its own sentence: trimmed, ending in one full stop unless it already
+    ends in ".", "?" or "!"."""
+    v = value.strip()
+    return v if v.endswith((".", "?", "!")) else v + "."
+
+
+def _reel_format_line(r: dict[str, Any]) -> str:
+    beats = " -> ".join(_clause(b) for b in r["beats"])
+    avoid = "; ".join(_clause(a) for a in r["avoid"])
+    adapt = "; ".join(_clause(a) for a in r["adapt"])
+    return (
+        f"- {r['format_name'].strip()}: Best for: {_end(r['best_for'])} Hook: {_end(r['hook'])}"
+        f" Beats: {beats}. Layout: {_end(r['layout'])} Pacing: {_end(r['pacing'])}"
+        f" On-screen text: {_end(r['text_style'])} CTA: {_end(r['cta'])} Avoid: {avoid}."
+        f" Adapt: {adapt}. Evidence: {_end(r['evidence'])}"
+    )
+
+
+def render_reel_format_lines(rows: list[dict[str, Any]]) -> list[str]:
+    """The "reel_formats" lookup topic: each explainer Reel format on one line (its beats in
+    order), then the general rules, then where they come from (each distinct `source` once, up
+    to its first ";": the public account is named, internal provenance after it stays in the
+    file)."""
+    formats = _by_type(rows, "reel_format")
+    rules = _by_type(rows, "reel_format_rule")
+    sources = list(dict.fromkeys(r["source"].split(";")[0].strip() for r in formats + rules))
+    return _lookup_groups(
+        REEL_FORMATS_HEADING,
+        [
+            (
+                "Formats (pick the one that fits the creator's topic; the beats are in order):",
+                [_reel_format_line(r) for r in formats],
+            ),
+            (
+                "Rules for any explainer Reel:",
+                [f"- {_clause(r['rule'])}: {_end(r['why'])}" for r in rules],
+            ),
+            ("Where these come from (public explainer Reels):", [f"- {s}" for s in sources]),
+        ],
+    )
+
+
 def render_lookup_topic(rows: list[dict[str, Any]], topic: str) -> str:
     """One lookup topic's plain text. Raises KeyError for an unknown topic and
     KnowledgeFileError when the topic renders empty."""
@@ -1236,6 +1353,7 @@ def render_lookup_topic(rows: list[dict[str, Any]], topic: str) -> str:
         "moving_between_spots": render_moving_lines,
         "delivery_examples": render_delivery_example_lines,
         "shot_planning": render_shot_planning_lines,
+        "reel_formats": render_reel_format_lines,
     }
     renderers.update({
         t: (lambda rs, t=t: render_framing_lines(rs, t)) for t in FRAMING_TOPICS
