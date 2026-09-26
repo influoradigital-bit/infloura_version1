@@ -1369,6 +1369,8 @@ export const CREATOR_KNOWLEDGE_TOPICS = [
   'framing_comedy_lifestyle',
   'framing_groups',
   'framing_motivational',
+  // Reel formats (2026-09-26): assigned to LOOKUP_TOPICS after the framing topics.
+  'reel_formats',
 ] as const;
 
 export type CreatorKnowledgeTopic = (typeof CREATOR_KNOWLEDGE_TOPICS)[number];

@@ -80,7 +80,9 @@ describe('creator tool names: app vs influora-ai', () => {
     expect(framing, 'FRAMING_TOPICS dict not found in content_knowledge.py').toBeTruthy();
     const framingTopics = [...framing![1].matchAll(/^\s{4}"([a-z_]+)":/gm)].map((m) => m[1]);
     expect(framingTopics.length).toBeGreaterThanOrEqual(11);
-    const pythonTopics = [...literalTopics, ...framingTopics];
+    // Topics added later by `LOOKUP_TOPICS["x"] = (...)` assignments, in file order.
+    const assignedTopics = [...knowledge.matchAll(/^LOOKUP_TOPICS\["([a-z_]+)"\]\s*=/gm)].map((m) => m[1]);
+    const pythonTopics = [...literalTopics, ...framingTopics, ...assignedTopics];
     expect(pythonTopics.length).toBeGreaterThanOrEqual(3);
     expect([...CREATOR_KNOWLEDGE_TOPICS]).toEqual(pythonTopics);
   });

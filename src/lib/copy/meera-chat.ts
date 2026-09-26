@@ -146,6 +146,7 @@ const KNOWLEDGE_TOPIC_PHRASES: Record<CreatorKnowledgeTopic, BilingualText> = {
   framing_comedy_lifestyle: { en: 'framing for comedy and lifestyle', hi: 'कॉमेडी और लाइफ़स्टाइल फ़्रेमिंग' },
   framing_groups: { en: 'framing for groups', hi: 'ग्रुप फ़्रेमिंग' },
   framing_motivational: { en: 'framing for motivational talks', hi: 'मोटिवेशनल टॉक फ़्रेमिंग' },
+  reel_formats: { en: 'reel formats', hi: 'रील फ़ॉर्मैट' },
 };
 
 function knowledgeTopicPhrase(topic: string | undefined): BilingualText | undefined {
