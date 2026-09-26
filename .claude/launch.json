@@ -4,9 +4,48 @@
     {
       "name": "influora-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "creator-challenge-ch",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd /d C:\\ch && npx vite --port 3200 --strictPort"
+      ],
+      "port": 3200
+    },
+    {
+      "name": "creator-credits-cr",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd /d C:\\cr && npx vite --port 3300 --strictPort"
+      ],
+      "port": 3300
+    },
+    {
+      "name": "account-insights-au",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd /d C:\\au && npx vite --port 3400 --strictPort"
+      ],
+      "port": 3400
+    },
+    {
+      "name": "camera-phone-ph",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd /d C:\\ph && npx vite --port 3500 --strictPort"
+      ],
+      "port": 3500
     }
   ]
 }

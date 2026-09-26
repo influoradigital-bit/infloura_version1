@@ -54,6 +54,7 @@ import BrandHowItWorksPage from '@/pages/brand-how-it-works';
 import CreatorHowItWorksPage from '@/pages/creator-how-it-works';
 import HowItWorksBrandsPage from '@/pages/how-it-works-brands';
 import HowItWorksCreatorsPage from '@/pages/how-it-works-creators';
+import MeeraPage from '@/pages/meera';
 import MeeraForCreatorsPage from '@/pages/meera-for-creators';
 import FestivalBoxPage from '@/pages/festival-box';
 import FestivalBoxEditionPage from '@/pages/festival-box-edition';
@@ -700,6 +701,7 @@ export default function App() {
         <Route path="/contact" element={<ContactPage />} />
         <Route path="/how-it-works/brands" element={<HowItWorksBrandsPage />} />
         <Route path="/how-it-works/creators" element={<HowItWorksCreatorsPage />} />
+        <Route path="/meera" element={<MeeraPage />} />
         <Route path="/meera-for-creators" element={<MeeraForCreatorsPage />} />
         <Route path="/festival-box" element={<FestivalBoxPage />} />
         {/*
