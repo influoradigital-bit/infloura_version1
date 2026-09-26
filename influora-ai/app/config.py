@@ -76,7 +76,31 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.25.6"
+PROMPT_VERSION = "meera-2026.09.25.7"
+# ^ .25.7 = shoot guide grid (spec v2 2026-09-26, Phases 4-6, one bump for the whole branch).
+# Knowledge: dataset 9's 161 framing and shot-planning rows (8 new types) join the file as
+# lookup-only topics -- shot_planning plus one framing_<category> topic per composition category,
+# with a fixed playbook-category -> topic table; the always-sent block is byte-identical except
+# its "More on request" list (the new topics) and the Instagram Reels / YouTube Shorts export
+# row, whose safe zones now match app/shoot/safe_zones.json in words (top 14%, text above the
+# 65% line, 65-78% a short CTA on the left only, below 78% covered, about 4% sides, clear of the
+# right-side buttons, check your app preview; was top 15% / bottom 25%). 161, not the spec's 162:
+# dataset 9's TikTok platform_safe_zone_fact row is not taken (the file never names TikTok; CTO
+# accepted 2026-09-26), six rows' "TikTok" reads "the app", and the five examples dataset 9
+# credits to TikTok carry platform "Vertical short-form" (the rules' own platform_scope), never
+# a platform they did not come from. Creator persona: one "Framing first" rule -- for a shoot
+# plan (Plan my shoot), look up the creator's framing topic; full scripts are not included until
+# the shot-card phase and its eval. Photo check: the response may carry "layout" (faces and
+# product boxes, validated in code) and "checks" (fixed lines written by app/shoot/checklist.py,
+# never by the model, judged on the same 9:16 crop and shot size as the app's guides). BRAND
+# prompt unchanged.
+# Deploy order for this version: frontend, then influora-api (its withoutGeometry keeps the
+# boxes out of stored chat rows), then influora-ai. An influora-ai with "layout" in front of an
+# older influora-api would store face and product boxes in ai_messages.metadata_json.
+# .25.7 is this branch's (feat/shoot-grid); spec 2.5 had pencilled it for feat/meera-intelligence,
+# which takes the next free number (.25.8 or later) when it merges after this.
+#
+# Previously (.25.6):
 # ^ .25.6 = brand Meera flags ASCI claims and the ad label (brand persona "ASCI check"; CREATOR prompt unchanged).
 #
 # Previously (.25.5):

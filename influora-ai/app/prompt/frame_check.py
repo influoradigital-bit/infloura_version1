@@ -21,6 +21,7 @@ the old filters). The model returns
      "scene": {"usable", "place", "light", "light_side", "background", "phone_height",
                "framing", "others_in_frame"},          # enum values only
      "steps": [{"kind", "note", "side"}],               # a kind, an entry NAME, a side
+     "layout": {"faces": [box], "product": box or null},  # numbers only (2026-09-26)
      "ok": [ok ids], "cant_tell": [cant_tell ids], "ask": {"id": ...} or null}
 
 and every other key -- a step's "text", a free "what_i_see", any extra field -- is
@@ -88,6 +89,19 @@ additive and every older key keeps its type:
     text puts under "If your camera app has a Pro video mode:", needs_ois those under "If
     your phone has optical stabilisation (OIS):". No other step has `parts`.
 
+Layout and quick checks (spec v2 2026-09-26, Phase 4): the model also returns
+`"layout": {"faces": [box, ... at most 8], "product": box or null}` -- numbers only, boxes as
+shares of the unmirrored photo as sent (`normalize_box`, section 2.2; `normalize_point` is the
+point twin for pins). A bad box is dropped on its own, extra boxes are dropped whole, and a
+label, name or count beside them is never read. A usable photo's body then carries
+  - `checks`: [line], written by `app/shoot/checklist.py` from the validated boxes, the safe-zone
+    config, the scene's others_in_frame and the set-up's shot size and prop -- fixed templates,
+    never the model's text (absent when none fire; the retake body and the fallback never
+    have it);
+  - `layout`: {faces, product}, the validated boxes, only when the model returned a layout
+    object. Java strips it (and `at` / `box`) before the chat row is stored; the photo is never
+    stored, and positions without it mean nothing.
+
 Known limits (2026-09-25): a settings step's values stay English in a Hinglish ("hi")
 reply (its labels and every other step are Hinglish);
 an fps value is not checked against the phone's max_fps; the model can still pick a wrong
@@ -124,6 +138,7 @@ NON-NEGOTIABLE SAFETY RULES (Swapnil / Kabir, T-SHOOTCHECK-L2), now held by cons
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -155,6 +170,7 @@ from app.prompt.frame_check_render import (  # noqa: F401 - phone helpers re-exp
 )
 from app.prompt.untrusted import wrap_untrusted
 from app.prompt.validators import _CODE_FENCE_RE
+from app.shoot.checklist import needs_product, render_checks, run_checks, shot_size, shot_target
 
 # Response contract caps -- shared by the prompt instructions below and by the parser,
 # so the model is told the exact ceiling the parser will itself enforce.
@@ -162,6 +178,17 @@ MAX_ITEMS_PER_LIST = 3
 MAX_STEPS = 5
 # A reply with dozens of steps is not read past this many (bounds the validation work).
 _MAX_STEPS_READ = 12
+
+# Geometry (spec v2 2026-09-26, section 2.2): the most boxes each layout list keeps, the
+# smallest side a box may have (a share of the photo), the slack on "x + w <= 1" for the
+# model's rounding, and the decimals every kept value is rounded to.
+MAX_FACES = 8
+MAX_PRODUCTS = 1
+# A layout list with dozens of items is not read past this many (bounds the validation work).
+_MAX_BOXES_READ = 24
+GEOMETRY_MIN_SIDE = 0.02
+GEOMETRY_EDGE_SLACK = 1.001
+GEOMETRY_DECIMALS = 3
 
 # Step kinds, in the order the creator gets them: where they sit or stand, where the
 # phone goes, the light, and only then settings (fix the scene before the settings).
@@ -319,6 +346,10 @@ def _id_list(ids: Any, hints: dict[str, str]) -> str:
     return "\n".join(f"- {i}: {hints.get(i, i.replace('_', ' '))}" for i in ids)
 
 
+# One box in the reply shape (section 2.2).
+_BOX_SHAPE = '{"x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0}'
+
+
 def _reply_shape() -> str:
     """The JSON shape, with every enum spelled out from the renderer's own tables."""
     scene = ", ".join(f'"{field}": "{"|".join(values)}"' for field, values in SCENE_VALUES.items())
@@ -326,6 +357,7 @@ def _reply_shape() -> str:
         '{"lang": "' + "|".join(LANGS) + '", "scene": {' + scene + "}, "
         '"steps": [{"kind": "' + "|".join(STEP_KINDS) + '", '
         '"note": "<exact knowledge entry name>", "side": "' + "|".join(STEP_SIDES) + '"}], '
+        '"layout": {"faces": [' + _BOX_SHAPE + '], "product": ' + _BOX_SHAPE + ' or null}, '
         '"ok": ["<ok id>"], "cant_tell": ["<cant_tell id>"], '
         '"ask": {"id": "<coach question id>"} or null}'
     )
@@ -380,6 +412,9 @@ def build_system_prompt() -> str:
         "- ask: when one missing fact would change the steps, ask ONE coach question "
         "below by its id instead of guessing; otherwise null. Never ask what the request "
         "already answers (the set-up or the creator's answers).\n"
+        "- layout: numbers 0 to 1 of the photo as sent (x, y = top-left corner, y down; w, h "
+        f"= size). faces: a box per visible face, at most {MAX_FACES}; product: the product or "
+        "prop shown, else null. No labels, names or counts.\n"
         "- lang: hi if their label or set-up is Hindi or Hinglish, otherwise en.\n"
         "- NEVER pick anything for the person's appearance, body, clothing, skin, age, "
         "gender, or identity. You are judging the SHOT, never the PERSON.\n\n"
@@ -890,6 +925,146 @@ def _ids(raw: Any) -> list[str]:
     return [p for p in (_pick(item) for item in raw[:_MAX_STEPS_READ]) if p]
 
 
+# --- geometry: points, boxes and the layout (spec v2 2026-09-26, section 2.2) -----------------
+# Twin of the app's validator in src/lib/meera-api.ts. All values are shares of the photo AS
+# SENT: the unmirrored still, (0, 0) at the top-left, x to the right and y down. A bad point or
+# box is dropped on its own, never the whole reply; a reply whose geometry is all invalid still
+# returns all its text.
+
+
+def _share(value: Any) -> float | None:
+    """A finite number, else None. A bool, a string and null are not numbers, and `json.loads`
+    accepts NaN and Infinity (and "1e400" -> inf), so finiteness is checked explicitly."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:  # an int too large for a float
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _geometry(raw: Any, keys: tuple[str, ...]) -> dict[str, float] | None:
+    """`raw` as {key: finite number} when it is an object with exactly `keys`, else None."""
+    if not isinstance(raw, dict) or set(raw) != set(keys):
+        return None
+    out: dict[str, float] = {}
+    for key in keys:
+        number = _share(raw[key])
+        if number is None:
+            return None
+        out[key] = number
+    return out
+
+
+def _point_ok(p: dict[str, float]) -> bool:
+    return 0.0 <= p["x"] <= 1.0 and 0.0 <= p["y"] <= 1.0
+
+
+def _box_ok(b: dict[str, float]) -> bool:
+    return (
+        _point_ok(b)
+        and GEOMETRY_MIN_SIDE < b["w"] <= 1.0
+        and GEOMETRY_MIN_SIDE < b["h"] <= 1.0
+        and b["x"] + b["w"] <= GEOMETRY_EDGE_SLACK
+        and b["y"] + b["h"] <= GEOMETRY_EDGE_SLACK
+    )
+
+
+def _rounded(values: dict[str, float]) -> dict[str, float]:
+    return {k: round(v, GEOMETRY_DECIMALS) for k, v in values.items()}
+
+
+def normalize_point(raw: Any) -> dict[str, float] | None:
+    """{"x", "y"} with both in [0, 1], rounded to 3 decimals, or None. Any other key, a missing
+    key, a bool, string or null value, or a number that is not finite rejects the point."""
+    point = _geometry(raw, ("x", "y"))
+    if point is None or not _point_ok(point):
+        return None
+    point = _rounded(point)
+    return point if _point_ok(point) else None
+
+
+def normalize_box(raw: Any) -> dict[str, float] | None:
+    """{"x", "y", "w", "h"} ((x, y) the top-left corner), rounded to 3 decimals, or None: x and
+    y in [0, 1]; w and h above 0.02 and at most 1; x + w and y + h at most 1.001. Any other key,
+    a missing key, a bool, string or null value, or a number that is not finite rejects the box.
+    The ROUNDED box is checked again, so what is returned always passes the app's own twin
+    validator (0.0204 would round to 0.02, which is too small)."""
+    box = _geometry(raw, ("x", "y", "w", "h"))
+    if box is None or not _box_ok(box):
+        return None
+    box = _rounded(box)
+    return box if _box_ok(box) else None
+
+
+def _boxes(raw: Any, limit: int) -> list[dict[str, float]]:
+    """The valid boxes of a list, in order, at most `limit`: a bad item is dropped on its own
+    and the extra ones after `limit` are dropped whole (never cut mid-item). A single box object
+    reads as a list of one."""
+    items = raw if isinstance(raw, list) else [raw] if isinstance(raw, dict) else []
+    kept: list[dict[str, float]] = []
+    for item in items[:_MAX_BOXES_READ]:
+        box = normalize_box(item)
+        if box is not None:
+            kept.append(box)
+            if len(kept) >= limit:
+                break
+    return kept
+
+
+@dataclass(frozen=True)
+class LayoutParse:
+    """The validated layout: `faces` (at most `MAX_FACES`), `product` (a box or None), and
+    `product_said_none` -- True only when the model said there is no product (null or missing),
+    not when its product box failed validation (then we don't know)."""
+
+    faces: list[dict[str, float]]
+    product: dict[str, float] | None
+    product_said_none: bool
+
+    def as_json(self) -> dict[str, Any]:
+        return {"faces": self.faces, "product": self.product}
+
+
+def normalize_layout(raw: Any) -> LayoutParse | None:
+    """The model's `layout` -> LayoutParse, or None when there is no layout object (an older
+    prompt, or the model left it out). Only the numbers in `faces` and `product` are read: a
+    label, a name or a count beside them is ignored, never returned."""
+    if not isinstance(raw, dict):
+        return None
+    faces = _boxes(raw.get("faces"), MAX_FACES)
+    raw_product = raw.get("product")
+    products = _boxes(raw_product, MAX_PRODUCTS)
+    said_none = raw_product is None or (isinstance(raw_product, list) and not raw_product)
+    return LayoutParse(faces, products[0] if products else None, said_none)
+
+
+def quick_checks(
+    layout: LayoutParse | None,
+    scene: dict[str, str] | None,
+    lang: str,
+    shot_context: dict[str, str] | None = None,
+    photo_size: tuple[int, int] | None = None,
+) -> list[str]:
+    """The code-written quick-check lines (`app/shoot/checklist.py`) for a validated layout, in
+    `lang`; [] without one. Only validated numbers, the scene's others_in_frame enum, and word
+    matches on the set-up are read -- no string the model wrote can reach these lines."""
+    if layout is None:
+        return []
+    ids = run_checks(
+        layout.faces,
+        layout.product,
+        product_said_none=layout.product_said_none,
+        needs_product=needs_product(shot_context),
+        target=shot_target(shot_context),
+        size=shot_size(shot_context),
+        others_in_frame=(scene or {}).get("others_in_frame") == "yes",
+        photo_size=photo_size,
+    )
+    return render_checks(ids, lang)
+
+
 # --- steps ---------------------------------------------------------------------------------
 
 
@@ -1004,13 +1179,21 @@ def parse_frame_check_reply(
     *,
     answered_ids: frozenset[str] | set[str] = frozenset(),
     phone_row: dict[str, Any] | None = None,
+    shot_context: dict[str, str] | None = None,
+    photo_size: tuple[int, int] | None = None,
 ) -> FrameCheckParse:
     """Defensive parse of the model's picks into a code-written reply. Never raises.
 
     Strips code fences, `json.loads` inside a try/except, then reads ONLY the picks: lang,
-    the scene's enum values, each step's kind / note / side, the ok and cant_tell ids and the
-    question id. Every sentence in the body is written here from Influora's rows and fixed
-    templates (`app.prompt.frame_check_render`); no string the model wrote is returned.
+    the scene's enum values, each step's kind / note / side, the layout's numbers, the ok and
+    cant_tell ids and the question id. Every sentence in the body is written here from
+    Influora's rows and fixed templates (`app.prompt.frame_check_render`,
+    `app.shoot.checklist`); no string the model wrote is returned.
+
+    A usable photo's body also carries `checks` (the code-written quick-check lines, only when
+    one fires) and, when the model returned a layout object, `layout` ({faces, product}: the
+    validated boxes only). `shot_context` (parsed) and `photo_size` (pixels, from the upload's
+    header) feed the checks only: the shot's size and prop, and the 9:16 crop.
     `body` is None when the reply is not a JSON object, or when the photo is usable and no
     step and no question survive (a scene line alone gives the creator nothing to act on). A
     photo that is not usable -- including a `usable` that is not exactly "yes" -- comes back
@@ -1060,6 +1243,14 @@ def parse_frame_check_reply(
         "lang": lang,
         "retake": False,
     }
+    layout = normalize_layout(parsed.get("layout"))
+    # Only code writes these lines: a "checks" key the model sent is never read. Both keys are
+    # additive and absent when empty, so a reply without a layout is exactly the older body.
+    checks = quick_checks(layout, scene, lang, shot_context, photo_size)
+    if checks:
+        body["checks"] = checks
+    if layout is not None:
+        body["layout"] = layout.as_json()
     return FrameCheckParse(body, len(steps), dropped, usable, lang, scene is not None)
 
 
@@ -1068,9 +1259,14 @@ def parse_frame_check_response(
     *,
     answered_ids: frozenset[str] | set[str] = frozenset(),
     phone_row: dict[str, Any] | None = None,
+    shot_context: dict[str, str] | None = None,
+    photo_size: tuple[int, int] | None = None,
 ) -> dict[str, Any] | None:
     """The response body for a model reply, or None (use `fallback_response()`)."""
-    return parse_frame_check_reply(raw_text, answered_ids=answered_ids, phone_row=phone_row).body
+    return parse_frame_check_reply(
+        raw_text, answered_ids=answered_ids, phone_row=phone_row,
+        shot_context=shot_context, photo_size=photo_size,
+    ).body
 
 
 def fallback_response() -> dict[str, Any]:

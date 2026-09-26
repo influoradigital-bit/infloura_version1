@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { Camera, RotateCcw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,10 @@ import {
   shootCheckLangFor,
   type CoachAnswer,
 } from '@/components/creator/shoot-check/CoachResult';
-import type { MeeraShootCheckAsk, MeeraShootCheckFrameResult } from '@/lib/meera-api';
+import { ReelLayoutGuide } from '@/components/creator/meera/ReelLayoutGuide';
+import type { MeeraGeomBox, MeeraShootCheckAsk, MeeraShootCheckFrameResult } from '@/lib/meera-api';
+import { adviceText } from '@/lib/shoot-check/advice-copy';
+import { isBacklit, readStillPixels } from '@/lib/shoot-check/backlight';
 import { cn } from '@/lib/utils';
 
 /**
@@ -26,6 +30,11 @@ import { cn } from '@/lib/utils';
  * becomes "Take a new photo" (same `onCheckAgain`: it opens the camera).
  *
  * `busy` is true while any check is running: nothing here can start a second one.
+ *
+ * The Reel layout guide (spec Phase 4) and the phone-only backlight line need the photo itself, so
+ * they show only on the newest card while the chat still holds its photo (`interactive` and a
+ * `photo`). The code-written "Quick checks" (`result.checks`) are plain text and show on every card,
+ * reloaded ones included.
  */
 export interface MeeraPhotoCheckMessageProps {
   result: MeeraShootCheckFrameResult;
@@ -39,7 +48,35 @@ export interface MeeraPhotoCheckMessageProps {
   busy: boolean;
   onAnswer: (ask: MeeraShootCheckAsk, option: number) => void;
   onCheckAgain: () => void;
+  /** The photo this card checked, while the chat still holds it in memory: pass it to the NEWEST
+   *  card only. Never stored; without it the card is text only. */
+  photo?: Blob | null;
   className?: string;
+}
+
+function largestFace(faces: readonly MeeraGeomBox[]): MeeraGeomBox | null {
+  let best: MeeraGeomBox | null = null;
+  for (const face of faces) if (!best || face.w * face.h > best.w * best.h) best = face;
+  return best;
+}
+
+/** "Bright light behind your face" from the in-memory still (spec Phase 4): read on the phone,
+ *  shown on this card only, never stored. `false` until the pixels are read, and wherever they
+ *  cannot be. */
+function useBacklight(photo: Blob | null | undefined, face: MeeraGeomBox | null): boolean {
+  // Keyed by the photo and face it was read for, so a stale reading never shows on a new photo.
+  const [reading, setReading] = React.useState<{ photo: Blob; face: MeeraGeomBox; backlit: boolean } | null>(null);
+  React.useEffect(() => {
+    if (!photo || !face) return undefined;
+    let cancelled = false;
+    void readStillPixels(photo).then((pixels) => {
+      if (!cancelled && pixels) setReading({ photo, face, backlit: isBacklit(pixels, face) });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [photo, face]);
+  return Boolean(reading && reading.photo === photo && reading.face === face && reading.backlit);
 }
 
 const COPY = {
@@ -68,6 +105,7 @@ export function MeeraPhotoCheckMessage({
   busy,
   onAnswer,
   onCheckAgain,
+  photo,
   className,
 }: MeeraPhotoCheckMessageProps) {
   const shootLang = shootCheckLangFor(lang);
@@ -86,6 +124,18 @@ export function MeeraPhotoCheckMessage({
     answers.length < MAX_COACH_ANSWERS &&
     !answers.some((a) => a.ask.id === result.ask?.id);
   const askLocked = askShown && !interactive;
+
+  // The guide and the backlight line need the photo: newest card, photo still in memory, a usable photo.
+  const livePhoto = interactive && !retake && photo ? photo : null;
+  const guideLang = replyLang === 'hi' ? 'hi-IN' : 'en-IN';
+  const face = React.useMemo(
+    () => (livePhoto && result.layout ? largestFace(result.layout.faces) : null),
+    [livePhoto, result.layout],
+  );
+  const backlit = useBacklight(livePhoto, face);
+  const quickChecks = retake
+    ? []
+    : [...(result.checks ?? []), ...(backlit ? [adviceText('check_backlight', guideLang)] : [])];
 
   return (
     <div
@@ -120,6 +170,16 @@ export function MeeraPhotoCheckMessage({
           <FrameCheckList title={coach.lookingGood} items={result.ok ?? []} tone="ok" />
         </div>
       )}
+
+      <FrameCheckList
+        title={adviceText('quick_checks_label', guideLang)}
+        items={quickChecks}
+        tone="fix"
+        testId="photo-check-quick-checks"
+      />
+
+      {/* ReelLayoutGuide renders nothing when the reply has no face or product box. */}
+      {livePhoto ? <ReelLayoutGuide photo={livePhoto} layout={result.layout} lang={guideLang} /> : null}
 
       {/* A retake box carries its own "Check again" button; a second one here would be a duplicate. */}
       {retake ? null : (

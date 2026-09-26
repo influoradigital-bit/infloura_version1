@@ -5,6 +5,12 @@ on:
     paths:
       - 'influora-ai/**'
       - 'influora-api/src/main/java/com/influora/web/dto/meera/**'
+      # The Python tests pin the app's safe-zone twin, framing thresholds, shot-size words and the
+      # shared 9:16 crop fixture (shoot guide spec v2).
+      - 'src/lib/shoot-check/safe-zones.json'
+      - 'src/lib/shoot-check/metrics.ts'
+      - 'src/lib/shoot-check/beat-to-shot.ts'
+      - 'src/lib/__fixtures__/reel-crop-cases.json'
       - '.github/workflows/ai-tests.yml'
   push:
     branches:
@@ -18,6 +24,12 @@ on:
     paths:
       - 'influora-ai/**'
       - 'influora-api/src/main/java/com/influora/web/dto/meera/**'
+      # The Python tests pin the app's safe-zone twin, framing thresholds, shot-size words and the
+      # shared 9:16 crop fixture (shoot guide spec v2).
+      - 'src/lib/shoot-check/safe-zones.json'
+      - 'src/lib/shoot-check/metrics.ts'
+      - 'src/lib/shoot-check/beat-to-shot.ts'
+      - 'src/lib/__fixtures__/reel-crop-cases.json'
       - '.github/workflows/ai-tests.yml'
 
 jobs:

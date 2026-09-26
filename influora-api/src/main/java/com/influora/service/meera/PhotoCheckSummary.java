@@ -26,6 +26,7 @@ import java.util.regex.Pattern;
  * Steps:
  * 1) Window behind you: Change where the phone points ...
  * 2) Talking head by a window: Lens: 1x Main. Distance: 0.8-1m. ...
+ * Quick checks: Your face is near the edge; the app's buttons can cover it.
  * Looking good: The framing suits this kind of shot. The background is clean ...
  * Can't tell from one photo: A photo can't tell me how your audio sounds. ...
  * I asked: Can you move to a different spot for this shot? (Yes, I can move / No, fixed spot)
@@ -34,8 +35,9 @@ import java.util.regex.Pattern;
  * <p>Size (Ash correction 2): a step's text is NEVER cut -- the settings step carries the camera
  * values Meera must quote back, and a cut mid-value ("Stabilization: Su") makes her refill it from
  * her own knowledge and contradict the card. When the whole text is over {@link #MAX_CHARS}, the
- * optional lines are dropped in this order: "Looking good" items, then "Can't tell" items, then the
- * question's options, then the question. If the header, what the check saw and the steps alone are
+ * optional lines are dropped in this order: "Quick checks" items, then "Looking good" items, then
+ * "Can't tell" items, then the question's options, then the question (spec Phase 4: the quick
+ * checks go before "Looking good"). If the header, what the check saw and the steps alone are
  * over the cap, the text is returned over the cap rather than cut.
  *
  * <p>{@code <} and {@code >} are written as "under" / "over" (Ash correction 14): the replay path
@@ -125,6 +127,8 @@ public final class PhotoCheckSummary {
             }
         }
 
+        // Code-written lines from influora-ai's checklist (app/shoot/checklist.py), never the model's.
+        List<String> checks = textList(result, "checks");
         List<String> ok = textList(result, "ok");
         List<String> cantTell = textList(result, "cant_tell");
         JsonNode ask = result == null ? null : result.get("ask");
@@ -132,13 +136,16 @@ public final class PhotoCheckSummary {
         List<String> options = question.isEmpty() ? new ArrayList<>() : optionTexts(ask, lang);
         boolean keepQuestion = !question.isEmpty();
 
-        // Trim order (Ash correction 2): ok, then cant_tell, then the ask's options, then the ask.
+        // Trim order (Ash correction 2, then spec Phase 4): checks, then ok, then cant_tell, then the
+        // ask's options, then the ask.
         while (true) {
-            String candidate = assemble(head, ok, cantTell, keepQuestion ? question : null, options);
+            String candidate = assemble(head, checks, ok, cantTell, keepQuestion ? question : null, options);
             if (candidate.length() <= MAX_CHARS) {
                 return candidate;
             }
-            if (!ok.isEmpty()) {
+            if (!checks.isEmpty()) {
+                checks.remove(checks.size() - 1);
+            } else if (!ok.isEmpty()) {
                 ok.remove(ok.size() - 1);
             } else if (!cantTell.isEmpty()) {
                 cantTell.remove(cantTell.size() - 1);
@@ -154,8 +161,16 @@ public final class PhotoCheckSummary {
     }
 
     private static String assemble(
-            List<String> head, List<String> ok, List<String> cantTell, String question, List<String> options) {
+            List<String> head,
+            List<String> checks,
+            List<String> ok,
+            List<String> cantTell,
+            String question,
+            List<String> options) {
         List<String> lines = new ArrayList<>(head);
+        if (!checks.isEmpty()) {
+            lines.add("Quick checks: " + joinItems(checks));
+        }
         if (!ok.isEmpty()) {
             lines.add("Looking good: " + joinItems(ok));
         }

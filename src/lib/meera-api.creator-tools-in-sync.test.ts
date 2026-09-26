@@ -71,7 +71,16 @@ describe('creator tool names: app vs influora-ai', () => {
     const knowledge = readFileSync(KNOWLEDGE, 'utf8');
     const block = knowledge.match(/^LOOKUP_TOPICS:[^=]*=\s*\{([\s\S]*?)^\}/m);
     expect(block, 'LOOKUP_TOPICS dict not found in content_knowledge.py').toBeTruthy();
-    const pythonTopics = [...block![1].matchAll(/^\s{4}"([a-z_]+)":/gm)].map((m) => m[1]);
+    const literalTopics = [...block![1].matchAll(/^\s{4}"([a-z_]+)":/gm)].map((m) => m[1]);
+    // Shoot guide spec v2: the framing topics are appended from FRAMING_TOPICS, in its order.
+    expect(knowledge, 'LOOKUP_TOPICS no longer appends FRAMING_TOPICS').toMatch(
+      /^LOOKUP_TOPICS\.update\(\{[\s\S]*?for topic, \([^)]*\) in FRAMING_TOPICS\.items\(\)/m,
+    );
+    const framing = knowledge.match(/^FRAMING_TOPICS:[^=]*=\s*\{([\s\S]*?)^\}/m);
+    expect(framing, 'FRAMING_TOPICS dict not found in content_knowledge.py').toBeTruthy();
+    const framingTopics = [...framing![1].matchAll(/^\s{4}"([a-z_]+)":/gm)].map((m) => m[1]);
+    expect(framingTopics.length).toBeGreaterThanOrEqual(11);
+    const pythonTopics = [...literalTopics, ...framingTopics];
     expect(pythonTopics.length).toBeGreaterThanOrEqual(3);
     expect([...CREATOR_KNOWLEDGE_TOPICS]).toEqual(pythonTopics);
   });

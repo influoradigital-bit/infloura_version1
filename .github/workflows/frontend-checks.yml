@@ -9,6 +9,8 @@ on:
   pull_request:
     paths:
       - 'src/**'
+      # The photo-check card test reads the server's quick-check lines from their source.
+      - 'influora-ai/app/shoot/checklist.py'
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.json'

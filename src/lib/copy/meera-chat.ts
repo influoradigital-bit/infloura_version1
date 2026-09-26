@@ -133,6 +133,19 @@ const KNOWLEDGE_TOPIC_PHRASES: Record<CreatorKnowledgeTopic, BilingualText> = {
   audio: { en: 'audio', hi: 'ऑडियो' },
   moving_between_spots: { en: 'moving between spots', hi: 'एक जगह से दूसरी जगह जाने' },
   delivery_examples: { en: 'delivery examples', hi: 'डिलीवरी के उदाहरणों' },
+  // Shoot guide spec v2 (2026-09-26). The hi phrases below are PENDING REVIEW.
+  shot_planning: { en: 'shot planning', hi: 'शॉट प्लानिंग' },
+  framing_beauty_grwm: { en: 'framing for beauty and GRWM', hi: 'ब्यूटी और GRWM फ़्रेमिंग' },
+  framing_fashion: { en: 'framing for fashion', hi: 'फ़ैशन फ़्रेमिंग' },
+  framing_food_cooking: { en: 'framing for food and cooking', hi: 'फ़ूड और कुकिंग फ़्रेमिंग' },
+  framing_fitness: { en: 'framing for fitness', hi: 'फ़िटनेस फ़्रेमिंग' },
+  framing_tech_product: { en: 'framing for tech and products', hi: 'टेक और प्रोडक्ट फ़्रेमिंग' },
+  framing_screen_demo: { en: 'framing for screen demos', hi: 'स्क्रीन डेमो फ़्रेमिंग' },
+  framing_finance_education: { en: 'framing for finance and education', hi: 'फ़ाइनेंस और एजुकेशन फ़्रेमिंग' },
+  framing_travel_vlog: { en: 'framing for travel and vlogs', hi: 'ट्रैवल और व्लॉग फ़्रेमिंग' },
+  framing_comedy_lifestyle: { en: 'framing for comedy and lifestyle', hi: 'कॉमेडी और लाइफ़स्टाइल फ़्रेमिंग' },
+  framing_groups: { en: 'framing for groups', hi: 'ग्रुप फ़्रेमिंग' },
+  framing_motivational: { en: 'framing for motivational talks', hi: 'मोटिवेशनल टॉक फ़्रेमिंग' },
 };
 
 function knowledgeTopicPhrase(topic: string | undefined): BilingualText | undefined {

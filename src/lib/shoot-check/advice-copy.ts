@@ -101,9 +101,119 @@ export const FRAME_CHECK_DISCLOSURE: Record<ShootCheckLang, string> = {
     'इससे आपके शॉट की एक फ़ोटो Influora के AI को जाँच के लिए भेजी जाती है। यह सिर्फ़ इसी जाँच के लिए इस्तेमाल होती है, कभी सेव नहीं होती।',
 };
 
+/**
+ * Reel layout guide (Phase 4) and live-camera guide (Phase 5) copy. The en-IN lines marked in spec
+ * 2.8 (`safe_zone_note`, `hook_slot`, `device_note`, the grid labels, the three zone labels) are the
+ * owner-approved text word for word; the rest follow the spec's mockups 10, 11, 13 and 14.
+ *
+ * hi-IN: Devanagari Hindi written at build time, PENDING REVIEW (spec 2.8: "reviewed like the 5.3
+ * notices"). Do not treat any hi-IN line here as approved until that review lands.
+ *
+ * House rules for every line (spec 2.7, scanned by `advice-copy.guide.test.ts`): no `@` handle and
+ * no third-party names, no golden-ratio theory, no reach or engagement promise, never the word
+ * "escrow", and the assistant is only ever "Meera".
+ */
+export const GUIDE_COPY = {
+  // Camera grid setting (Phase 5a/5b, the Guides sheet)
+  grid_setting_label: { 'en-IN': 'Camera grid', 'hi-IN': 'कैमरा ग्रिड' },
+  grid_option_thirds: { 'en-IN': 'Rule of thirds', 'hi-IN': 'रूल ऑफ़ थर्ड्स' },
+  grid_option_golden: { 'en-IN': 'Golden grid', 'hi-IN': 'गोल्डन ग्रिड' },
+  grid_option_off: { 'en-IN': 'Off', 'hi-IN': 'बंद' },
+  grid_default_tag: { 'en-IN': 'Default', 'hi-IN': 'डिफ़ॉल्ट' },
+  guides_button: { 'en-IN': 'Guides', 'hi-IN': 'गाइड' },
+  shot_guides_label: { 'en-IN': 'Shot guides', 'hi-IN': 'शॉट गाइड' },
+  safe_zone_always_on: { 'en-IN': 'Safe zone: Always on', 'hi-IN': 'सेफ़ ज़ोन: हमेशा चालू' },
+  guide_remembered: {
+    'en-IN': 'Your choice is remembered on this phone.',
+    'hi-IN': 'आपकी पसंद इस फ़ोन पर याद रखी जाती है।',
+  },
+  got_it: { 'en-IN': 'Got it', 'hi-IN': 'ठीक है' },
+  setup_line_prefix: { 'en-IN': 'Set-up for this shot:', 'hi-IN': 'इस शॉट का सेट-अप:' },
+  stand_other_line: { 'en-IN': 'Stand on the other line.', 'hi-IN': 'दूसरी लाइन पर खड़े हों।' },
+
+  // Safe zone (spec 2.6 / 2.8): always on, in the layout guide, the PNG and the live camera
+  safe_zone_note: {
+    'en-IN':
+      'The green area keeps your text visible. Instagram’s buttons and captions cover the red areas — check your preview before posting.',
+    'hi-IN':
+      'हरे हिस्से में रखा टेक्स्ट दिखता रहता है। लाल हिस्सों को Instagram के बटन और कैप्शन ढक लेते हैं — पोस्ट करने से पहले प्रीव्यू ज़रूर देखें।',
+  },
+  device_note: {
+    'en-IN': 'Every phone and app version is a little different — always check your Reel preview before you post.',
+    'hi-IN': 'हर फ़ोन और ऐप वर्ज़न थोड़ा अलग होता है — पोस्ट करने से पहले अपनी Reel का प्रीव्यू हमेशा देखें।',
+  },
+  zone_label_top: { 'en-IN': 'Covered: app top bar', 'hi-IN': 'ढका हुआ: ऐप की ऊपरी पट्टी' },
+  zone_label_bottom: { 'en-IN': 'Covered: username, caption, music', 'hi-IN': 'ढका हुआ: यूज़रनेम, कैप्शन, म्यूज़िक' },
+  zone_label_cta: { 'en-IN': 'Short CTA, left side', 'hi-IN': 'छोटा CTA, बाईं ओर' },
+  zone_label_rail: { 'en-IN': 'Right-side buttons', 'hi-IN': 'दाईं ओर के बटन' },
+  zone_label_sides: { 'en-IN': 'Covered: the edges', 'hi-IN': 'ढका हुआ: किनारे' },
+  zone_label_safe: { 'en-IN': 'Green: safe for text', 'hi-IN': 'हरा: टेक्स्ट के लिए सुरक्षित' },
+
+  // Reel layout guide (Phase 4)
+  reel_layout_tab: { 'en-IN': 'Reel layout', 'hi-IN': 'Reel लेआउट' },
+  reel_layout_title: { 'en-IN': 'Influora’s Reel layout guide', 'hi-IN': 'Influora की Reel लेआउट गाइड' },
+  face_keep_clear: { 'en-IN': 'Face: keep clear', 'hi-IN': 'चेहरा: इस पर कुछ न रखें' },
+  product_label: { 'en-IN': 'Your product', 'hi-IN': 'आपका प्रोडक्ट' },
+  slot_hook: { 'en-IN': 'Hook text', 'hi-IN': 'हुक टेक्स्ट' },
+  slot_captions: { 'en-IN': 'Captions / CapCut text', 'hi-IN': 'कैप्शन / CapCut टेक्स्ट' },
+  slot_logo: { 'en-IN': 'Logo / brand tag', 'hi-IN': 'लोगो / ब्रांड टैग' },
+  slot_sticker: { 'en-IN': 'Sticker / product image', 'hi-IN': 'स्टिकर / प्रोडक्ट इमेज' },
+  hook_slot: { 'en-IN': 'Put your hook text here, above your head.', 'hi-IN': 'अपना हुक टेक्स्ट यहाँ, अपने सिर के ऊपर रखें।' },
+  captions_line: {
+    'en-IN': 'Captions: 2 short lines on a dark backing, just above the bottom area.',
+    'hi-IN': 'कैप्शन: गहरे बैकग्राउंड पर 2 छोटी लाइनें, नीचे वाले हिस्से के ठीक ऊपर।',
+  },
+  logo_line: {
+    'en-IN': 'Logo: small, never over your face or the product.',
+    'hi-IN': 'लोगो: छोटा, कभी भी आपके चेहरे या प्रोडक्ट के ऊपर नहीं।',
+  },
+  no_space_hook: {
+    'en-IN':
+      'No clear space above your head for hook text. Leave a little more room above your head, or put it in your captions.',
+    'hi-IN': 'हुक टेक्स्ट के लिए सिर के ऊपर खाली जगह नहीं है। सिर के ऊपर थोड़ी और जगह छोड़ें, या इसे कैप्शन में डालें।',
+  },
+  no_space_captions: {
+    'en-IN': 'No clear space for captions: use a dark text backing or a cutaway.',
+    'hi-IN': 'कैप्शन के लिए खाली जगह नहीं है: टेक्स्ट के पीछे गहरा बैकग्राउंड लगाएँ या कटअवे शॉट लें।',
+  },
+  no_space_logo: {
+    'en-IN': 'No clear space for your logo: use a dark text backing or a cutaway.',
+    'hi-IN': 'लोगो के लिए खाली जगह नहीं है: गहरा बैकग्राउंड लगाएँ या कटअवे शॉट लें।',
+  },
+  no_space_sticker: {
+    'en-IN': 'No clear space for a sticker: use a dark text backing or a cutaway.',
+    'hi-IN': 'स्टिकर के लिए खाली जगह नहीं है: गहरा बैकग्राउंड लगाएँ या कटअवे शॉट लें।',
+  },
+  download_png: { 'en-IN': 'Download CapCut guide (PNG)', 'hi-IN': 'CapCut गाइड डाउनलोड करें (PNG)' },
+  png_note: {
+    'en-IN': 'The guide has no photo in it. Delete it before you export.',
+    'hi-IN': 'इस गाइड में कोई फ़ोटो नहीं है। एक्सपोर्ट करने से पहले इसे हटा दें।',
+  },
+  png_failed: {
+    'en-IN': 'Couldn’t make the guide on this phone. The layout above still works.',
+    'hi-IN': 'इस फ़ोन पर गाइड नहीं बन पाई। ऊपर का लेआउट फिर भी काम करता है।',
+  },
+  // Drawn INTO the PNG: English only, so the file reads the same in every editor's font.
+  png_banner: { 'en-IN': 'GUIDE - DELETE BEFORE EXPORT', 'hi-IN': 'GUIDE - DELETE BEFORE EXPORT' },
+
+  // Code-side checks shown on the card (Phase 4). hi-IN here is Hinglish in LATIN script, not
+  // Devanagari: the list title and the phone-side backlight line sit in one list with the server's
+  // lines (influora-ai checklist.py CHECK_LINES "hi"), which are Hinglish like the rest of the
+  // photo-check card, so one list never mixes scripts. Part of the same PENDING REVIEW: the reviewer
+  // decides the card's one script (the Reel layout guide under it uses this table's Devanagari).
+  quick_checks_label: { 'en-IN': 'Quick checks', 'hi-IN': 'Quick checks' },
+  check_backlight: {
+    'en-IN': 'Bright light behind your face will make it dark.',
+    'hi-IN': 'Aapke peeche tez roshni hai, isse aapka face dark dikhega.',
+  },
+} as const satisfies Record<string, Record<ShootCheckLang, string>>;
+
+export type GuideCopyKey = keyof typeof GUIDE_COPY;
+
 /** Falls back to the English copy for a key that somehow isn't in the table, then to the key itself. */
 export function adviceText(key: string, lang: ShootCheckLang): string {
-  const entry = COPY[key as AdviceKey];
+  const entry: Record<ShootCheckLang, string> | undefined =
+    COPY[key as AdviceKey] ?? (GUIDE_COPY as Record<string, Record<ShootCheckLang, string>>)[key];
   if (!entry) return key;
   return entry[lang] ?? entry['en-IN'];
 }

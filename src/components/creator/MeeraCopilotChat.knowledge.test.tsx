@@ -118,7 +118,24 @@ describe('get_creator_knowledge is a local tool, kept apart from the Spring-back
   it('is not in CREATOR_TOOL_NAMES (the list synced with influora-ai) but is a known local tool', () => {
     expect(CREATOR_TOOL_NAMES as readonly string[]).not.toContain('get_creator_knowledge');
     expect(CREATOR_LOCAL_TOOL_NAMES).toEqual(['get_creator_knowledge']);
-    expect(CREATOR_KNOWLEDGE_TOPICS).toEqual(['audio', 'moving_between_spots', 'delivery_examples']);
+    // Shoot guide spec v2 (2026-09-26) added shot_planning and the 11 framing topics.
+    expect(CREATOR_KNOWLEDGE_TOPICS).toEqual([
+      'audio',
+      'moving_between_spots',
+      'delivery_examples',
+      'shot_planning',
+      'framing_beauty_grwm',
+      'framing_fashion',
+      'framing_food_cooking',
+      'framing_fitness',
+      'framing_tech_product',
+      'framing_screen_demo',
+      'framing_finance_education',
+      'framing_travel_vlog',
+      'framing_comedy_lifestyle',
+      'framing_groups',
+      'framing_motivational',
+    ]);
   });
 });
 
@@ -127,6 +144,8 @@ describe('MeeraWorkTrail — get_creator_knowledge step labels', () => {
     ['audio', "Checking Influora's notes on audio…"],
     ['moving_between_spots', "Checking Influora's notes on moving between spots…"],
     ['delivery_examples', "Checking Influora's notes on delivery examples…"],
+    ['shot_planning', "Checking Influora's notes on shot planning…"],
+    ['framing_food_cooking', "Checking Influora's notes on framing for food and cooking…"],
   ])('names the topic while running (%s)', (topic, label) => {
     render(
       <MeeraWorkTrail

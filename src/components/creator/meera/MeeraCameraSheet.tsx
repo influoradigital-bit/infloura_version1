@@ -1,14 +1,27 @@
 import * as React from 'react';
-import { ChevronLeft, ChevronRight, Loader2, SwitchCamera, X } from 'lucide-react';
+import { Camera, ChevronLeft, ChevronRight, Loader2, MapPin, PersonStanding, Sun, SwitchCamera, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { CameraGuidesSheet } from '@/components/creator/meera/CameraGuidesSheet';
 import { shootCheckLangFor } from '@/components/creator/shoot-check/CoachResult';
 import { FramingGuide } from '@/components/creator/shoot-check/FramingGuide';
 import type { ShootCheckShot } from '@/components/creator/shoot-check/ShootCheckPanel';
 import { useShootCheck } from '@/hooks/useShootCheck';
-import { FRAME_CHECK_DISCLOSURE, type ShootCheckLang } from '@/lib/shoot-check/advice-copy';
+import { FRAME_CHECK_DISCLOSURE, adviceText, type ShootCheckLang } from '@/lib/shoot-check/advice-copy';
+import type { ShotSize } from '@/lib/shoot-check/beat-to-shot';
 import { FRAME_JPEG_QUALITY, MAX_FRAME_WIDTH } from '@/lib/shoot-check/capture-frame';
+import {
+  readCameraGrid,
+  readSafeZoneHintSeen,
+  readShotGuides,
+  writeCameraGrid,
+  writeSafeZoneHintSeen,
+  writeShotGuides,
+  type CameraGrid,
+} from '@/lib/shoot-check/guide-prefs';
+import { getSafeZones } from '@/lib/shoot-check/safe-zones';
+import { cleanShotText, propZone, setupChips, shotSizeFor, type ChipKind } from '@/lib/shoot-check/shot-zones';
 import { cn } from '@/lib/utils';
 
 /**
@@ -16,9 +29,15 @@ import { cn } from '@/lib/utils';
  * `sm` up, on the same Radix dialog MeeraVoiceMode uses (focus trap, Esc closes, portalled above the
  * fixed phone chat).
  *
- * It shows the live preview, the rule-of-thirds guide, a flip-camera button and one "Check my
- * set-up" button. No live readings and no spoken cues (Swapnil's ruling, 2026-09-26): the hook is
- * opened camera-only (`withMic: false`) and muted.
+ * It shows the live preview with the shot guide (spec v2 Phase 5a + 5b: the 9:16 Reel frame, the
+ * always-on safe zone, the camera grid and the shot bands for the current shot), a "Guides" button
+ * for the grid and shot-guide settings, a flip-camera button and one "Check my set-up" button. The
+ * guide is drawn, never read: no live readings, no match state and no spoken cues (Swapnil's
+ * ruling, 2026-09-26). The hook is opened camera-only (`withMic: false`) and muted.
+ *
+ * Under the preview, the "Set-up for this shot: ..." line is the guide's text version (the SVG is
+ * aria-hidden; the preview points at the line with `aria-describedby`), with up to 3 set-up chips.
+ * The first time on a device, the safe-zone note shows until the creator taps "Got it".
  *
  * The camera lives in `CameraSheetBody`, which is rendered only while `open`: closing the sheet
  * unmounts it at once, and the hook's unmount teardown stops the video track, the wake lock and any
@@ -62,6 +81,24 @@ const COPY = {
     unsupported: 'This browser can’t open the camera here. Try Chrome or Safari on your phone.',
     denied: 'Camera access was denied. Allow camera access in your browser settings, then open this again.',
     captureFailed: 'Couldn’t take the photo. Try again.',
+    preview: 'Camera preview',
+    generalGuide: 'General guide',
+    where: 'Where:',
+    light: 'Light:',
+    prop: 'Prop:',
+    suggestedSpot: '(suggested spot)',
+    wideAsFull: 'The guide shows a full shot for a wide shot.',
+    startingPoint: 'The shot bands are a starting point.',
+    sizes: {
+      ECU: 'Extreme close-up',
+      CU: 'Close-up',
+      MCU: 'Medium close-up',
+      MS: 'Medium shot',
+      MLS: 'Medium long shot',
+      FS: 'Full shot',
+      LS: 'Wide shot',
+      OVERHEAD: 'Overhead, hands',
+    },
   },
   // Hindi chrome is Devanagari, like the disclosure and framing-guide lines shown with it (the
   // chat's own Hindi copy is Devanagari too). Only the check's result card keeps the server's
@@ -85,6 +122,25 @@ const COPY = {
     unsupported: 'यह ब्राउज़र यहाँ कैमरा नहीं खोल सकता। फ़ोन पर Chrome या Safari आज़माएँ।',
     denied: 'कैमरा की अनुमति नहीं मिली। ब्राउज़र सेटिंग्स में कैमरा की अनुमति दें, फिर इसे दोबारा खोलें।',
     captureFailed: 'फ़ोटो नहीं ले पाए। फिर से कोशिश करें।',
+    // The shot-guide lines below are pending Hindi review (spec 2.8), like the advice-copy ones.
+    preview: 'कैमरा प्रीव्यू',
+    generalGuide: 'सामान्य गाइड',
+    where: 'जगह:',
+    light: 'रोशनी:',
+    prop: 'प्रॉप:',
+    suggestedSpot: '(सुझाई गई जगह)',
+    wideAsFull: 'वाइड शॉट के लिए गाइड फ़ुल शॉट दिखाती है।',
+    startingPoint: 'शॉट बैंड बस शुरुआत के लिए हैं।',
+    sizes: {
+      ECU: 'एक्सट्रीम क्लोज़-अप',
+      CU: 'क्लोज़-अप',
+      MCU: 'मीडियम क्लोज़-अप',
+      MS: 'मीडियम शॉट',
+      MLS: 'मीडियम लॉन्ग शॉट',
+      FS: 'फ़ुल शॉट',
+      LS: 'वाइड शॉट',
+      OVERHEAD: 'ऊपर से, हाथ',
+    },
   },
 } as const;
 
@@ -207,6 +263,39 @@ function CameraSheetBody({
     noteInteraction();
   };
 
+  // Guide settings, remembered per device (guide-prefs: every storage access is try/catch).
+  const [grid, setGrid] = React.useState<CameraGrid>(readCameraGrid);
+  const [shotGuides, setShotGuides] = React.useState<boolean>(readShotGuides);
+  const [hintSeen, setHintSeen] = React.useState<boolean>(readSafeZoneHintSeen);
+  const [guidesOpen, setGuidesOpen] = React.useState(false);
+  const guidesButtonRef = React.useRef<HTMLButtonElement>(null);
+  const zones = React.useMemo(() => getSafeZones('instagram_reels'), []);
+  const setupLineId = React.useId();
+  const mirrored = facingMode === 'user';
+
+  const handleGridChange = (next: CameraGrid) => {
+    setGrid(next);
+    writeCameraGrid(next);
+    noteInteraction();
+  };
+  const handleShotGuidesChange = (on: boolean) => {
+    setShotGuides(on);
+    writeShotGuides(on);
+    noteInteraction();
+  };
+  const dismissHint = () => {
+    setHintSeen(true);
+    writeSafeZoneHintSeen();
+    noteInteraction();
+  };
+
+  const size = shotSizeFor(currentShot);
+  const prop = shotGuides ? propZone({ shot: currentShot, size, grid, mirrored, zones }) : null;
+  const setupLine = setupLineText({ t, shootLang, shot: currentShot, size, propShown: prop !== null, sidedProp: prop?.snappedTo != null, shotGuides });
+  const chips = currentShot
+    ? setupChips(currentShot, t.sizes[size])
+    : [{ kind: 'angle' as const, text: t.generalGuide, full: t.generalGuide }];
+
   const active = phase === 'active';
   const checkDisabled = !active || !online || capturing;
 
@@ -233,22 +322,35 @@ function CameraSheetBody({
 
   return (
     <>
-      {/* Top bar: close, title, flip. */}
+      {/* Top bar: close, title, guides, flip. */}
       <div className="flex shrink-0 items-center justify-between gap-2 px-2 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2">
         <DialogClose aria-label={t.close} className={ICON_BUTTON}>
           <X className="h-5 w-5" aria-hidden />
         </DialogClose>
         <DialogTitle className="min-w-0 truncate text-center text-base font-semibold text-white">{t.title}</DialogTitle>
-        <button
-          type="button"
-          aria-label={t.flip}
-          onClick={handleFlip}
-          disabled={blocked || phase === 'starting' || capturing}
-          className={ICON_BUTTON}
-          data-testid="camera-sheet-flip"
-        >
-          <SwitchCamera className="h-5 w-5" aria-hidden />
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          {/* A text label, not an icon alone, and at least 44 x 44 (spec v2 Phase 5a). */}
+          <button
+            ref={guidesButtonRef}
+            type="button"
+            onClick={() => setGuidesOpen(true)}
+            aria-haspopup="dialog"
+            className="inline-flex h-11 min-w-11 shrink-0 items-center justify-center rounded-full px-3 text-sm font-medium text-white/90 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+            data-testid="camera-sheet-guides"
+          >
+            {adviceText('guides_button', shootLang)}
+          </button>
+          <button
+            type="button"
+            aria-label={t.flip}
+            onClick={handleFlip}
+            disabled={blocked || phase === 'starting' || capturing}
+            className={ICON_BUTTON}
+            data-testid="camera-sheet-flip"
+          >
+            <SwitchCamera className="h-5 w-5" aria-hidden />
+          </button>
+        </div>
       </div>
 
       {/* Shot strip, only for a script. */}
@@ -283,7 +385,13 @@ function CameraSheetBody({
       ) : null}
 
       {/* Preview: fills the height on a portrait phone, no 16:9 box. */}
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
+      <div
+        className="relative min-h-0 flex-1 overflow-hidden bg-black"
+        role="group"
+        aria-label={t.preview}
+        aria-describedby={setupLineId}
+        data-testid="camera-sheet-preview"
+      >
         {supported ? (
           <video
             ref={videoRef}
@@ -294,7 +402,9 @@ function CameraSheetBody({
             data-testid="camera-sheet-video"
           />
         ) : null}
-        {active ? <FramingGuide /> : null}
+        {active ? (
+          <FramingGuide shot={currentShot} shotGuides={shotGuides} grid={grid} mirrored={mirrored} zones={zones} lang={shootLang} />
+        ) : null}
 
         {!active ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center" role="status">
@@ -324,8 +434,37 @@ function CameraSheetBody({
         ) : null}
       </div>
 
-      {/* Bottom: what leaves the phone, what is kept, then the one action. */}
+      {/* Bottom: the first-run safe-zone note, the set-up line and chips (here, so they never
+          cover a zone label), what leaves the phone, what is kept, then the one action. */}
       <div className="flex shrink-0 flex-col gap-2 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        {!hintSeen ? (
+          <div className="flex items-center gap-3 rounded-lg bg-white/10 px-3 py-2" data-testid="safe-zone-hint">
+            <p className="min-w-0 flex-1 text-xs text-white/90">{adviceText('safe_zone_note', shootLang)}</p>
+            <Button type="button" variant="secondary" size="sm" className="min-h-11 shrink-0" onClick={dismissHint}>
+              {adviceText('got_it', shootLang)}
+            </Button>
+          </div>
+        ) : null}
+        <p id={setupLineId} className="text-xs text-white/90" data-testid="camera-sheet-setup-line">
+          {setupLine}
+        </p>
+        {chips.length > 0 ? (
+          <ul className="flex flex-wrap gap-1.5" data-testid="camera-sheet-chips">
+            {chips.map((chip) => {
+              const Icon = CHIP_ICON[chip.kind];
+              return (
+                <li
+                  key={chip.kind}
+                  className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 text-xs text-white"
+                  data-testid="camera-sheet-chip"
+                >
+                  <Icon className="h-3.5 w-3.5" aria-hidden />
+                  {chip.text}
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
         <p className="text-xs text-white/75" data-testid="frame-check-disclosure">
           {FRAME_CHECK_DISCLOSURE[shootLang]}
         </p>
@@ -352,8 +491,72 @@ function CameraSheetBody({
           {capturing ? t.taking : t.check}
         </Button>
       </div>
+
+      <CameraGuidesSheet
+        open={guidesOpen}
+        onOpenChange={setGuidesOpen}
+        lang={shootLang}
+        shotGuides={shotGuides}
+        onShotGuidesChange={handleShotGuidesChange}
+        grid={grid}
+        onGridChange={handleGridChange}
+        returnFocusRef={guidesButtonRef}
+      />
     </>
   );
+}
+
+const CHIP_ICON: Record<ChipKind, typeof Camera> = {
+  angle: Camera,
+  where: MapPin,
+  light: Sun,
+  sit_or_walk: PersonStanding,
+};
+
+/**
+ * The guide's text version, in full with no cuts: "Set-up for this shot: <size>. <angle>. Where:
+ * ... Light: ... <sit or walk>. Prop: ... (suggested spot)." plus "Stand on the other line." when a
+ * side prop zone is drawn. The values are the script's (untrusted) text, rendered only as React text.
+ */
+function setupLineText({
+  t,
+  shootLang,
+  shot,
+  size,
+  propShown,
+  sidedProp,
+  shotGuides,
+}: {
+  t: SheetCopy;
+  shootLang: ShootCheckLang;
+  shot: ShootCheckShot | null;
+  size: ShotSize;
+  propShown: boolean;
+  sidedProp: boolean;
+  shotGuides: boolean;
+}): string {
+  const context = shot?.context ?? {};
+  const parts: string[] = [];
+  if (!shot) parts.push(t.generalGuide);
+  parts.push(t.sizes[size]);
+  const angle = cleanShotText(context.angle);
+  if (angle) parts.push(angle);
+  const where = cleanShotText(context.where);
+  if (where) parts.push(`${t.where} ${where}`);
+  const light = cleanShotText(context.light);
+  if (light) parts.push(`${t.light} ${light}`);
+  const sitOrWalk = cleanShotText(context.sit_or_walk);
+  if (sitOrWalk) parts.push(sitOrWalk);
+  const propText = cleanShotText(context.prop);
+  if (propText) parts.push(propShown ? `${t.prop} ${propText} ${t.suggestedSpot}` : `${t.prop} ${propText}`);
+
+  const stop = shootLang === 'hi-IN' ? '।' : '.';
+  const sentence = (text: string) => (/[.!?।…]$/.test(text) ? text : `${text}${stop}`);
+  const lines = [adviceText('setup_line_prefix', shootLang), ...parts.map(sentence)];
+  if (sidedProp) lines.push(adviceText('stand_other_line', shootLang));
+  if (shotGuides && size === 'LS') lines.push(t.wideAsFull);
+  if (shotGuides) lines.push(t.startingPoint);
+  return lines.join(' ');
 }
 
 /**

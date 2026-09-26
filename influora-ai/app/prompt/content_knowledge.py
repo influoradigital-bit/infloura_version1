@@ -13,11 +13,12 @@ answer. The persona rules that tell the model HOW to use this block live in
 Data: `app/prompt/knowledge/video_content_concepts.jsonl` (359 rows: 307 through v7 -- v4
 2026-09-22 + the 2026-09-21 go-live additions + the 38 v5 camera rows + the v6 outdoor-light
 and delivery rows + the v7 lighting and positioning rows of 2026-09-24 -- plus 42 v8 audio and
-movement rows of 2026-09-24, plus the 10 coach questions of 2026-09-25). Not every row is always
+movement rows of 2026-09-24, plus the 10 coach questions of 2026-09-25, plus dataset 9's 161
+framing and shot-planning rows of 2026-09-26 -> 520). Not every row is always
 sent: 305 rows render into the cached
-block `CREATOR_KNOWLEDGE_TEXT` on every creator turn; the other 54 (the 12 delivery examples
-and the 42 v8 rows) render into `LOOKUP_TEXT`, which the model fetches per topic with the
-local `get_creator_knowledge` tool (`LOOKUP_TOPICS`). The block ends with a "More on request"
+block `CREATOR_KNOWLEDGE_TEXT` on every creator turn; the other 215 (the 12 delivery examples,
+the 42 v8 rows and the 161 dataset 9 rows) render into `LOOKUP_TEXT`, which the model fetches
+per topic with the local `get_creator_knowledge` tool (`LOOKUP_TOPICS`). The block ends with a "More on request"
 list naming each topic, so the model knows what it can look up. It sits
 under `app/prompt/` on purpose: `ci/stale-comment-check.py` watches that prefix
 (PROMPT_SOURCES), so editing the data forces a PROMPT_VERSION bump exactly like
@@ -145,6 +146,29 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     # answers in English and Hinglish (Latin script), same order, 2 to 4 each (checked at load).
     # Always sent, as "Coach questions" (COACH_QUESTIONS_HEADING); indexed as COACH_QUESTIONS.
     "coach_question": ("id", "resolves", "question_en", "question_hi", "options", "options_hi"),
+    # Dataset 9 (2026-09-26, shoot guide spec v2 Phase 6): how to FRAME a shot -- composition rules
+    # and worked examples per content category, plus the general shot-planning rows. Only its 8
+    # new types were taken (its other rows are older copies of rows already here). NOT in the
+    # always-sent block: they render only into the lookup topics "shot_planning" and one
+    # "framing_<category>" topic per composition category (see LOOKUP_TOPICS). The examples'
+    # compound confidence ("medium -- practical composition translation") was split at import:
+    # the first word stays the confidence, the rest became `limits`. `step_number` (an int) orders
+    # the planning steps; `organic_safe_zone_documented` (a bool) says whether the platform
+    # publishes a safe zone for normal posts. The knowledge file never names TikTok, so dataset 9's
+    # TikTok safe-zone row was not taken and "TikTok" in six other rows reads "the app".
+    "category_composition_rule": ("id", "category", "scenario", "rule", "rationale"),
+    "category_composition_example": (
+        "scenario", "platform", "category", "location", "lighting", "lens", "shot_type",
+        "subject_position", "camera_position", "camera_height", "camera_distance", "headroom",
+        "eye_line", "body_framing", "background", "negative_space", "text_position",
+        "text_safe_zone", "product_position", "movement", "recommended_composition", "reason",
+    ),
+    "action_to_shot_planning_step": ("step", "instruction"),
+    "shot_size_vocabulary": ("label", "visible_area", "gives_viewer"),
+    "camera_movement_principle": ("movement", "use_when", "why"),
+    "platform_safe_zone_fact": ("platform", "documented_organic_facts", "ad_only_safe_zone"),
+    "lighting_movement_principle": ("principle", "definition"),
+    "smartphone_perspective_principle": ("principle", "definition"),
 }
 
 # Fields that are non-empty lists of non-empty strings, not plain strings.
@@ -217,6 +241,15 @@ NAME_FIELD: dict[str, str] = {
     "walking_configuration": "configuration",
     # Coach question bank (always sent).
     "coach_question": "id",
+    # Dataset 9 framing and shot-planning rows (lookup only).
+    "category_composition_rule": "id",
+    "category_composition_example": "scenario",
+    "action_to_shot_planning_step": "step",
+    "shot_size_vocabulary": "label",
+    "platform_safe_zone_fact": "platform",
+    "camera_movement_principle": "movement",
+    "lighting_movement_principle": "principle",
+    "smartphone_perspective_principle": "principle",
 }
 
 KNOWN_CONFIDENCE: frozenset[str] = frozenset({"high", "medium", "low", "template"})
@@ -331,6 +364,25 @@ def _validate_row(row: Any, lineno: int) -> dict[str, Any]:
                 f"line {lineno}: coach_question {row['id']!r} needs {COACH_MIN_OPTIONS}-{COACH_MAX_OPTIONS}"
                 f" options, has {n_en}"
             )
+    if data_type in ("category_composition_rule", "category_composition_example"):
+        # A category with no framing topic would render nowhere (FRAMING_CATEGORY_TOPICS).
+        if row["category"].strip() not in FRAMING_CATEGORY_TOPICS:
+            raise KnowledgeFileError(
+                f"line {lineno}: {data_type} category {row['category']!r} has no framing topic"
+            )
+    if data_type == "action_to_shot_planning_step":
+        step_number = row.get("step_number")
+        if not isinstance(step_number, int) or isinstance(step_number, bool) or step_number < 1:
+            raise KnowledgeFileError(
+                f"line {lineno}: action_to_shot_planning_step {row['step']!r} needs a whole step_number"
+            )
+    if data_type == "platform_safe_zone_fact" and not isinstance(
+        row.get("organic_safe_zone_documented"), bool
+    ):
+        raise KnowledgeFileError(
+            f"line {lineno}: platform_safe_zone_fact {row['platform']!r} needs a true/false"
+            " organic_safe_zone_documented"
+        )
     if data_type == "length_guideline":
         m = _SECONDS_RANGE.match(row["starting_range_seconds"].strip())
         if not m or int(m.group(1)) >= int(m.group(2)):
@@ -868,6 +920,68 @@ LOOKUP_TOPICS: dict[str, str] = {
     "delivery_examples": (
         "Worked examples of stress, pauses and pace for a line (English, Hinglish, Hindi)."
     ),
+    "shot_planning": (
+        "Planning any shot: from the action to the shot in 8 steps, shot sizes (ECU to LS), camera"
+        " moves, light and movement, phone perspective and zoom, and what each platform publishes"
+        " about safe zones. The framing topic for Parenting, Wellness and Gaming."
+    ),
+}
+
+# Dataset 9's composition categories do not match the playbook names, so each one gets its own
+# framing topic, in this order: topic -> (the rows' `category`, the heading's name for it, who it
+# is for -- which names the live playbook categories that use it, see PLAYBOOK_FRAMING_TOPICS).
+FRAMING_TOPICS: dict[str, tuple[str, str, str]] = {
+    "framing_beauty_grwm": ("beauty/GRWM", "beauty and GRWM", "the Beauty & skincare category"),
+    "framing_fashion": ("fashion", "fashion", "the Fashion category"),
+    "framing_food_cooking": ("food/cooking", "food and cooking", "the Food category"),
+    "framing_fitness": ("fitness", "fitness", "the Fitness category"),
+    "framing_tech_product": ("tech/product", "tech and products", "the Tech & gadgets category, filmed products"),
+    "framing_screen_demo": (
+        "AI/screen demo", "AI and screen demos", "the Tech & gadgets category, screen and app shots"
+    ),
+    "framing_finance_education": (
+        "finance/education", "finance and education", "the Personal finance and Education categories"
+    ),
+    "framing_travel_vlog": ("travel/vlog", "travel and vlogs", "the Travel category"),
+    "framing_comedy_lifestyle": (
+        "comedy/lifestyle", "comedy and lifestyle", "the Comedy & entertainment and Lifestyle categories"
+    ),
+    "framing_groups": (
+        "interviews/podcasts/groups", "interviews, podcasts and groups",
+        "any category, when two or more people are in the shot",
+    ),
+    "framing_motivational": ("motivational", "motivational talks", "any category, for a motivational talk"),
+}
+
+# The rows' `category` -> its framing topic. A row whose category is not here fails at load.
+FRAMING_CATEGORY_TOPICS: dict[str, str] = {cat: topic for topic, (cat, _, _) in FRAMING_TOPICS.items()}
+
+LOOKUP_TOPICS.update({
+    topic: (
+        f"Framing for {label} ({who}): shot size, where to stand, headroom, eye line, text and"
+        " product position, with worked examples."
+    )
+    for topic, (_, label, who) in FRAMING_TOPICS.items()
+})
+
+# Live playbook category -> the topics a shoot plan for it looks up (spec v2 Phase 6 table).
+# Parenting, Wellness and Gaming have no composition rows of their own (Q8): shot_planning only.
+# Every playbook category must be here and every topic must name it (checked at import), so the
+# "More on request" list always tells the model which topic is its creator's.
+PLAYBOOK_FRAMING_TOPICS: dict[str, tuple[str, ...]] = {
+    "Beauty & skincare": ("framing_beauty_grwm",),
+    "Fashion": ("framing_fashion",),
+    "Food": ("framing_food_cooking",),
+    "Fitness": ("framing_fitness",),
+    "Tech & gadgets": ("framing_tech_product", "framing_screen_demo"),
+    "Personal finance": ("framing_finance_education",),
+    "Travel": ("framing_travel_vlog",),
+    "Comedy & entertainment": ("framing_comedy_lifestyle",),
+    "Parenting": ("shot_planning",),
+    "Lifestyle": ("framing_comedy_lifestyle",),
+    "Wellness": ("shot_planning",),
+    "Gaming": ("shot_planning",),
+    "Education": ("framing_finance_education",),
 }
 
 # The v8 rows' source document was not supplied, so nothing in them could be checked. Said
@@ -991,6 +1105,129 @@ def render_moving_lines(rows: list[dict[str, Any]]) -> list[str]:
     )
 
 
+def _clause(value: str) -> str:
+    """A field used mid-sentence: trimmed, without its own closing full stop."""
+    return value.strip().rstrip(".")
+
+
+def render_shot_planning_lines(rows: list[dict[str, Any]]) -> list[str]:
+    """The "shot_planning" lookup topic: dataset 9's general rows (planning steps in
+    `step_number` order, shot sizes, camera moves, light and movement, phone perspective, and
+    what each platform publishes). The platform facts are never a layout rule: the always-sent
+    "Export for the platform" row carries the safe zones Influora's guide draws."""
+    return _lookup_groups(
+        "Shot planning for any category (starting points, not laws; check the framing on the"
+        " creator's own phone and in the app preview):",
+        [
+            (
+                "From an action to a shot, in this order:",
+                [
+                    f"- {r['step']}: {r['instruction']}"
+                    for r in sorted(
+                        _by_type(rows, "action_to_shot_planning_step"), key=lambda r: r["step_number"]
+                    )
+                ],
+            ),
+            (
+                "Shot sizes (named by what is visible, not by a lens or a distance):",
+                [
+                    _with_note(
+                        f"- {r['label']}: Shows: {_clause(r['visible_area'])}. Gives the viewer:"
+                        f" {_clause(r['gives_viewer'])}.",
+                        r,
+                    )
+                    for r in _by_type(rows, "shot_size_vocabulary")
+                ],
+            ),
+            (
+                "Camera moves (move the phone only when it serves the action):",
+                [
+                    f"- {r['movement']}: Use when: {_clause(r['use_when'])}. Why: {_clause(r['why'])}."
+                    for r in _by_type(rows, "camera_movement_principle")
+                ],
+            ),
+            (
+                "Light and movement:",
+                [f"- {r['principle']}: {r['definition']}" for r in _by_type(rows, "lighting_movement_principle")],
+            ),
+            (
+                "Phone perspective and zoom:",
+                [
+                    f"- {r['principle']}: {r['definition']}"
+                    for r in _by_type(rows, "smartphone_perspective_principle")
+                ],
+            ),
+            (
+                "What each platform publishes (dated facts, not layout rules. For a normal post use the"
+                " safe zones under Export for the platform in your knowledge block; an ad safe zone is"
+                " never a rule for a normal post):",
+                [
+                    f"- {r['platform']}: {_clause(r['documented_organic_facts'])}. Safe zone for normal"
+                    f" posts: {'published' if r['organic_safe_zone_documented'] else 'not published'}."
+                    f" Ads only: {_clause(r['ad_only_safe_zone'])}."
+                    for r in _by_type(rows, "platform_safe_zone_fact")
+                ],
+            ),
+        ],
+    )
+
+
+def _with_note(line: str, r: dict[str, Any]) -> str:
+    note = r.get("note")
+    if isinstance(note, str) and note.strip():
+        line += f" Note: {note.strip()}"
+    return line
+
+
+def _composition_rule_line(r: dict[str, Any]) -> str:
+    line = f"- {r['scenario']} [{r['id']}]: {r['rule']} Why: {r['rationale']}"
+    if r["confidence"] == "low":
+        line += " Confidence: low."
+    return line
+
+
+def _composition_example_line(r: dict[str, Any]) -> str:
+    return _with_limits(
+        f"- {r['scenario']} ({r['platform']}): {_clause(r['recommended_composition'])}."
+        f" Where: {_clause(r['location'])}. Light: {_clause(r['lighting'])}."
+        f" Phone: {_clause(r['camera_position'])}; height: {_clause(r['camera_height'])};"
+        f" distance: {_clause(r['camera_distance'])}; lens: {_clause(r['lens'])}."
+        f" Shot: {_clause(r['shot_type'])}; framing: {_clause(r['body_framing'])}."
+        f" Stand: {_clause(r['subject_position'])}. Headroom: {_clause(r['headroom'])}."
+        f" Eyes: {_clause(r['eye_line'])}. Background: {_clause(r['background'])}."
+        f" Empty space: {_clause(r['negative_space'])}. Text: {_clause(r['text_position'])};"
+        f" {_clause(r['text_safe_zone'])}. Product: {_clause(r['product_position'])}."
+        f" Movement: {_clause(r['movement'])}. Why: {r['reason'].strip()}",
+        r,
+    )
+
+
+def render_framing_lines(rows: list[dict[str, Any]], topic: str) -> list[str]:
+    """One "framing_<category>" lookup topic: that composition category's rules, then its
+    worked examples. Raises KeyError for a topic not in FRAMING_TOPICS."""
+    category, label, _ = FRAMING_TOPICS[topic]
+
+    def of_category(data_type: str) -> list[dict[str, Any]]:
+        return [r for r in _by_type(rows, data_type) if r["category"].strip() == category]
+
+    return _lookup_groups(
+        f"Framing for {label} (starting points, not laws. The id in brackets after each rule is for"
+        " your reference only, never say it to the creator; check text placement in the app"
+        " preview before posting):",
+        [
+            (
+                "Framing rules:",
+                [_composition_rule_line(r) for r in of_category("category_composition_rule")],
+            ),
+            (
+                "Worked examples (one shot planned end to end; adapt it to the creator's room, phone"
+                " and light):",
+                [_composition_example_line(r) for r in of_category("category_composition_example")],
+            ),
+        ],
+    )
+
+
 def render_lookup_topic(rows: list[dict[str, Any]], topic: str) -> str:
     """One lookup topic's plain text. Raises KeyError for an unknown topic and
     KnowledgeFileError when the topic renders empty."""
@@ -998,7 +1235,11 @@ def render_lookup_topic(rows: list[dict[str, Any]], topic: str) -> str:
         "audio": render_audio_lines,
         "moving_between_spots": render_moving_lines,
         "delivery_examples": render_delivery_example_lines,
+        "shot_planning": render_shot_planning_lines,
     }
+    renderers.update({
+        t: (lambda rs, t=t: render_framing_lines(rs, t)) for t in FRAMING_TOPICS
+    })
     lines = renderers[topic](rows)
     if len(lines) < 2:
         raise KnowledgeFileError(f"lookup topic {topic!r} has no rows")
@@ -1044,6 +1285,28 @@ COACH_QUESTIONS: dict[str, dict[str, Any]] = {
 }
 if not COACH_QUESTIONS:
     raise KnowledgeFileError("no coach_question rows: the coach question bank is empty")
+
+
+def _check_playbook_framing_topics(rows: list[dict[str, Any]]) -> None:
+    """Every playbook category maps to lookup topics that exist, and each framing topic's
+    "More on request" line names the playbook categories that use it -- that line is how the
+    model finds its creator's framing topic."""
+    playbooks = {r["category"].strip() for r in _by_type(rows, "category_playbook")}
+    if playbooks != set(PLAYBOOK_FRAMING_TOPICS):
+        raise KnowledgeFileError(
+            "PLAYBOOK_FRAMING_TOPICS does not match the playbook categories:"
+            f" missing {sorted(playbooks - set(PLAYBOOK_FRAMING_TOPICS))},"
+            f" extra {sorted(set(PLAYBOOK_FRAMING_TOPICS) - playbooks)}"
+        )
+    for category, topics in PLAYBOOK_FRAMING_TOPICS.items():
+        for topic in topics:
+            if topic not in LOOKUP_TOPICS:
+                raise KnowledgeFileError(f"playbook {category!r} maps to unknown topic {topic!r}")
+            if category not in LOOKUP_TOPICS[topic]:
+                raise KnowledgeFileError(f"topic {topic!r} does not name its playbook {category!r}")
+
+
+_check_playbook_framing_topics(CREATOR_KNOWLEDGE_ROWS)
 
 # Every lookup topic, rendered once at import. An empty section raises here -- at startup.
 LOOKUP_TEXT: dict[str, str] = {

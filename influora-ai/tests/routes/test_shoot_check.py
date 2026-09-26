@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import struct
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -59,6 +60,7 @@ from app.prompt.frame_check_render import (
 from app.providers.claude import ClaudeTextResult
 from app.routes import chat as chat_route
 from app.routes import shoot_check as shoot_check_route
+from app.shoot.checklist import CHECK_LINES
 
 CREATOR_ID = "creator-user-shoot-check-001"
 BRAND_WS = "ws-brand-shoot-check-001"
@@ -531,6 +533,39 @@ async def test_happy_path_returns_code_written_steps_and_the_legacy_lists():
     assert result["cant_tell"] == [CANT_TELL_LINES["light_outside_frame"]["en"]]
     assert result["ask"] is None
     assert claude.complete_with_image.await_args.kwargs["model"] == SHOOT_CHECK_MODEL
+
+
+def _png_of(width: int, height: int) -> bytes:
+    """A PNG whose IHDR carries a real size (the route reads it for the 9:16 crop)."""
+    return b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\x0d" + b"IHDR" + struct.pack(">II", width, height) + b"\x00" * 200
+
+
+@pytest.mark.asyncio
+async def test_the_layout_and_the_quick_checks_come_back_from_the_route(caplog):
+    # Spec v2 2026-09-26, Phase 4: the route hands the parsed set-up and the upload's pixel size
+    # to the parser, the layout's boxes come back validated, and the checks are fixed lines.
+    face_high = {"x": 0.4, "y": 0.1, "w": 0.2, "h": 0.2}
+    set_up = {"shot_context": json.dumps({"line": "Medium shot - talking to camera", "prop": "Serum"})}
+    claude = _claude_ok(_reply(
+        layout={"faces": [face_high, {"x": "0.1", "y": 0, "w": 0.2, "h": 0.2}], "product": None},
+        checks=["The model's own line"],
+    ))
+    caplog.set_level(logging.INFO, logger="app.routes.shoot_check")
+
+    result = await _call(
+        "BRAND", BRAND_WS, claude=claude, spring=MagicMock(),
+        image=_png_of(1080, 1920), content_type="image/png", filename="shot.png", extra_fields=set_up,
+    )
+
+    assert result["fallback"] is False
+    assert result["layout"] == {"faces": [face_high], "product": None}
+    assert result["checks"] == [CHECK_LINES["face_in_top_bar"]["en"], CHECK_LINES["product_hidden"]["en"]]
+    assert "The model's own line" not in caplog.text and "Serum" not in caplog.text
+
+    # The same boxes on a JPEG whose header gives no size: the crop rules are skipped, the rest stay.
+    claude_again = _claude_ok(_reply(layout={"faces": [face_high], "product": None}))
+    no_size = await _call("BRAND", BRAND_WS, claude=claude_again, spring=MagicMock(), extra_fields=set_up)
+    assert no_size["checks"] == [CHECK_LINES["product_hidden"]["en"]]
 
 
 @pytest.mark.asyncio

@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -59,8 +60,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * self-invoked {@code @Transactional}, which would be inert. A database failure there is logged at
  * WARN and the check's result still goes back to the creator, with null ids.
  *
- * <p>Never stored: the image, {@code shot_context}, {@code answers}. The metadata holds only
- * influora-ai's code-written result (minus {@code fallback}) and the sanitised shot label.
+ * <p>Never stored: the image, {@code shot_context}, {@code answers}, and the result's geometry
+ * ({@code at}, {@code box}, {@code layout}; {@link #withoutGeometry}). The metadata holds only
+ * influora-ai's code-written result (minus {@code fallback} and geometry) and the sanitised shot
+ * label.
  */
 @Service
 public class PhotoCheckChatWriter {
@@ -548,11 +551,43 @@ public class PhotoCheckChatWriter {
         return card;
     }
 
+    /**
+     * Geometry keys influora-ai may put on a result: a step's spot ({@code at}) and "remove this"
+     * box ({@code box}), and the Reel layout's face/product boxes ({@code layout}). Shares of the
+     * photo, which is never stored -- so positions without it mean nothing (spec 2.3).
+     */
+    static final Set<String> GEOMETRY_KEYS = Set.of("at", "box", "layout");
+
+    /**
+     * A deep copy of {@code result} with every {@link #GEOMETRY_KEYS} key removed at any depth
+     * (top-level {@code layout}, {@code steps[].at}, {@code steps[].box}, and anywhere a later
+     * shape nests them). The live response keeps them; the stored row never has them, so a reload
+     * or a replayed key shows the numbered text only. {@code result} itself is not changed.
+     */
+    public static ObjectNode withoutGeometry(ObjectNode result) {
+        if (result == null) {
+            return null;
+        }
+        ObjectNode copy = result.deepCopy();
+        stripGeometry(copy);
+        return copy;
+    }
+
+    private static void stripGeometry(JsonNode node) {
+        if (node instanceof ObjectNode object) {
+            object.remove(GEOMETRY_KEYS);
+            object.elements().forEachRemaining(PhotoCheckChatWriter::stripGeometry);
+        } else if (node != null && node.isArray()) {
+            node.elements().forEachRemaining(PhotoCheckChatWriter::stripGeometry);
+        }
+    }
+
     static String metadataJson(ObjectNode result, String label) {
         ObjectNode metadata = JSON.createObjectNode();
         metadata.put("kind", METADATA_KIND);
         metadata.put("v", METADATA_VERSION);
-        metadata.set("result", result);
+        // Never stored: positions (spec 2.3). The response built from the same result keeps them.
+        metadata.set("result", withoutGeometry(result));
         if (label != null) {
             metadata.put("shot_label", label);
         }

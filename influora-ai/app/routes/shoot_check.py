@@ -85,6 +85,7 @@ from app.prompt.frame_check import (
 )
 from app.providers.claude import ClaudeProvider
 from app.security.redaction import log_event, shape_of
+from app.shoot.checklist import photo_size
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -539,11 +540,15 @@ async def shoot_check_frame(request: Request, authorization: str | None = Header
     # saved phone; what_i_see, ok and cant_tell are fixed templates; the question text is the
     # bank's, and a question this request already answers is dropped. An unusable photo (or a
     # `usable` that is not exactly "yes") comes back as its one fixed line; a usable photo with
-    # nothing to act on (no step and no question) -> the honest fallback.
+    # nothing to act on (no step and no question) -> the honest fallback. The layout's boxes are
+    # validated numbers only, and the quick checks are fixed lines (app/shoot/checklist.py),
+    # judged on the 9:16 crop of this photo -- its pixel size is read from the header here.
     reply = parse_frame_check_reply(
         result.text,
         answered_ids=answered_question_ids(answers, shot_context, phone_row),
         phone_row=phone_row,
+        shot_context=shot_context,
+        photo_size=photo_size(image_bytes, content_type),
     )
     parsed = reply.body
     if parsed is None:
@@ -574,6 +579,8 @@ async def shoot_check_frame(request: Request, authorization: str | None = Header
             "settings_count": len(parsed["settings"]),
             "ok_count": len(parsed["ok"]),
             "cant_tell_count": len(parsed["cant_tell"]),
+            "checks_count": len(parsed.get("checks") or []),
+            "layout_faces": len(parsed["layout"]["faces"]) if "layout" in parsed else None,
             "usable": reply.usable,
             "lang": reply.lang,
             "scene_read": reply.scene_read,

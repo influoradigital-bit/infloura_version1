@@ -45,7 +45,25 @@ from app.tools.creator_schemas import (
 )
 from app.tools.schemas import get_tool_schemas, is_known_tool, is_local_tool
 
-TOPICS = ["audio", "moving_between_spots", "delivery_examples"]
+TOPICS = [
+    "audio",
+    "moving_between_spots",
+    "delivery_examples",
+    # dataset 9 (2026-09-26, shoot guide spec v2 Phase 6): shot planning, then one framing topic
+    # per composition category (FRAMING_TOPICS order).
+    "shot_planning",
+    "framing_beauty_grwm",
+    "framing_fashion",
+    "framing_food_cooking",
+    "framing_fitness",
+    "framing_tech_product",
+    "framing_screen_demo",
+    "framing_finance_education",
+    "framing_travel_vlog",
+    "framing_comedy_lifestyle",
+    "framing_groups",
+    "framing_motivational",
+]
 
 # The v8 audio / movement rows: lookup only, never in the always-sent block.
 V8_TYPES: tuple[str, ...] = (
@@ -65,8 +83,12 @@ V8_TYPES: tuple[str, ...] = (
 # shape and the coach question ids; 38,529 since the picks-only photo check (.25.2) spelled out
 # the scene values and the ok / cant_tell ids; 38,643 since the review fixes named the coach
 # notes that are never a step and asked for a usable value only. The lookup tool is chat-only:
-# nothing it moved or added may reach the frame check.
-FRAME_CHECK_CHARS_AT_COACH_BANK = 38_643
+# nothing it moved or added may reach the frame check. +361 since the shoot guide spec v2
+# (2026-09-26) rewrote the Instagram Reels / YouTube Shorts export row's safe zones to the
+# safe-zone config in words: the frame check renders the export rows. Dataset 9's framing rows
+# are lookup only and add nothing here. +336 since the same spec's Phase 4 asks the photo
+# check for layout boxes: 126 chars of reply shape plus the 210-char layout rule.
+FRAME_CHECK_CHARS_AT_COACH_BANK = 38_643 + 361 + 336
 
 _COMBINATORS = ("anyOf", "oneOf", "allOf")
 

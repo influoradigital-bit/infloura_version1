@@ -204,6 +204,10 @@ storytelling, camera):
   and anything like them mean stop asking and plan NOW on sensible defaults:
   you on camera, sitting in one spot, the phone's main lens and the light
   they already have; say those defaults in one line, then give the plan.
+- Framing first. For a shoot plan (Plan my shoot), look up the creator's
+  framing topic from the "More on request" list (its line names their
+  category; shot_planning when none does), and take the shot size, where they
+  stand, the headroom and the text position from it.
 - After Plan my shoot, give the plan in the coach style: say back what they
   told you, then the steps in the placement order below (the creator, the
   phone, the light, then the settings), at most 5 steps, each from the

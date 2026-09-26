@@ -198,6 +198,101 @@ export interface MeeraShootCheckFrameResult {
    *  older server that does not send it, inferred from that same shape (a `whatISee` line and
    *  nothing else). */
   retake: boolean;
+  /** Where the faces and the product are in the photo (spec Phase 4), for the Reel layout guide.
+   *  Positions only: no labels, no identities. Absent from an older server, and from a card rebuilt
+   *  from history (Spring strips geometry before storing), so the guide shows on the newest card only. */
+  layout?: MeeraShootCheckLayout;
+  /** Code-written quick checks (influora-ai `app/shoot/checklist.py`, never model text). Absent when
+   *  the server sends none. */
+  checks?: string[];
+}
+
+/** A point on the photo AS SENT (unmirrored): shares 0..1 of its width and height, (0, 0) top-left
+ *  (spec 2.2). */
+export interface MeeraGeomPoint {
+  x: number;
+  y: number;
+}
+
+/** A box on the photo as sent: (x, y) is its top-left corner; all four are shares 0..1 (spec 2.2). */
+export interface MeeraGeomBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface MeeraShootCheckLayout {
+  /** At most `SHOOT_CHECK_MAX_FACES`. */
+  faces: MeeraGeomBox[];
+  product: MeeraGeomBox | null;
+}
+
+/** Per-list maximums from spec 2.2 (pins: 6 belongs to Phase 3). */
+export const SHOOT_CHECK_MAX_FACES = 8;
+/** Quick-check lines kept from one reply; the server writes a handful at most. */
+export const SHOOT_CHECK_MAX_CHECKS = 10;
+
+/** A geometry number: a real, finite number (never a boolean, string or null) inside [0, 1]. */
+function geomShare(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
+}
+
+const round3 = (value: number): number => Math.round(value * 1000) / 1000;
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+/**
+ * The twin of influora-ai's `normalize_point` (spec 2.2): an `{x, y}` object with nothing else, both
+ * finite shares in [0, 1], rounded to 3 decimals. Anything else is `null`, so the caller drops that
+ * one point and keeps the rest of the reply.
+ */
+export function normalizePoint(value: unknown): MeeraGeomPoint | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (!hasOnlyKeys(raw, ['x', 'y'])) return null;
+  const x = geomShare(raw.x);
+  const y = geomShare(raw.y);
+  if (x === null || y === null) return null;
+  return { x: round3(x), y: round3(y) };
+}
+
+/**
+ * The twin of influora-ai's `normalize_box` (spec 2.2): `{x, y, w, h}` and nothing else; x and y in
+ * [0, 1]; w and h above 0.02 and at most 1; the box ends inside the photo (x + w and y + h at most
+ * 1.001). Rounded to 3 decimals after validation. `null` when any rule fails.
+ */
+export function normalizeBox(value: unknown): MeeraGeomBox | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (!hasOnlyKeys(raw, ['x', 'y', 'w', 'h'])) return null;
+  const x = geomShare(raw.x);
+  const y = geomShare(raw.y);
+  const w = geomShare(raw.w);
+  const h = geomShare(raw.h);
+  if (x === null || y === null || w === null || h === null) return null;
+  if (w <= 0.02 || h <= 0.02) return null;
+  if (x + w > 1.001 || y + h > 1.001) return null;
+  return { x: round3(x), y: round3(y), w: round3(w), h: round3(h) };
+}
+
+/** `layout` from a photo-check body: each bad face dropped on its own, at most
+ *  `SHOOT_CHECK_MAX_FACES` kept (whole items, in order), a bad product read as none. Unknown keys
+ *  are ignored. `undefined` when the body has no usable `layout` object at all. */
+function parseShootCheckLayout(value: unknown): MeeraShootCheckLayout | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const { faces, product } = value as { faces?: unknown; product?: unknown };
+  const kept: MeeraGeomBox[] = [];
+  if (Array.isArray(faces)) {
+    for (const face of faces as unknown[]) {
+      if (kept.length >= SHOOT_CHECK_MAX_FACES) break;
+      const box = normalizeBox(face);
+      if (box) kept.push(box);
+    }
+  }
+  return { faces: kept, product: normalizeBox(product) };
 }
 
 export type MeeraShootCheckStepKind = 'move_you' | 'move_phone' | 'move_light' | 'settings';
@@ -431,7 +526,7 @@ export function parseShootCheckFrameBody(body: Record<string, unknown>): MeeraSh
     typeof body.retake === 'boolean'
       ? body.retake
       : whatISee !== null && steps.length === 0 && ok.length === 0 && cantTell.length === 0 && ask === null;
-  return {
+  const result: MeeraShootCheckFrameResult = {
     fixes: asStringArray(body.fixes),
     settings: asStringArray(body.settings),
     ok,
@@ -442,6 +537,12 @@ export function parseShootCheckFrameBody(body: Record<string, unknown>): MeeraSh
     lang,
     retake,
   };
+  // Only set when sent, so a body from an older server parses to exactly what it always did.
+  const layout = parseShootCheckLayout(body.layout);
+  if (layout) result.layout = layout;
+  const checks = asStringArray(body.checks, SHOOT_CHECK_MAX_CHECKS);
+  if (checks.length > 0) result.checks = checks;
+  return result;
 }
 
 /**
@@ -1250,7 +1351,25 @@ export type CreatorTrailToolName = CreatorToolName | CreatorLocalToolName;
  * (app/prompt/content_knowledge.py), in the same order. A topic outside this list still shows a
  * step, just with the generic "Checking Influora's notes" label.
  */
-export const CREATOR_KNOWLEDGE_TOPICS = ['audio', 'moving_between_spots', 'delivery_examples'] as const;
+export const CREATOR_KNOWLEDGE_TOPICS = [
+  'audio',
+  'moving_between_spots',
+  'delivery_examples',
+  // Shoot guide spec v2 (2026-09-26), Phase 6: shot planning, then one framing topic per
+  // composition category (influora-ai's FRAMING_TOPICS, appended to LOOKUP_TOPICS in that order).
+  'shot_planning',
+  'framing_beauty_grwm',
+  'framing_fashion',
+  'framing_food_cooking',
+  'framing_fitness',
+  'framing_tech_product',
+  'framing_screen_demo',
+  'framing_finance_education',
+  'framing_travel_vlog',
+  'framing_comedy_lifestyle',
+  'framing_groups',
+  'framing_motivational',
+] as const;
 
 export type CreatorKnowledgeTopic = (typeof CREATOR_KNOWLEDGE_TOPICS)[number];
 

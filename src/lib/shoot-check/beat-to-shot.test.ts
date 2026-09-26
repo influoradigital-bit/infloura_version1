@@ -13,7 +13,9 @@ import {
   SHOT_LABEL_MAX_CHARS,
   shotFromBeat,
   shotFromLabel,
+  shotSizeForShot,
   targetForShot,
+  targetForShotSize,
 } from './beat-to-shot';
 
 const SCRIPT: ParsedMeeraScript = {
@@ -156,5 +158,50 @@ describe('shotFromLabel — "Check again" on a card rehydrated from history', ()
     expect(shot.target).toBe('wide');
     expect(shot.seconds).toBe(0);
     expect(shot.context?.line).toBe('Wide shot of the shop');
+  });
+});
+
+describe('shotSizeForShot (spec v2 Phase 5a mapping)', () => {
+  it('maps each size word, first match in the spec order', () => {
+    expect(shotSizeForShot('Extreme close-up on the label')).toBe('ECU');
+    expect(shotSizeForShot('Medium close-up, talking')).toBe('MCU');
+    expect(shotSizeForShot('Close-up on your face')).toBe('CU');
+    expect(shotSizeForShot('Medium long shot walking in')).toBe('MLS');
+    expect(shotSizeForShot('3/4 shot by the door')).toBe('MLS');
+    expect(shotSizeForShot('Framed at the knees')).toBe('MLS');
+    expect(shotSizeForShot('Medium on the certificate')).toBe('MS');
+    expect(shotSizeForShot('From the waist up')).toBe('MS');
+    expect(shotSizeForShot('Full body walking in')).toBe('FS');
+    expect(shotSizeForShot('Full shot of the outfit')).toBe('FS');
+    expect(shotSizeForShot('Wide shot of the kitchen counter')).toBe('LS');
+    expect(shotSizeForShot('Establishing shot of the shop')).toBe('LS');
+    expect(shotSizeForShot('Long shot down the lane')).toBe('LS');
+    expect(shotSizeForShot('Overhead on your hands - pour')).toBe('OVERHEAD');
+    expect(shotSizeForShot('Top-down on the plate')).toBe('OVERHEAD');
+    expect(shotSizeForShot('Your hands folding the cloth')).toBe('OVERHEAD');
+  });
+
+  it('anything else is MS', () => {
+    expect(shotSizeForShot('Talking to camera by the window')).toBe('MS');
+    expect(shotSizeForShot('')).toBe('MS');
+    // "long" only as a word: "along" is not a long shot.
+    expect(shotSizeForShot('Walk along the stall')).toBe('MS');
+  });
+
+  it('gives every beat of the fixture script a size', () => {
+    expect(SCRIPT.beats.map((b) => shotSizeForShot(b.shot))).toEqual(['CU', 'OVERHEAD', 'LS', 'MS']);
+  });
+
+  it('maps a size to the unchanged checker target', () => {
+    expect(targetForShotSize('ECU')).toBe('closeup');
+    expect(targetForShotSize('CU')).toBe('closeup');
+    expect(targetForShotSize('MCU')).toBe('medium');
+    expect(targetForShotSize('MS')).toBe('medium');
+    expect(targetForShotSize('MLS')).toBe('wide');
+    expect(targetForShotSize('FS')).toBe('wide');
+    expect(targetForShotSize('LS')).toBe('wide');
+    expect(targetForShotSize('OVERHEAD')).toBe('hands-overhead');
+    // targetForShot keeps its own word order: the stored-card target never moves.
+    expect(targetForShot('Medium close-up, talking')).toBe('closeup');
   });
 });

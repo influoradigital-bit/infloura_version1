@@ -17,6 +17,7 @@ import pytest
 from app.prompt.assembler import assemble_prompt
 from app.prompt.content_knowledge import (
     CREATOR_KNOWLEDGE_TEXT,
+    FRAMING_CATEGORY_TOPICS,
     KNOWLEDGE_BLOCK_HEADING,
     LOOKUP_TEXT,
     KNOWLEDGE_PATH,
@@ -107,8 +108,10 @@ def test_committed_knowledge_file_loads_every_row_by_type():
     # and movement rows -> 349. The v8 rows and the 12 delivery examples are NOT always sent:
     # they render only into LOOKUP_TEXT (get_creator_knowledge); see
     # test_creator_lighting_placement.py for the always-sent budget. Plus the coach question
-    # bank (2026-09-25): 10 always-sent coach_question rows -> 359.
-    assert len(rows) == 359
+    # bank (2026-09-25): 10 always-sent coach_question rows -> 359. Plus dataset 9 (2026-09-26,
+    # shoot guide spec v2 Phase 6): its 162 rows in 8 new types minus the TikTok safe-zone row
+    # (the file never names TikTok) -> 161 lookup-only framing and shot-planning rows -> 520.
+    assert len(rows) == 520
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["data_type"]] = counts.get(r["data_type"], 0) + 1
@@ -165,6 +168,15 @@ def test_committed_knowledge_file_loads_every_row_by_type():
         "walking_configuration": 4,
         # coach question bank, always sent
         "coach_question": 10,
+        # dataset 9 framing and shot planning, lookup only
+        "category_composition_rule": 109,
+        "category_composition_example": 20,
+        "action_to_shot_planning_step": 8,
+        "shot_size_vocabulary": 7,
+        "camera_movement_principle": 6,
+        "platform_safe_zone_fact": 4,
+        "lighting_movement_principle": 4,
+        "smartphone_perspective_principle": 3,
     }
 
 
@@ -370,6 +382,16 @@ LOOKUP_ONLY_TYPES: dict[str, str] = {
     "audio_movement_scenario": "audio",
     "movement_continuity_rule": "moving_between_spots",
     "walking_configuration": "moving_between_spots",
+    # dataset 9 (2026-09-26): general rows in shot_planning; the composition rows go to their
+    # category's framing topic (FRAMING_CATEGORY_TOPICS), resolved per row below.
+    "action_to_shot_planning_step": "shot_planning",
+    "shot_size_vocabulary": "shot_planning",
+    "camera_movement_principle": "shot_planning",
+    "platform_safe_zone_fact": "shot_planning",
+    "lighting_movement_principle": "shot_planning",
+    "smartphone_perspective_principle": "shot_planning",
+    "category_composition_rule": "framing",
+    "category_composition_example": "framing",
 }
 
 
@@ -428,13 +450,37 @@ def test_every_row_reaches_the_knowledge_text():
             "movement_continuity_rule": "rule",
             "walking_configuration": "configuration",
             "coach_question": "id",
+            "category_composition_rule": "id",
+            "category_composition_example": "scenario",
+            "action_to_shot_planning_step": "step",
+            "shot_size_vocabulary": "label",
+            "platform_safe_zone_fact": "platform",
+            "camera_movement_principle": "movement",
+            "lighting_movement_principle": "principle",
+            "smartphone_perspective_principle": "principle",
         }[r["data_type"]]
         topic = LOOKUP_ONLY_TYPES.get(r["data_type"])
+        if topic == "framing":
+            topic = FRAMING_CATEGORY_TOPICS[r["category"]]
         if topic is None:
             assert r[name] in CREATOR_KNOWLEDGE_TEXT, r[name]
         else:
             assert r[name] in LOOKUP_TEXT[topic], (topic, r[name])
+            # Four dataset 9 names ("Handheld", "Whip pan", "Instagram Reels", "YouTube Shorts")
+            # were already words of the block before the merge: that is not a leak. The byte
+            # comparison in test_creator_framing_knowledge.py is the full proof.
+            if _mentions(r[name], _PRE_MERGE_BLOCK) and r["data_type"] in _DATASET_9_TYPES:
+                continue
             assert not _mentions(r[name], CREATOR_KNOWLEDGE_TEXT), r[name]
+
+
+_PRE_MERGE_BLOCK = (
+    Path(__file__).parent / "fixtures" / "creator_knowledge_every_turn_pre_merge.txt"
+).read_bytes().decode("utf-8")
+
+_DATASET_9_TYPES = frozenset(
+    t for t, topic in LOOKUP_ONLY_TYPES.items() if topic in ("shot_planning", "framing")
+)
 
 
 def _mentions(name: str, text: str) -> bool:

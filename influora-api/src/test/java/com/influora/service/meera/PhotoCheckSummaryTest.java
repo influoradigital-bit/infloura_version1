@@ -189,4 +189,71 @@ class PhotoCheckSummaryTest {
         assertTrue(text.length() <= PhotoCheckSummary.MAX_CHARS, String.valueOf(text.length()));
         assertTrue(text.endsWith("I asked: Can you move to a different spot for this shot?"), text);
     }
+
+    @Test
+    @DisplayName("Phase 4: the code-written checks become one 'Quick checks:' line after the steps, before 'Looking good'")
+    void quickChecksLine() {
+        ObjectNode body = ((ObjectNode) bodies.get("park_sun_en_find_x8_ultra")).deepCopy();
+        body.putArray("checks")
+                .add("Your face is near the edge; the app's buttons can cover it.")
+                .add("The product is low, where captions and buttons go.")
+                .add(7)
+                .add("  ");
+        String text = PhotoCheckSummary.render(body, null);
+        assertTrue(
+                text.contains(
+                        "\nQuick checks: Your face is near the edge; the app's buttons can cover it."
+                                + " The product is low, where captions and buttons go.\nLooking good: "),
+                text);
+        String[] lines = text.split("\n");
+        int quick = -1;
+        int lastStep = -1;
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].startsWith("Quick checks:")) {
+                quick = i;
+            }
+            if (lines[i].matches("\\d+\\) .*")) {
+                lastStep = i;
+            }
+        }
+        assertTrue(lastStep >= 0 && quick == lastStep + 1, text);
+        assertEquals(1, Arrays.stream(lines).filter(l -> l.startsWith("Quick checks:")).count(), text);
+
+        // No checks (every committed fixture today): no line.
+        assertFalse(PhotoCheckSummary.render(bodies.get("park_sun_en_find_x8_ultra"), null).contains("Quick checks"));
+        ObjectNode empty = body.deepCopy();
+        empty.putArray("checks");
+        assertFalse(PhotoCheckSummary.render(empty, null).contains("Quick checks"));
+    }
+
+    @Test
+    @DisplayName("Phase 4 trim order: quick checks go before 'Looking good', which then goes before cant_tell")
+    void quickChecksTrimFirst() {
+        ObjectNode body = ((ObjectNode) bodies.get("bedroom_window_behind_en_a78")).deepCopy();
+        String longItem = "x".repeat(300);
+        ArrayNode ok = body.putArray("ok");
+        ok.add("Your phone is at eye level.");
+        ArrayNode checks = body.putArray("checks");
+        for (int i = 0; i < 4; i++) {
+            checks.add("check-" + i + " " + longItem + ".");
+        }
+
+        // Checks alone push it over: checks are trimmed, "Looking good" stays whole.
+        String trimmed = PhotoCheckSummary.render(body, null);
+        assertTrue(trimmed.length() <= PhotoCheckSummary.MAX_CHARS, trimmed);
+        assertFalse(trimmed.contains("check-3"), "the last check goes first");
+        assertTrue(trimmed.contains("\nLooking good: Your phone is at eye level."), trimmed);
+        assertTrue(trimmed.contains("Can't tell from one photo:"), trimmed);
+        assertTrue(trimmed.contains("I asked:"), trimmed);
+
+        // Long ok too: every check is gone before ok loses an item.
+        for (int i = 0; i < 4; i++) {
+            ok.add("ok-" + i + " " + longItem + ".");
+        }
+        String both = PhotoCheckSummary.render(body, null);
+        assertTrue(both.length() <= PhotoCheckSummary.MAX_CHARS, both);
+        assertFalse(both.contains("Quick checks:"), both);
+        assertTrue(both.contains("Looking good: Your phone is at eye level."), both);
+        assertTrue(both.contains("I asked:"), both);
+    }
 }

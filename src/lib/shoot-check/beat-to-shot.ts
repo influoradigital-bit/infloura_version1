@@ -49,6 +49,58 @@ export function targetForShot(shot: string): ShotTarget {
   return 'medium';
 }
 
+/**
+ * The shot size the live camera guide draws (spec v2 Phase 5a). Finer than `ShotTarget`: the
+ * guide's eye-line, hook-text and lower-crop bands differ between a medium close-up and a medium
+ * shot, while the checker only knows four targets. LS is drawn as FS; OVERHEAD has no face bands.
+ */
+export type ShotSize = 'ECU' | 'CU' | 'MCU' | 'MS' | 'MLS' | 'FS' | 'LS' | 'OVERHEAD';
+
+/** The spec's mapping, first match wins, in this order. `null` when no size word is in the text. */
+const SHOT_SIZE_RULES: ReadonlyArray<readonly [RegExp, ShotSize]> = [
+  [/extreme[\s-]*close/i, 'ECU'],
+  [/medium[\s-]*close/i, 'MCU'],
+  [/close/i, 'CU'],
+  [/medium[\s-]*long|3\/4|knees/i, 'MLS'],
+  [/medium|waist/i, 'MS'],
+  [/full[\s-]*(?:body|shot)/i, 'FS'],
+  [/wide|establishing|\blong\b/i, 'LS'],
+  [/overhead|top.?down|hands/i, 'OVERHEAD'],
+];
+
+export function explicitShotSize(shot: string): ShotSize | null {
+  for (const [re, size] of SHOT_SIZE_RULES) if (re.test(shot)) return size;
+  return null;
+}
+
+/** Before Phase 6 this reads the beat's shot text; anything without a size word is MS. */
+export function shotSizeForShot(shot: string): ShotSize {
+  return explicitShotSize(shot) ?? 'MS';
+}
+
+/**
+ * A size's `ShotTarget` for the existing checker (spec v2 Phase 5a, unchanged): ECU/CU -> closeup,
+ * MCU/MS -> medium, MLS/FS/LS -> wide, OVERHEAD -> hands-overhead. `targetForShot` above is NOT
+ * rewritten on top of this: it keeps its own word order ("medium close-up" stays a close-up target),
+ * so a stored check's framing target never moves under an already-shipped card.
+ */
+export function targetForShotSize(size: ShotSize): ShotTarget {
+  switch (size) {
+    case 'ECU':
+    case 'CU':
+      return 'closeup';
+    case 'MCU':
+    case 'MS':
+      return 'medium';
+    case 'MLS':
+    case 'FS':
+    case 'LS':
+      return 'wide';
+    case 'OVERHEAD':
+      return 'hands-overhead';
+  }
+}
+
 function onCameraFor(shot: string, target: ShotTarget): string | undefined {
   if (target === 'hands-overhead') return ON_CAMERA_HANDS_ONLY;
   if (/voice.?over/i.test(shot)) return ON_CAMERA_VOICE_OVER;

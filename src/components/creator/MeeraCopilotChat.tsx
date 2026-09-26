@@ -426,6 +426,9 @@ export function MeeraCopilotChat({
   const [camera, setCamera] = React.useState<{ shots: ShootCheckShot[]; initialShotIndex?: number } | null>(null);
   const [checking, setChecking] = React.useState(false);
   const [liveCheckId, setLiveCheckId] = React.useState<string | null>(null);
+  // The newest check's photo, for its Reel layout guide (spec v2 Phase 4). Same lifetime as the
+  // session's blob: replaced by the next check, gone when the chat unmounts, never stored.
+  const [livePhoto, setLivePhoto] = React.useState<Blob | null>(null);
   const photoSessionRef = React.useRef<PhotoCheckSession | null>(null);
 
   // Long chats (SPEC 3b): the DOM window starts at this row; null means "the newest 50".
@@ -751,6 +754,7 @@ export function MeeraCopilotChat({
           );
           photoSessionRef.current = { messageId: cardId, photoId: args.photoId, blob: args.blob, shot: args.shot, answers: args.answers };
           setLiveCheckId(cardId);
+          setLivePhoto(args.blob);
           return;
         }
 
@@ -1349,6 +1353,7 @@ export function MeeraCopilotChat({
               message={m}
               language={language}
               isLivePhotoCheck={m.id === liveCheckId}
+              livePhoto={m.id === liveCheckId ? livePhoto : null}
               photoCheckBusy={
                 m.resultCard?.kind === 'photoCheck' || m.resultCard?.kind === 'script' ? cameraBusy : false
               }

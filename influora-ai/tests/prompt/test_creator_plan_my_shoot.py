@@ -280,7 +280,9 @@ def test_version_note_keeps_the_previously_chain():
 
     source = Path(config_module.__file__).read_text(encoding="utf-8")
     note = source[source.index('PROMPT_VERSION = "') : source.index("# Previously (.12):")]
-    assert 'PROMPT_VERSION = "meera-2026.09.25.6"' in note
+    assert 'PROMPT_VERSION = "meera-2026.09.25.7"' in note
+    assert "shoot guide grid (spec v2 2026-09-26" in note
+    assert "# Previously (.25.6):" in note
     assert "brand Meera flags ASCI claims and the ad label" in note
     assert "# Previously (.25.5):" in note
     assert "photo check inside Meera's chat" in note

@@ -458,6 +458,39 @@ describe('answer chips', () => {
   });
 });
 
+describe('the Reel layout guide (spec v2 Phase 4)', () => {
+  it('shows on the newest card only, with the photo the chat still holds', async () => {
+    const createObjectURL = vi.fn(() => 'blob:photo');
+    Object.defineProperty(URL, 'createObjectURL', { value: createObjectURL, configurable: true, writable: true });
+    Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true, writable: true });
+    const face = { x: 0.35, y: 0.2, w: 0.3, h: 0.2 };
+    const user = await openChat();
+    checkFrameMock
+      .mockResolvedValueOnce({
+        kind: 'ok',
+        result: { ...BEDROOM, layout: { faces: [face], product: null } },
+        chat: { text: SUMMARY_1, messageId: 'srv_a1', userMessageId: 'srv_u1' },
+      })
+      .mockResolvedValueOnce({
+        kind: 'ok',
+        result: { ...KITCHEN, layout: { faces: [face], product: null } },
+        chat: { text: SUMMARY_2, messageId: 'srv_a2', userMessageId: 'srv_u2' },
+      });
+
+    await captureFromComposer(user);
+    const first = await screen.findByTestId('photo-check-message');
+    expect(within(first).getByTestId('reel-layout-guide')).toBeInTheDocument();
+    // The guide shows the photo the check was sent with, as an object URL of that same blob.
+    expect(createObjectURL).toHaveBeenCalledWith(checkFrameMock.mock.calls[0][0]);
+
+    await captureFromComposer(user);
+    await waitFor(() => expect(screen.getAllByTestId('photo-check-message')).toHaveLength(2));
+    const [older, newer] = screen.getAllByTestId('photo-check-message');
+    expect(within(older).queryByTestId('reel-layout-guide')).toBeNull();
+    expect(within(newer).getByTestId('reel-layout-guide')).toBeInTheDocument();
+  });
+});
+
 describe('what the next turn replays to Meera', () => {
   it('carries the stored summary and never the greeting, refusal, error or failed-check bubbles', async () => {
     const user = await openChat();

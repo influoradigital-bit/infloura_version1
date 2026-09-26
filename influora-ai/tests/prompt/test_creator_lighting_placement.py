@@ -34,6 +34,7 @@ from app.prompt.content_knowledge import (
     LIGHTING_LOOKS_HEADING,
     PLACEMENT_HEADING,
     REQUIRED_FIELDS,
+    render_knowledge_block,
     render_placement_lines,
 )
 from app.prompt.creator_persona import MEERA_CREATOR_PERSONA
@@ -323,21 +324,19 @@ def _in_any_lookup_topic(value: str) -> bool:
     return any(value in text for text in LOOKUP_TEXT.values())
 
 
-def _mentions(name: str, text: str) -> bool:
-    """Whole-token match: the mic distance "5 m" is not found inside "15 minutes"."""
-    return re.search(rf"(?<![\w.]){re.escape(name)}(?!\w)", text) is not None
-
-
 def _always_sent_rows() -> list[dict]:
-    """Rows that render into the always-sent block: every row EXCEPT the lookup-only ones,
-    which are found by where their name actually renders (a lookup topic and not the
-    block), not by a hand-kept list that could drift from the renderer."""
+    """Rows that render into the always-sent block, found by what the renderer does, not by a
+    hand-kept list that could drift from it: a row is always sent when taking it out changes
+    the block. (Until 2026-09-26 this matched names, but four dataset 9 lookup-only names --
+    "Handheld", "Whip pan", "Instagram Reels", "YouTube Shorts" -- are also ordinary words of
+    the block.) Every other row must render into a lookup topic."""
     out = []
-    for r in CREATOR_KNOWLEDGE_ROWS:
-        name = str(r[NAME_FIELD[r["data_type"]]])
-        if not _mentions(name, CREATOR_KNOWLEDGE_TEXT) and _in_any_lookup_topic(name):
+    rows = CREATOR_KNOWLEDGE_ROWS
+    for i, r in enumerate(rows):
+        if render_knowledge_block(rows[:i] + rows[i + 1 :]) != CREATOR_KNOWLEDGE_TEXT:
+            out.append(r)
             continue
-        out.append(r)
+        assert _in_any_lookup_topic(str(r[NAME_FIELD[r["data_type"]]])), r
     return out
 
 
@@ -349,9 +348,11 @@ def test_knowledge_block_stays_under_the_size_budget():
     assert len(CREATOR_KNOWLEDGE_TEXT) < 125_000
     always_sent = _always_sent_rows()
     assert len(always_sent) <= 320
-    # 359 rows in the file (349 + the 10 always-sent coach questions of 2026-09-25), 54 behind
-    # the tool (12 delivery examples + 42 v8 audio/movement).
-    assert len(CREATOR_KNOWLEDGE_ROWS) - len(always_sent) == 54
+    # 520 rows in the file (349 + the 10 always-sent coach questions of 2026-09-25 + dataset 9's
+    # 161 of 2026-09-26), 215 behind the tool (12 delivery examples + 42 v8 audio/movement + 161
+    # dataset 9 framing and shot planning).
+    assert len(always_sent) == 305
+    assert len(CREATOR_KNOWLEDGE_ROWS) - len(always_sent) == 215
     lookup_only_types = {r["data_type"] for r in CREATOR_KNOWLEDGE_ROWS} - {
         r["data_type"] for r in always_sent
     }

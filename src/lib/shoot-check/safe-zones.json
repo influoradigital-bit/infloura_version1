@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "platforms": {
+    "instagram_reels": {
+      "default": {
+        "status": "interim_unmeasured",
+        "source": "interim 2026-09-26",
+        "top": 0.14,
+        "caption_line": 0.65,
+        "covered_from": 0.78,
+        "side": 0.04,
+        "rail": { "x": 0.86, "y_from": 0.5, "y_to": 0.78 },
+        "cta_band": { "x_to": 0.55 }
+      },
+      "device_classes": {}
+    },
+    "youtube_shorts": {
+      "default": {
+        "status": "interim_unmeasured",
+        "source": "interim 2026-09-26",
+        "top": 0.14,
+        "caption_line": 0.65,
+        "covered_from": 0.78,
+        "side": 0.04,
+        "rail": { "x": 0.86, "y_from": 0.5, "y_to": 0.78 },
+        "cta_band": { "x_to": 0.55 }
+      },
+      "device_classes": {}
+    },
+    "tiktok": {
+      "default": {
+        "status": "interim_unmeasured",
+        "source": "interim 2026-09-26",
+        "top": 0.14,
+        "caption_line": 0.65,
+        "covered_from": 0.78,
+        "side": 0.04,
+        "rail": { "x": 0.86, "y_from": 0.5, "y_to": 0.78 },
+        "cta_band": { "x_to": 0.55 }
+      },
+      "device_classes": {}
+    }
+  }
+}

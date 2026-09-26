@@ -137,6 +137,9 @@ export interface MeeraMessageRowProps {
   language: string;
   /** True only on the newest photo-check card: its answer chips are live. */
   isLivePhotoCheck: boolean;
+  /** The newest photo-check card's photo while the chat holds it (null on every other row), for
+   *  its Reel layout guide. Never stored. */
+  livePhoto?: Blob | null;
   /** A photo check is running or a chat turn is streaming, so the chat would ignore a camera tap:
    *  photo-check cards disable their chips and "Check again", and a script card its "Check my
    *  set-up" buttons. The chat passes `false` to every other row so a check or a turn starting
@@ -163,6 +166,7 @@ function MeeraMessageRowImpl({
   message: m,
   language,
   isLivePhotoCheck,
+  livePhoto = null,
   photoCheckBusy,
   creditsBalance,
   onPrefill,
@@ -208,6 +212,7 @@ function MeeraMessageRowImpl({
           answers={card.answers ?? NO_ANSWERS}
           lang={language}
           interactive={isLivePhotoCheck}
+          photo={isLivePhotoCheck ? livePhoto : null}
           busy={photoCheckBusy}
           onAnswer={handleAnswer}
           onCheckAgain={handleRetake}
